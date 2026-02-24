@@ -52,6 +52,18 @@ Options: `-p / --port <port>`, `-H / --hostname <host>`, `--turbopack` (accepted
 
 ### Migrating an existing Next.js project
 
+#### Use the agent skill
+
+Install the `migrate-to-vinext` skill to let your AI coding agent handle the migration for you. This works in any coding agent that supports the [Agent Skills](https://agentskills.io/home) specification, and provides guidance on how to use `vinext` and the `vite` toolchain to migrate, check and address any issues itself:
+
+```sh
+npx skills add cloudflare/vinext
+```
+
+The skill walks the agent through compatibility checking, package replacement, ESM conversion, Vite config generation, and verification.
+
+#### Manual migration
+
 `vinext init` automates the migration in one command:
 
 ```bash
