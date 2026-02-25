@@ -5,7 +5,6 @@
  * Unsupported options are logged as warnings.
  */
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 
@@ -192,9 +191,15 @@ export async function loadNextConfig(root: string): Promise<NextConfig | null> {
 
     try {
       // Use dynamic import for ESM/TS config files
-      const fileUrl = pathToFileURL(configPath).href;
-      const mod = await import(fileUrl);
-      return await unwrapConfig(mod);
+      const { runnerImport } = await import("vite");
+      const { module } = await runnerImport(configPath, {
+        root,
+        configFile: false,
+        envDir: false,
+        logLevel: "error",
+        clearScreen: false,
+      });
+      return await unwrapConfig(module);
     } catch (e) {
       // If the error indicates a CJS file loaded in ESM context, retry with
       // createRequire which provides a proper CommonJS environment.
