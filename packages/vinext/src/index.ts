@@ -1691,6 +1691,8 @@ hydrate();
       });
   }
 
+  const imageImportDimCache = new Map<string, { width: number; height: number }>();
+
   const plugins: (Plugin | Promise<Plugin[]>)[] = [
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
@@ -2572,7 +2574,7 @@ hydrate();
       enforce: "pre",
 
       // Cache of image dimensions to avoid re-reading files
-      _dimCache: new Map<string, { width: number; height: number }>(),
+      _dimCache: imageImportDimCache,
 
       resolveId: {
         filter: { id: /\?vinext-meta$/ },
@@ -2589,7 +2591,7 @@ hydrate();
         const imagePath = id.replace("\0vinext-image-meta:", "");
 
         // Read from cache first
-        const cache = (this as any)._dimCache as Map<string, { width: number; height: number }>;
+        const cache = imageImportDimCache;
         let dims = cache.get(imagePath);
         if (!dims) {
           try {
