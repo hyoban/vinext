@@ -5,7 +5,6 @@
  * Unsupported options are logged as warnings.
  */
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 
@@ -180,10 +179,10 @@ async function unwrapConfig(mod: any): Promise<NextConfig> {
  * Find and load the next.config file from the project root.
  * Returns null if no config file is found.
  *
- * Attempts ESM dynamic `import()` first. If the file uses CJS constructs
- * (`require`, `module.exports`) that aren't available in ESM context, falls
- * back to loading it via `createRequire` so that CJS config files (common in
- * the Next.js ecosystem for plugin wrappers like nextra, @next/mdx, etc.) work.
+ * Attempts Vite's module runner first so TS configs and extensionless local
+ * imports (e.g. `import "./env"`) resolve consistently. If loading fails due
+ * to CJS constructs (`require`, `module.exports`), falls back to `createRequire`
+ * so common CJS plugin wrappers (nextra, @next/mdx, etc.) still work.
  */
 export async function loadNextConfig(root: string): Promise<NextConfig | null> {
   for (const filename of CONFIG_FILES) {
@@ -191,10 +190,16 @@ export async function loadNextConfig(root: string): Promise<NextConfig | null> {
     if (!fs.existsSync(configPath)) continue;
 
     try {
-      // Use dynamic import for ESM/TS config files
-      const fileUrl = pathToFileURL(configPath).href;
-      const mod = await import(fileUrl);
-      return await unwrapConfig(mod);
+      // Load config via Vite's module runner (TS + extensionless import support)
+      const { runnerImport } = await import("vite");
+      const { module } = await runnerImport(configPath, {
+        root,
+        configFile: false,
+        envDir: false,
+        logLevel: "error",
+        clearScreen: false,
+      });
+      return await unwrapConfig(module);
     } catch (e) {
       // If the error indicates a CJS file loaded in ESM context, retry with
       // createRequire which provides a proper CommonJS environment.
