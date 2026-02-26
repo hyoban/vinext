@@ -5063,19 +5063,23 @@ describe("next/error shim", () => {
 describe("next/constants shim", () => {
   it("exports all phase constants", async () => {
     const constants = await import("../packages/vinext/src/shims/constants.js");
-    expect(constants.PHASE_PRODUCTION_BUILD).toBe("phase-production-build");
-    expect(constants.PHASE_DEVELOPMENT_SERVER).toBe("phase-development-server");
-    expect(constants.PHASE_PRODUCTION_SERVER).toBe("phase-production-server");
-    expect(constants.PHASE_EXPORT).toBe("phase-export");
-    expect(constants.PHASE_INFO).toBe("phase-info");
-    expect(constants.PHASE_TEST).toBe("phase-test");
-    expect(constants.PAGES_MANIFEST).toBe("pages-manifest.json");
-    expect(constants.BUILD_MANIFEST).toBe("build-manifest.json");
-    expect(constants.STATIC_PROPS_ID).toBe("__N_SSG");
-    expect(constants.AdapterOutputType.APP_PAGE).toBe("APP_PAGE");
-    expect(constants.CONFIG_FILES).toEqual(
-      expect.arrayContaining(["next.config.js", "next.config.mjs", "next.config.ts"]),
-    );
+    const constantsFromNext = await import("next/constants");
+    const normalizeConstants = (mod: Record<string, unknown>) => {
+      const {
+        __esModule: _esModule,
+        default: _default,
+        CLIENT_STATIC_FILES_RUNTIME_POLYFILLS_SYMBOL,
+        ...rest
+      } = mod;
+      return {
+        ...rest,
+        CLIENT_STATIC_FILES_RUNTIME_POLYFILLS_SYMBOL:
+          typeof CLIENT_STATIC_FILES_RUNTIME_POLYFILLS_SYMBOL === "symbol"
+            ? CLIENT_STATIC_FILES_RUNTIME_POLYFILLS_SYMBOL.description
+            : CLIENT_STATIC_FILES_RUNTIME_POLYFILLS_SYMBOL,
+      };
+    };
+    expect(normalizeConstants(constants)).toEqual(normalizeConstants(constantsFromNext));
   });
 });
 
