@@ -5069,6 +5069,13 @@ describe("next/constants shim", () => {
     expect(constants.PHASE_EXPORT).toBe("phase-export");
     expect(constants.PHASE_INFO).toBe("phase-info");
     expect(constants.PHASE_TEST).toBe("phase-test");
+    expect(constants.PAGES_MANIFEST).toBe("pages-manifest.json");
+    expect(constants.BUILD_MANIFEST).toBe("build-manifest.json");
+    expect(constants.STATIC_PROPS_ID).toBe("__N_SSG");
+    expect(constants.AdapterOutputType.APP_PAGE).toBe("APP_PAGE");
+    expect(constants.CONFIG_FILES).toEqual(
+      expect.arrayContaining(["next.config.js", "next.config.mjs", "next.config.ts"]),
+    );
   });
 });
 
