@@ -3962,8 +3962,7 @@ module.exports = withPlugin({ basePath: "/wrapped" });`,
     await fsp.writeFile(path.join(tmpDir, "env.ts"), `export const BASE_PATH = "/from-env";`);
     await fsp.writeFile(
       path.join(tmpDir, "next.config.ts"),
-      `import "./env";
-import { BASE_PATH } from "./env";
+      `import { BASE_PATH } from "./env";
 
 export default {
   basePath: BASE_PATH,
