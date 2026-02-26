@@ -18,10 +18,11 @@ import path from "node:path";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { deploy as runDeploy, parseDeployArgs } from "./deploy.js";
 import { runCheck, formatReport } from "./check.js";
 import { init as runInit } from "./init.js";
+import { loadDotenv } from "./config/dotenv.js";
 
 // ─── Resolve Vite from the project root ────────────────────────────────────────
 //
@@ -76,7 +77,9 @@ function getViteVersion(): string {
   return _viteModule?.version ?? "unknown";
 }
 
-const VERSION = "0.0.1";
+const VERSION = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+).version as string;
 
 // ─── CLI Argument Parsing ──────────────────────────────────────────────────────
 
@@ -180,6 +183,11 @@ async function dev() {
   const parsed = parseArgs(rawArgs);
   if (parsed.help) return printHelp("dev");
 
+  loadDotenv({
+    root: process.cwd(),
+    mode: "development",
+  });
+
   const vite = await loadVite();
 
   const port = parsed.port ?? 3000;
@@ -199,6 +207,11 @@ async function dev() {
 async function buildApp() {
   const parsed = parseArgs(rawArgs);
   if (parsed.help) return printHelp("build");
+
+  loadDotenv({
+    root: process.cwd(),
+    mode: "production",
+  });
 
   const vite = await loadVite();
 
@@ -254,6 +267,11 @@ async function start() {
   const parsed = parseArgs(rawArgs);
   if (parsed.help) return printHelp("start");
 
+  loadDotenv({
+    root: process.cwd(),
+    mode: "production",
+  });
+
   const port = parsed.port ?? parseInt(process.env.PORT ?? "3000", 10);
   const host = parsed.hostname ?? "0.0.0.0";
 
@@ -298,13 +316,13 @@ async function lint() {
   try {
     if (hasEslint && hasNextLintConfig) {
       console.log("  Using eslint (with existing config)\n");
-      execSync("npx eslint .", { cwd, stdio: "inherit" });
+      execFileSync("npx", ["eslint", "."], { cwd, stdio: "inherit" });
     } else if (hasOxlint) {
       console.log("  Using oxlint\n");
-      execSync("npx oxlint .", { cwd, stdio: "inherit" });
+      execFileSync("npx", ["oxlint", "."], { cwd, stdio: "inherit" });
     } else if (hasEslint) {
       console.log("  Using eslint\n");
-      execSync("npx eslint .", { cwd, stdio: "inherit" });
+      execFileSync("npx", ["eslint", "."], { cwd, stdio: "inherit" });
     } else {
       console.log(
         "  No linter found. Install eslint or oxlint:\n\n" +

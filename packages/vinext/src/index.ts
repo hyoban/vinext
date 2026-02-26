@@ -18,8 +18,11 @@ import {
 } from "./config/next-config.js";
 
 import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
+import { generateSafeRegExpCode, generateMiddlewareMatcherCode, generateNormalizePathCode } from "./server/middleware-codegen.js";
+import { normalizePath } from "./server/normalize-path.js";
 import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
-import { safeRegExp, isExternalUrl, proxyExternalRequest } from "./config/config-matchers.js";
+import { validateDevRequest } from "./server/dev-origin-check.js";
+import { safeRegExp, escapeHeaderSource, isExternalUrl, proxyExternalRequest } from "./config/config-matchers.js";
 import { scanMetadataFiles } from "./server/metadata-routes.js";
 import { staticExportPages } from "./build/static-export.js";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -653,103 +656,10 @@ import { NextRequest } from "next/server";`
     // We inline the matching + execution logic so the prod server can call it.
     const middlewareExportCode = middlewarePath
       ? `
-// --- Middleware support ---
-function matchesMiddleware(pathname, matcher) {
-  if (!matcher) {
-    return !pathname.startsWith("/_next") && !pathname.startsWith("/api") && !pathname.includes(".") && pathname !== "/favicon.ico";
-  }
-  var patterns = [];
-  if (typeof matcher === "string") { patterns.push(matcher); }
-  else if (Array.isArray(matcher)) {
-    for (var m of matcher) {
-      if (typeof m === "string") patterns.push(m);
-      else if (m && typeof m === "object" && "source" in m) patterns.push(m.source);
-    }
-  }
-  return patterns.some(function(p) { return matchMiddlewarePattern(pathname, p); });
-}
-
-function __isSafeRegex(pattern) {
-  var quantifierAtDepth = [];
-  var depth = 0;
-  var i = 0;
-  while (i < pattern.length) {
-    var ch = pattern[i];
-    if (ch === "\\\\") { i += 2; continue; }
-    if (ch === "[") {
-      i++;
-      while (i < pattern.length && pattern[i] !== "]") {
-        if (pattern[i] === "\\\\") i++;
-        i++;
-      }
-      i++;
-      continue;
-    }
-    if (ch === "(") {
-      depth++;
-      if (quantifierAtDepth.length <= depth) quantifierAtDepth.push(false);
-      else quantifierAtDepth[depth] = false;
-      i++;
-      continue;
-    }
-    if (ch === ")") {
-      var hadQ = depth > 0 && quantifierAtDepth[depth];
-      if (depth > 0) depth--;
-      var next = pattern[i + 1];
-      if (next === "+" || next === "*" || next === "{") {
-        if (hadQ) return false;
-        if (depth >= 0 && depth < quantifierAtDepth.length) quantifierAtDepth[depth] = true;
-      }
-      i++;
-      continue;
-    }
-    if (ch === "+" || ch === "*") {
-      if (depth > 0) quantifierAtDepth[depth] = true;
-      i++;
-      continue;
-    }
-    if (ch === "?") {
-      var prev = i > 0 ? pattern[i - 1] : "";
-      if (prev !== "+" && prev !== "*" && prev !== "?" && prev !== "}") {
-        if (depth > 0) quantifierAtDepth[depth] = true;
-      }
-      i++;
-      continue;
-    }
-    if (ch === "{") {
-      var j = i + 1;
-      while (j < pattern.length && /[\\d,]/.test(pattern[j])) j++;
-      if (j < pattern.length && pattern[j] === "}" && j > i + 1) {
-        if (depth > 0) quantifierAtDepth[depth] = true;
-        i = j + 1;
-        continue;
-      }
-    }
-    i++;
-  }
-  return true;
-}
-function __safeRegExp(pattern, flags) {
-  if (!__isSafeRegex(pattern)) {
-    console.warn("[vinext] Ignoring potentially unsafe regex pattern (ReDoS risk): " + pattern);
-    return null;
-  }
-  try { return new RegExp(pattern, flags); } catch { return null; }
-}
-
-function matchMiddlewarePattern(pathname, pattern) {
-  if (pattern.includes("(") || pattern.includes("\\\\")) {
-    var re = __safeRegExp("^" + pattern + "$");
-    if (re) return re.test(pathname);
-  }
-  var regexStr = pattern
-    .replace(/\\./g, "\\\\.")
-    .replace(/\\/:([\\w]+)\\*/g, "(?:/.*)?")
-    .replace(/\\/:([\\w]+)\\+/g, "(?:/.+)")
-    .replace(/:([\\w]+)/g, "([^/]+)");
-  var re2 = __safeRegExp("^" + regexStr + "$");
-  return re2 ? re2.test(pathname) : pathname === pattern;
-}
+// --- Middleware support (generated from middleware-codegen.ts) ---
+${generateNormalizePathCode("es5")}
+${generateSafeRegExpCode("es5")}
+${generateMiddlewareMatcherCode("es5")}
 
 export async function runMiddleware(request) {
   var middlewareFn = middlewareModule.default || middlewareModule.middleware;
@@ -759,7 +669,15 @@ export async function runMiddleware(request) {
   var matcher = config && config.matcher;
   var url = new URL(request.url);
 
-  if (!matchesMiddleware(url.pathname, matcher)) return { continue: true };
+  // Normalize pathname before matching to prevent path-confusion bypasses
+  // (percent-encoding like /%61dmin, double slashes like /dashboard//settings).
+  var decodedPathname;
+  try { decodedPathname = decodeURIComponent(url.pathname); } catch (e) {
+    return { continue: false, response: new Response("Bad Request", { status: 400 }) };
+  }
+  var normalizedPathname = __normalizePath(decodedPathname);
+
+  if (!matchesMiddleware(normalizedPathname, matcher)) return { continue: true };
 
   var nextRequest = request instanceof NextRequest ? request : new NextRequest(request);
   var response;
@@ -810,7 +728,11 @@ import { resetSSRHead, getSSRHeadHTML } from "next/head";
 import { flushPreloads } from "next/dynamic";
 import { setSSRContext } from "next/router";
 import { getCacheHandler } from "next/cache";
-import { withFetchCache } from "vinext/fetch-cache";
+import { runWithFetchCache } from "vinext/fetch-cache";
+import { _runWithCacheState } from "next/cache";
+import { runWithPrivateCache } from "vinext/cache-runtime";
+import { runWithRouterState } from "vinext/router-state";
+import { runWithHeadState } from "vinext/head-state";
 import { safeJsonStringify } from "vinext/html";
 import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontStylesGoogle, getSSRFontPreloads as _getSSRFontPreloadsGoogle } from "next/font/google";
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
@@ -1073,7 +995,8 @@ function parseCookieLocaleFromHeader(cookieHeader) {
   if (!i18nConfig || !cookieHeader) return null;
   const match = cookieHeader.match(/(?:^|;\\s*)NEXT_LOCALE=([^;]*)/);
   if (!match) return null;
-  const value = decodeURIComponent(match[1].trim());
+  var value;
+  try { value = decodeURIComponent(match[1].trim()); } catch (e) { return null; }
   if (i18nConfig.locales.indexOf(value) !== -1) return value;
   return null;
 }
@@ -1221,7 +1144,11 @@ export async function renderPage(request, url, manifest) {
   }
 
   const { route, params } = match;
-  const cleanupFetchCache = withFetchCache();
+  return runWithRouterState(() =>
+    runWithHeadState(() =>
+      _runWithCacheState(() =>
+        runWithPrivateCache(() =>
+          runWithFetchCache(async () => {
   try {
     if (typeof setSSRContext === "function") {
       setSSRContext({
@@ -1288,7 +1215,7 @@ export async function renderPage(request, url, manifest) {
       if (result && result.props) pageProps = result.props;
       if (result && result.redirect) {
         var gsspStatus = result.redirect.statusCode != null ? result.redirect.statusCode : (result.redirect.permanent ? 308 : 307);
-        return new Response(null, { status: gsspStatus, headers: { Location: result.redirect.destination } });
+        return new Response(null, { status: gsspStatus, headers: { Location: sanitizeDestinationLocal(result.redirect.destination) } });
       }
       if (result && result.notFound) {
         return new Response("404", { status: 404 });
@@ -1347,7 +1274,7 @@ export async function renderPage(request, url, manifest) {
       if (result && result.props) pageProps = result.props;
       if (result && result.redirect) {
         var gspStatus = result.redirect.statusCode != null ? result.redirect.statusCode : (result.redirect.permanent ? 308 : 307);
-        return new Response(null, { status: gspStatus, headers: { Location: result.redirect.destination } });
+        return new Response(null, { status: gspStatus, headers: { Location: sanitizeDestinationLocal(result.redirect.destination) } });
       }
       if (result && result.notFound) {
         return new Response("404", { status: 404 });
@@ -1480,9 +1407,12 @@ export async function renderPage(request, url, manifest) {
   } catch (e) {
     console.error("[vinext] SSR error:", e);
     return new Response("Internal Server Error", { status: 500 });
-  } finally {
-    cleanupFetchCache();
   }
+          }) // end runWithFetchCache
+        ) // end runWithPrivateCache
+      ) // end _runWithCacheState
+    ) // end runWithHeadState
+  ); // end runWithRouterState
 }
 
 export async function handleApiRoute(request, url) {
@@ -1568,6 +1498,9 @@ ${middlewareExportCode}
     const loaderEntries = pageRoutes.map((r: Route) => {
       const absPath = r.filePath.replace(/\\/g, "/");
       const nextFormatPattern = pagesPatternToNextFormat(r.pattern);
+      // JSON.stringify safely escapes quotes, backslashes, and special chars in
+      // both the route pattern and the absolute file path.
+      // lgtm[js/bad-code-sanitization]
       return `  ${JSON.stringify(nextFormatPattern)}: () => import(${JSON.stringify(absPath)})`;
     });
 
@@ -1753,6 +1686,19 @@ hydrate();
         defines["process.env.__VINEXT_IMAGE_DOMAINS"] = JSON.stringify(
           JSON.stringify(nextConfig.images?.domains ?? []),
         );
+        // Expose allowed image widths (union of deviceSizes + imageSizes) for
+        // server-side validation. Matches Next.js behavior: only configured
+        // sizes are accepted by the image optimization endpoint.
+        {
+          const deviceSizes = nextConfig.images?.deviceSizes ?? [640, 750, 828, 1080, 1200, 1920, 2048, 3840];
+          const imageSizes = nextConfig.images?.imageSizes ?? [16, 32, 48, 64, 96, 128, 256, 384];
+          defines["process.env.__VINEXT_IMAGE_DEVICE_SIZES"] = JSON.stringify(
+            JSON.stringify(deviceSizes),
+          );
+          defines["process.env.__VINEXT_IMAGE_SIZES"] = JSON.stringify(
+            JSON.stringify(imageSizes),
+          );
+        }
         // Draft mode secret — generated once at build time so the
         // __prerender_bypass cookie is consistent across all server
         // instances (e.g. multiple Cloudflare Workers isolates).
@@ -1937,7 +1883,15 @@ hydrate();
           // route handlers so they can set the Allow header and run user-defined
           // OPTIONS handlers. Without this, Vite's CORS middleware responds to
           // OPTIONS with a 204 before the request reaches vinext's handler.
-          server: { cors: { preflightContinue: true } },
+          // Keep Vite's default restrictive origin policy by explicitly
+          // setting it. Without the `origin` field, `preflightContinue: true`
+          // would override Vite's default and allow any origin.
+          server: {
+            cors: {
+              preflightContinue: true,
+              origin: /^https?:\/\/(?:(?:[^:]+\.)?localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/,
+            },
+          },
           // Externalize React packages from SSR transform — they are CJS and
           // must be loaded natively by Node, not through Vite's ESM evaluator.
           // Skip when targeting Cloudflare Workers (they bundle everything).
@@ -2181,6 +2135,7 @@ hydrate();
             rewrites: nextConfig?.rewrites,
             headers: nextConfig?.headers,
             allowedOrigins: nextConfig?.serverActionsAllowedOrigins,
+            allowedDevOrigins: nextConfig?.serverActionsAllowedOrigins,
           });
         }
         if (id === RESOLVED_APP_SSR_ENTRY && hasAppDir) {
@@ -2316,16 +2271,46 @@ hydrate();
                 return next();
               }
 
+              // ── Cross-origin request protection ─────────────────────────
+              // Block requests from non-localhost origins to prevent
+              // cross-origin data exfiltration from the dev server.
+              const blockReason = validateDevRequest(
+                {
+                  origin: req.headers.origin as string | undefined,
+                  host: req.headers.host,
+                  "x-forwarded-host": req.headers["x-forwarded-host"] as string | undefined,
+                  "sec-fetch-site": req.headers["sec-fetch-site"] as string | undefined,
+                  "sec-fetch-mode": req.headers["sec-fetch-mode"] as string | undefined,
+                },
+                nextConfig?.serverActionsAllowedOrigins,
+              );
+              if (blockReason) {
+                console.warn(`[vinext] Blocked dev request: ${blockReason} (${url})`);
+                res.writeHead(403, { "Content-Type": "text/plain" });
+                res.end("Forbidden");
+                return;
+              }
+
               // ── Image optimization passthrough (dev mode) ─────────────
               // In dev, redirect to the original asset URL so Vite serves it.
               if (url.split("?")[0] === "/_vinext/image") {
                 const imgParams = new URLSearchParams(url.split("?")[1] ?? "");
-                const imgUrl = imgParams.get("url");
+                const rawImgUrl = imgParams.get("url");
+                // Normalize backslashes: browsers and the URL constructor treat
+                // /\evil.com as //evil.com, bypassing the // check.
+                const imgUrl = rawImgUrl?.replaceAll("\\", "/") ?? null;
                 // Allowlist: must start with "/" but not "//" — blocks absolute
-                // URLs, protocol-relative, and exotic schemes (data:, javascript:, etc.).
+                // URLs, protocol-relative, backslash variants, and exotic schemes.
                 if (!imgUrl || !imgUrl.startsWith("/") || imgUrl.startsWith("//")) {
                   res.writeHead(400);
-                  res.end(!imgUrl ? "Missing url parameter" : "Only relative URLs allowed");
+                  res.end(!rawImgUrl ? "Missing url parameter" : "Only relative URLs allowed");
+                  return;
+                }
+                // Validate the constructed URL's origin hasn't changed (defense in depth).
+                const resolvedImg = new URL(imgUrl, `http://${req.headers.host || "localhost"}`);
+                if (resolvedImg.origin !== `http://${req.headers.host || "localhost"}`) {
+                  res.writeHead(400);
+                  res.end("Only relative URLs allowed");
                   return;
                 }
                 res.writeHead(302, { Location: imgUrl });
@@ -2349,14 +2334,26 @@ hydrate();
                 return next();
               }
 
-              // Guard against protocol-relative URL open redirect attacks.
-              // Paths like //example.com/ would be redirected to //example.com
-              // by the trailing-slash normalizer, which browsers interpret as
-              // http://example.com — an open redirect. Next.js returns 404 for
-              // double-slash paths.
+              // Guard against protocol-relative URL open redirects.
+              // Normalize backslashes first: browsers treat /\ as // in URL
+              // context. Check the RAW pathname before normalizePath so the
+              // guard fires before normalizePath collapses //.
+              pathname = pathname.replaceAll("\\", "/");
               if (pathname.startsWith("//")) {
                 res.writeHead(404);
                 res.end("404 Not Found");
+                return;
+              }
+
+              // Normalize the pathname to prevent path-confusion attacks.
+              // decodeURIComponent prevents /%61dmin bypassing /admin matchers.
+              // normalizePath collapses // and resolves . / .. segments.
+              try {
+                pathname = normalizePath(decodeURIComponent(pathname));
+              } catch {
+                // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of crashing.
+                res.writeHead(400);
+                res.end("Bad Request");
                 return;
               }
 
@@ -3227,6 +3224,26 @@ function getNextPublicEnvDefines(): Record<string, string> {
 }
 
 /**
+ * If the current position in `str` starts with a parenthesized group, consume
+ * it and advance `re.lastIndex` past the closing `)`. Returns the group
+ * contents or null if no group is present.
+ */
+function extractConstraint(str: string, re: RegExp): string | null {
+  if (str[re.lastIndex] !== "(") return null;
+  const start = re.lastIndex + 1;
+  let depth = 1;
+  let i = start;
+  while (i < str.length && depth > 0) {
+    if (str[i] === "(") depth++;
+    else if (str[i] === ")") depth--;
+    i++;
+  }
+  if (depth !== 0) return null;
+  re.lastIndex = i;
+  return str.slice(start, i - 1);
+}
+
+/**
  * Match a Next.js route pattern (e.g. "/blog/:slug", "/docs/:path*") against a pathname.
  * Returns matched params or null.
  *
@@ -3257,28 +3274,40 @@ export function matchConfigPattern(
       // :param* -> (.*)
       // :param+ -> (.+)
       const paramNames: string[] = [];
-      const regexStr = pattern
-        .replace(/\./g, "\\.")
-        // :param* with optional constraint
-        .replace(/:(\w+)\*(?:\(([^)]+)\))?/g, (_m, name, constraint) => {
-          paramNames.push(name);
-          return constraint ? `(${constraint})` : "(.*)";
-        })
-        // :param+ with optional constraint
-        .replace(/:(\w+)\+(?:\(([^)]+)\))?/g, (_m, name, constraint) => {
-          paramNames.push(name);
-          return constraint ? `(${constraint})` : "(.+)";
-        })
-        // :param(constraint) — named param with inline regex constraint
-        .replace(/:(\w+)\(([^)]+)\)/g, (_m, name, constraint) => {
-          paramNames.push(name);
-          return `(${constraint})`;
-        })
-        // :param — plain named param
-        .replace(/:(\w+)/g, (_m, name) => {
-          paramNames.push(name);
-          return "([^/]+)";
-        });
+      // Single-pass conversion with procedural suffix handling. The tokenizer
+      // matches only simple, non-overlapping tokens; quantifier/constraint
+      // suffixes after :param are consumed procedurally to avoid polynomial
+      // backtracking in the regex engine.
+      let regexStr = "";
+      const tokenRe = /:(\w+)|[.]|[^:.]+/g; // lgtm[js/redos] — alternatives are non-overlapping (`:` and `.` excluded from `[^:.]+`)
+      let tok: RegExpExecArray | null;
+      while ((tok = tokenRe.exec(pattern)) !== null) {
+        if (tok[1] !== undefined) {
+          const name = tok[1];
+          const rest = pattern.slice(tokenRe.lastIndex);
+          // Check for quantifier (* or +) with optional constraint
+          if (rest.startsWith("*") || rest.startsWith("+")) {
+            const quantifier = rest[0];
+            tokenRe.lastIndex += 1;
+            const constraint = extractConstraint(pattern, tokenRe);
+            paramNames.push(name);
+            if (constraint !== null) {
+              regexStr += `(${constraint})`;
+            } else {
+              regexStr += quantifier === "*" ? "(.*)" : "(.+)";
+            }
+          } else {
+            // Check for inline constraint without quantifier
+            const constraint = extractConstraint(pattern, tokenRe);
+            paramNames.push(name);
+            regexStr += constraint !== null ? `(${constraint})` : "([^/]+)";
+          }
+        } else if (tok[0] === ".") {
+          regexStr += "\\.";
+        } else {
+          regexStr += tok[0];
+        }
+      }
       const re = safeRegExp("^" + regexStr + "$");
       if (!re) return null;
       const match = re.exec(pathname);
@@ -3306,7 +3335,9 @@ export function matchConfigPattern(
     // For :path+ we need at least one segment (non-empty after the prefix)
     if (isPlus && (!rest || rest === "/")) return null;
     // For :path* zero segments is fine
-    return { [paramName]: rest.startsWith("/") ? rest.slice(1) : rest };
+    let restValue = rest.startsWith("/") ? rest.slice(1) : rest;
+    try { restValue = decodeURIComponent(restValue); } catch { /* malformed percent-encoding */ }
+    return { [paramName]: restValue };
   }
 
   // Simple segment-based matching for exact patterns and :param
@@ -3327,6 +3358,17 @@ export function matchConfigPattern(
 }
 
 /**
+ * Sanitize a redirect/rewrite destination by collapsing leading slashes and
+ * backslashes to a single "/" for non-external URLs. Browsers interpret "\"
+ * as "/" in URL contexts, so "\/evil.com" becomes "//evil.com" (protocol-relative).
+ */
+function sanitizeDestinationLocal(dest: string): string {
+  if (dest.startsWith("http://") || dest.startsWith("https://")) return dest;
+  dest = dest.replace(/^[\\/]+/, "/");
+  return dest;
+}
+
+/**
  * Apply redirect rules from next.config.js.
  * Returns true if a redirect was applied.
  */
@@ -3344,6 +3386,8 @@ function applyRedirects(
         dest = dest.replace(`:${key}+`, value);
         dest = dest.replace(`:${key}`, value);
       }
+      // Sanitize to prevent open redirect via protocol-relative URLs
+      dest = sanitizeDestinationLocal(dest);
       res.writeHead(redirect.permanent ? 308 : 307, { Location: dest });
       res.end();
       return true;
@@ -3434,6 +3478,8 @@ function applyRewrites(
         dest = dest.replace(`:${key}+`, value);
         dest = dest.replace(`:${key}`, value);
       }
+      // Sanitize to prevent open redirect via protocol-relative URLs
+      dest = sanitizeDestinationLocal(dest);
       return dest;
     }
   }
@@ -3449,24 +3495,7 @@ function applyHeaders(
   headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>,
 ): void {
   for (const rule of headers) {
-    // Escape regex metacharacters in the source, then convert Next.js patterns.
-    // Strategy: extract regex groups first, process the rest, then restore groups.
-    const groups: string[] = [];
-    const withPlaceholders = rule.source.replace(/\(([^)]+)\)/g, (_m, inner) => {
-      groups.push(inner);
-      return `___GROUP_${groups.length - 1}___`;
-    });
-    const escaped = withPlaceholders
-      // Escape dots and other metacharacters
-      .replace(/\./g, "\\.")
-      .replace(/\+/g, "\\+")
-      .replace(/\?/g, "\\?")
-      // Convert glob * to .*
-      .replace(/\*/g, ".*")
-      // Convert :param to [^/]+
-      .replace(/:\w+/g, "[^/]+")
-      // Restore regex groups (contents are untouched)
-      .replace(/___GROUP_(\d+)___/g, (_m, idx) => `(${groups[Number(idx)]})`);
+    const escaped = escapeHeaderSource(rule.source);
     const sourceRegex = safeRegExp("^" + escaped + "$");
     if (sourceRegex && sourceRegex.test(pathname)) {
       for (const header of rule.headers) {

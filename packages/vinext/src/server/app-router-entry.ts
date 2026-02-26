@@ -14,18 +14,40 @@
 
 // @ts-expect-error — virtual module resolved by vinext
 import rscHandler from "virtual:vinext-rsc-entry";
+import { normalizePath } from "./normalize-path.js";
 
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Block protocol-relative URL open redirect attacks (//evil.com/).
-    if (url.pathname.startsWith("//")) {
+    // Normalize backslashes (browsers treat /\ as //) then decode and normalize path.
+    const rawPathname = url.pathname.replaceAll("\\", "/");
+
+    // Block protocol-relative URL open redirects (//evil.com/ or /\evil.com/).
+    if (rawPathname.startsWith("//")) {
       return new Response("404 Not Found", { status: 404 });
     }
 
+    // Decode percent-encoding and normalize the path for middleware/route matching.
+    let normalizedPathname: string;
+    try {
+      normalizedPathname = normalizePath(decodeURIComponent(rawPathname));
+    } catch {
+      // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of throwing.
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    // Construct a new Request with normalized pathname so the RSC entry
+    // sees the canonical path for middleware and route matching.
+    let normalizedRequest = request;
+    if (normalizedPathname !== url.pathname) {
+      const normalizedUrl = new URL(url);
+      normalizedUrl.pathname = normalizedPathname;
+      normalizedRequest = new Request(normalizedUrl, request);
+    }
+
     // Delegate to RSC handler
-    const result = await rscHandler(request);
+    const result = await rscHandler(normalizedRequest);
 
     if (result instanceof Response) {
       return result;
