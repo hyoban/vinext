@@ -30,11 +30,71 @@ import { AsyncLocalStorage } from "node:async_hooks";
 // ---------------------------------------------------------------------------
 
 /**
+ * Headers that carry per-user identity. When any of these are present in a
+ * fetch request, they MUST be included in the cache key to prevent one user's
+ * authenticated response from being served to another user.
+ *
+ * Checked case-insensitively to match HTTP header semantics.
+ *
+ * SECURITY NOTE: Only these three headers are keyed. If your application uses
+ * custom authentication headers (e.g. "X-Session-Token", "X-Auth-Token"),
+ * responses may be incorrectly shared across users. In such cases, use
+ * `cache: 'no-store'` on authenticated fetches or add the header to the URL
+ * as a query parameter to ensure unique cache keys.
+ */
+const AUTH_HEADERS = ["authorization", "cookie", "x-api-key"];
+
+/**
+ * Check whether a fetch request includes any per-user authentication headers.
+ * Returns the normalized header values (sorted by name) for cache key inclusion,
+ * or null if no auth headers are present.
+ */
+function extractAuthHeaders(input: string | URL | Request, init?: RequestInit): string | null {
+  const collected: [string, string][] = [];
+
+  // Gather headers from the init object
+  if (init?.headers) {
+    const headers = init.headers instanceof Headers
+      ? init.headers
+      : new Headers(init.headers as HeadersInit);
+    for (const name of AUTH_HEADERS) {
+      const value = headers.get(name);
+      if (value) collected.push([name, value]);
+    }
+  }
+
+  // Also check headers from the Request object (if input is a Request)
+  if (input instanceof Request && input.headers) {
+    for (const name of AUTH_HEADERS) {
+      // Don't duplicate if already found in init
+      if (collected.some(([n]) => n === name)) continue;
+      const value = input.headers.get(name);
+      if (value) collected.push([name, value]);
+    }
+  }
+
+  if (collected.length === 0) return null;
+
+  // Sort for deterministic key ordering
+  collected.sort((a, b) => a[0].localeCompare(b[0]));
+  return collected.map(([k, v]) => `${k}=${v}`).join("&");
+}
+
+/**
+ * Check whether a fetch request carries any per-user auth headers.
+ */
+function hasAuthHeaders(input: string | URL | Request, init?: RequestInit): boolean {
+  return extractAuthHeaders(input, init) !== null;
+}
+
+/**
  * Generate a deterministic cache key from a fetch request.
  *
- * Key = "fetch:" + URL + "|" + sorted relevant options.
- * We exclude headers that are request-specific (cookie, authorization)
- * unless the user explicitly opts in via `next.tags`.
+ * Key = "fetch:" + method + ":" + URL [+ "|" + body] [+ "|auth:" + auth_headers].
+ *
+ * When per-user headers (Authorization, Cookie, X-API-Key) are present,
+ * they are included in the cache key so different users get separate cache
+ * entries. This prevents authenticated responses from leaking across users.
  */
 function buildFetchCacheKey(input: string | URL | Request, init?: RequestInit & { next?: NextFetchOptions }): string {
   let url: string;
@@ -54,9 +114,13 @@ function buildFetchCacheKey(input: string | URL | Request, init?: RequestInit & 
   if (init?.method) method = init.method;
   if (init?.body && typeof init.body === "string") body = init.body;
 
-  // Build a stable key from URL + method + body
+  // Build a stable key from URL + method + body + auth headers
   const parts = [`fetch:${method}:${url}`];
   if (body) parts.push(body);
+
+  // Include per-user auth headers in the key to prevent cross-user leakage
+  const authPart = extractAuthHeaders(input, init);
+  if (authPart) parts.push(`auth:${authPart}`);
 
   return parts.join("|");
 }
@@ -157,9 +221,22 @@ function createPatchedFetch(): typeof globalThis.fetch {
       return originalFetch(input, init);
     }
 
-    // Explicit no-store
-    if (cacheDirective === "no-store" || nextOpts?.revalidate === false || nextOpts?.revalidate === 0) {
+    // Explicit no-store or no-cache — bypass cache entirely
+    if (cacheDirective === "no-store" || cacheDirective === "no-cache" || nextOpts?.revalidate === false || nextOpts?.revalidate === 0) {
       // Strip the `next` property before passing to real fetch
+      const cleanInit = stripNextFromInit(init);
+      return originalFetch(input, cleanInit);
+    }
+
+    // Safety: when per-user auth headers are present and the developer hasn't
+    // explicitly opted into caching with `cache: 'force-cache'` or an explicit
+    // `next.revalidate`, skip caching to prevent accidental cross-user data
+    // leakage. Developers who understand the implications can still force
+    // caching by using `cache: 'force-cache'` or `next: { revalidate: N }`.
+    const hasExplicitCacheOpt =
+      cacheDirective === "force-cache" ||
+      (typeof nextOpts?.revalidate === "number" && nextOpts.revalidate > 0);
+    if (!hasExplicitCacheOpt && hasAuthHeaders(input, init)) {
       const cleanInit = stripNextFromInit(init);
       return originalFetch(input, cleanInit);
     }
@@ -329,9 +406,8 @@ function _ensurePatchInstalled(): void {
  * Install the patched fetch and reset per-request tag state.
  * Returns a cleanup function that clears tags.
  *
- * In single-threaded contexts (dev server, tests) this is safe because
- * requests are sequential.  For concurrent environments, prefer
- * `runWithFetchCache()` which uses `AsyncLocalStorage.run()`.
+ * @deprecated Prefer `runWithFetchCache()` which uses `AsyncLocalStorage.run()`
+ * for proper per-request isolation in concurrent environments.
  *
  * Usage:
  *   const cleanup = withFetchCache();
