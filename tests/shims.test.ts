@@ -1657,6 +1657,7 @@ describe("middleware codegen parity", () => {
     );
     // Eval the generated code and test it behaves identically to the runtime
     const code = generateSafeRegExpCode("modern") + generateMiddlewareMatcherCode("modern");
+    // eslint-disable-next-line no-implied-eval -- intentional: eval generated codegen output
     const fn = new Function(code + "\nreturn { matchMiddlewarePattern, matchesMiddleware };");
     const { matchMiddlewarePattern, matchesMiddleware } = fn();
 
@@ -1687,6 +1688,7 @@ describe("middleware codegen parity", () => {
       "../packages/vinext/src/server/middleware-codegen.js"
     );
     const code = generateSafeRegExpCode("es5") + generateMiddlewareMatcherCode("es5");
+    // eslint-disable-next-line no-implied-eval -- intentional: eval generated codegen output
     const fn = new Function(code + "\nreturn { matchMiddlewarePattern, matchesMiddleware };");
     const { matchMiddlewarePattern, matchesMiddleware } = fn();
 
@@ -1703,6 +1705,7 @@ describe("middleware codegen parity", () => {
       "../packages/vinext/src/server/middleware-codegen.js"
     );
     const code = generateNormalizePathCode("modern");
+    // eslint-disable-next-line no-implied-eval -- intentional: eval generated codegen output
     const fn = new Function(code + "\nreturn __normalizePath;");
     const __normalizePath = fn();
 
@@ -1774,6 +1777,259 @@ describe("middleware bypass prevention", () => {
     expect(matchPattern("/api/hello", pattern)).toBe(false);
     expect(matchPattern("/_next/static/chunk.js", pattern)).toBe(false);
     expect(matchPattern("/favicon.ico", pattern)).toBe(false);
+  });
+
+  // ── Config matcher percent-encoding handling ──
+
+  it("config redirect matcher works with decoded percent-encoded paths", async () => {
+    const { matchRedirect } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+    const redirects = [
+      { source: "/admin", destination: "/login", permanent: true },
+      { source: "/old-blog/:slug", destination: "/blog/:slug", permanent: false },
+    ];
+    const reqCtx = { headers: new Headers(), cookies: {}, query: new URLSearchParams(), host: "localhost" };
+    // Decoded path should match
+    const decoded = normalizePath(decodeURIComponent("/%61dmin"));
+    expect(decoded).toBe("/admin");
+    const result = matchRedirect(decoded, redirects, reqCtx);
+    expect(result).toBeTruthy();
+    expect(result!.destination).toBe("/login");
+
+    // Mixed encoding in parameterized route
+    const slugDecoded = normalizePath(decodeURIComponent("/%6Fld-blog/my-p%6Fst"));
+    expect(slugDecoded).toBe("/old-blog/my-post");
+    const slugResult = matchRedirect(slugDecoded, redirects, reqCtx);
+    expect(slugResult).toBeTruthy();
+    expect(slugResult!.destination).toBe("/blog/my-post");
+
+    // Raw encoded path must NOT match (matchers expect decoded paths)
+    const rawResult = matchRedirect("/%61dmin", redirects, reqCtx);
+    expect(rawResult).toBeNull();
+  });
+
+  it("config header matcher works with decoded percent-encoded paths", async () => {
+    const { matchHeaders } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+    const headers = [
+      { source: "/api/(.*)", headers: [{ key: "X-Custom", value: "true" }] },
+    ];
+    // Decoded path should match
+    const decoded = normalizePath(decodeURIComponent("/%61pi/hello"));
+    expect(decoded).toBe("/api/hello");
+    const result = matchHeaders(decoded, headers);
+    expect(result).toHaveLength(1);
+    expect(result[0].key).toBe("X-Custom");
+
+    // Raw encoded path must NOT match
+    const rawResult = matchHeaders("/%61pi/hello", headers);
+    expect(rawResult).toHaveLength(0);
+  });
+
+  it("config rewrite matcher works with decoded percent-encoded paths", async () => {
+    const { matchRewrite } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+    const rewrites = [
+      { source: "/before-rewrite", destination: "/about" },
+    ];
+    const reqCtx = { headers: new Headers(), cookies: {}, query: new URLSearchParams(), host: "localhost" };
+    // Decoded path should match
+    const decoded = normalizePath(decodeURIComponent("/%62efore-rewrite"));
+    expect(decoded).toBe("/before-rewrite");
+    const result = matchRewrite(decoded, rewrites, reqCtx);
+    expect(result).toBe("/about");
+
+    // Raw encoded path must NOT match
+    const rawResult = matchRewrite("/%62efore-rewrite", rewrites, reqCtx);
+    expect(rawResult).toBeNull();
+  });
+
+  it("double-encoded paths are decoded only once", async () => {
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+    // %2561dmin → first decode → %61dmin (literal text, not /admin)
+    const doubleEncoded = "/%2561dmin";
+    const decoded = normalizePath(decodeURIComponent(doubleEncoded));
+    // Should decode to /%61dmin, NOT to /admin
+    expect(decoded).toBe("/%61dmin");
+    expect(decoded).not.toBe("/admin");
+  });
+});
+
+describe("double-encoded path handling in middleware", () => {
+  it("double-encoded path /%2564ashboard does not match /dashboard middleware pattern", async () => {
+    const { matchPattern, matchesMiddleware } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+
+    // /%2564ashboard with a single decode becomes /%64ashboard (NOT /dashboard).
+    // The pathname should be decoded exactly once at the entry point.
+    const testPath = "/%2564ashboard";
+    const decoded = decodeURIComponent(testPath); // Single decode
+    const normalized = normalizePath(decoded);
+    // After one decode, this is NOT /dashboard — it's /%64ashboard
+    expect(normalized).toBe("/%64ashboard");
+    // Middleware should NOT match /dashboard for this path
+    expect(matchPattern(normalized, "/dashboard")).toBe(false);
+    expect(matchesMiddleware(normalized, "/dashboard")).toBe(false);
+  });
+
+  it("double-encoded slash /foo/..%252fdashboard does not resolve to /dashboard", async () => {
+    const { matchPattern } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const { normalizePath } = await import(
+      "../packages/vinext/src/server/normalize-path.js"
+    );
+
+    // /foo/..%252fdashboard with a single decode becomes /foo/..%2fdashboard.
+    // normalizePath does NOT treat %2f as a path separator, so no traversal occurs.
+    const testPath = "/foo/..%252fdashboard";
+    const decoded = decodeURIComponent(testPath); // Single decode
+    const normalized = normalizePath(decoded);
+    // After one decode + normalize, this should NOT resolve to /dashboard
+    expect(normalized).not.toBe("/dashboard");
+    // The .. only traverses if followed by a real /, not an encoded %2f
+    expect(matchPattern(normalized, "/dashboard")).toBe(false);
+  });
+
+  it("matchRoute in generated code does not double-decode pathnames", async () => {
+    // Verify that matchRoute no longer calls decodeURIComponent internally.
+    // The generated RSC entry code is a string — we check it directly.
+    const { generateRscEntry } = await import(
+      "../packages/vinext/src/server/app-dev-server.js"
+    );
+    const code = generateRscEntry("/tmp/app", [
+      {
+        pattern: "/dashboard",
+        isDynamic: false,
+        params: [],
+        pagePath: null,
+        routePath: null,
+        layouts: [],
+        layoutSegmentDepths: [],
+        templates: [],
+        loadingPath: null,
+        errorPath: null,
+        layoutErrorPaths: [],
+        notFoundPath: null,
+        notFoundPaths: [],
+        forbiddenPath: null,
+        unauthorizedPath: null,
+        parallelSlots: [],
+      },
+    ]);
+    // Extract the matchRoute function from generated code
+    const matchRouteMatch = code.match(/function matchRoute\(url, routes\) \{[\s\S]*?\n\}/);
+    expect(matchRouteMatch).toBeTruthy();
+    const matchRouteCode = matchRouteMatch![0];
+    // Verify it does NOT call decodeURIComponent (the comment mentions it but
+    // should not have an actual call like `decodeURIComponent(...)`)
+    expect(matchRouteCode).not.toMatch(/\bdecodeURIComponent\s*\(/);
+  });
+
+  it("middleware always receives a Request with the decoded pathname (not raw URL)", async () => {
+    const { generateRscEntry } = await import(
+      "../packages/vinext/src/server/app-dev-server.js"
+    );
+    const code = generateRscEntry(
+      "/tmp/app",
+      [
+        {
+          pattern: "/dashboard",
+          isDynamic: false,
+          params: [],
+          pagePath: null,
+          routePath: null,
+          layouts: [],
+          layoutSegmentDepths: [],
+          templates: [],
+          loadingPath: null,
+          errorPath: null,
+          layoutErrorPaths: [],
+          notFoundPath: null,
+          notFoundPaths: [],
+          forbiddenPath: null,
+          unauthorizedPath: null,
+          parallelSlots: [],
+        },
+      ],
+      "/tmp/middleware.ts",
+    );
+    // The generated code should ALWAYS construct a new Request with cleanPathname.
+    // Verify the generated code constructs a Request with the decoded pathname
+    // for ALL requests (not just RSC).
+    expect(code).not.toMatch(/let mwRequest = request;/);
+    expect(code).toContain("const mwUrl = new URL(request.url)");
+    expect(code).toContain("mwUrl.pathname = cleanPathname");
+    expect(code).toContain("const mwRequest = new Request(mwUrl, request)");
+  });
+
+  it("Pages Router runMiddleware passes decoded pathname to middleware function", async () => {
+    const { runMiddleware } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    // Create a mock Vite server that returns a middleware module
+    let capturedUrl: string | undefined;
+    const mockServer = {
+      ssrLoadModule: async () => ({
+        default: (req: Request) => {
+          capturedUrl = req.url;
+          return new Response("OK", {
+            headers: { "x-middleware-next": "1" },
+          });
+        },
+        config: { matcher: "/:path*" },
+      }),
+    };
+
+    // Send a double-encoded path — after single decode, it should be /%64ashboard
+    const testUrl = "http://localhost:3000/%2564ashboard";
+    const request = new Request(testUrl);
+    await runMiddleware(mockServer as any, "/tmp/middleware.ts", request);
+
+    // Middleware should have received the decoded+normalized URL
+    expect(capturedUrl).toBeDefined();
+    const mwPathname = new URL(capturedUrl!).pathname;
+    // After single decode: %25 → %, so /%2564 → /%64
+    expect(mwPathname).toBe("/%64ashboard");
+    // It must NOT be the raw /%2564ashboard
+    expect(mwPathname).not.toBe("/%2564ashboard");
+    // It must NOT be double-decoded to /dashboard
+    expect(mwPathname).not.toBe("/dashboard");
+  });
+
+  it("app-router-entry.ts does not double-decode (delegates to RSC handler)", async () => {
+    // Verify the Cloudflare Worker entry does not decode the pathname itself,
+    // leaving that responsibility to the RSC handler.
+    const fs = await import("node:fs");
+    const entryCode = fs.readFileSync(
+      new URL("../packages/vinext/src/server/app-router-entry.ts", import.meta.url),
+      "utf-8",
+    );
+    // The entry should validate encoding but NOT normalize+reconstruct the request
+    // (the RSC handler is the single decode point)
+    expect(entryCode).not.toMatch(/normalizedRequest\s*=\s*new Request\(normalizedUrl/);
+    // It should still validate malformed encoding (return 400)
+    expect(entryCode).toContain("decodeURIComponent(rawPathname)");
+    // The delegate call should pass `request` (not normalizedRequest)
+    expect(entryCode).toMatch(/rscHandler\(request\)/);
   });
 });
 
@@ -3260,31 +3516,29 @@ describe("open redirect prevention in catch-all redirects", () => {
     const { matchRedirect } = await import(
       "../packages/vinext/src/config/config-matchers.js"
     );
-    // /old/%2Fevil.com → decoded catch-all captures "/evil.com"
-    // which substituted into /:path* would produce //evil.com
-    // The matchConfigPattern decodes %2F, so we test with already-decoded path
-    // (the guard is on the destination after substitution, not the input)
+    // In the real request flow, the entry point decodes %2F to / and
+    // normalizePath collapses // to /. So /old/%2Fevil.com arrives as
+    // /old/evil.com (after decode + normalize).
+    // Test with the already-decoded path (how matchRedirect is actually called).
     const redirects = [
       { source: "/old/:path*", destination: "/:path*", permanent: false },
     ];
-    // When the raw URL has %2F, decodeURIComponent in matchConfigPattern
-    // turns it into /, so the catch-all captures "/evil.com" → restValue = "/evil.com"
-    // After substitution: "/:path*" → "//evil.com" → sanitized to "/evil.com"
-    const result = matchRedirect("/old/%2Fevil.com", redirects);
+    const result = matchRedirect("/old/evil.com", redirects);
     expect(result).not.toBeNull();
     expect(result!.destination).toBe("/evil.com");
     // Verify it does NOT start with // (protocol-relative)
     expect(result!.destination.startsWith("//")).toBe(false);
   });
 
-  it("matchRedirect sanitizes triple-encoded slashes", async () => {
+  it("matchRedirect sanitizes double-slash in already-decoded paths", async () => {
     const { matchRedirect } = await import(
       "../packages/vinext/src/config/config-matchers.js"
     );
     const redirects = [
       { source: "/old/:path*", destination: "/:path*", permanent: false },
     ];
-    const result = matchRedirect("/old/%2F%2Fevil.com", redirects);
+    // Even if an already-decoded path somehow contains //, the sanitizer should handle it
+    const result = matchRedirect("/old//evil.com", redirects);
     expect(result).not.toBeNull();
     expect(result!.destination.startsWith("//")).toBe(false);
   });
@@ -3308,7 +3562,9 @@ describe("open redirect prevention in catch-all redirects", () => {
     const rewrites = [
       { source: "/old/:path*", destination: "/:path*" },
     ];
-    const result = matchRewrite("/old/%2Fevil.com", rewrites);
+    // In the real request flow, the entry point decodes and normalizePath
+    // collapses //. Test with already-decoded path.
+    const result = matchRewrite("/old/evil.com", rewrites);
     expect(result).not.toBeNull();
     expect(result!).toBe("/evil.com");
     expect(result!.startsWith("//")).toBe(false);

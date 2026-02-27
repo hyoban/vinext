@@ -132,8 +132,9 @@ export function matchPattern(pathname: string, pattern: string): boolean {
 
   // Convert Next.js path patterns to regex in a single pass.
   // Matches /:param*, /:param+, :param, dots, and literal text.
+  // Param names may contain hyphens (e.g. [[...sign-in]]).
   let regexStr = "";
-  const tokenRe = /\/:(\w+)\*|\/:(\w+)\+|:(\w+)|[.]|[^/:.]+|./g;
+  const tokenRe = /\/:([\w-]+)\*|\/:([\w-]+)\+|:([\w-]+)|[.]|[^/:.]+|./g;
   let tok: RegExpExecArray | null;
   while ((tok = tokenRe.exec(pattern)) !== null) {
     if (tok[1] !== undefined) {
@@ -218,8 +219,17 @@ export async function runMiddleware(
     return { continue: true };
   }
 
+   // Construct a new Request with the fully decoded + normalized pathname so
+   // middleware always sees the same canonical path that the router uses.
+  let mwRequest = request;
+  if (normalizedPathname !== url.pathname) {
+    const mwUrl = new URL(url);
+    mwUrl.pathname = normalizedPathname;
+    mwRequest = new Request(mwUrl, request);
+  }
+
   // Wrap in NextRequest so middleware gets .nextUrl, .cookies, .geo, .ip, etc.
-  const nextRequest = request instanceof NextRequest ? request : new NextRequest(request);
+  const nextRequest = mwRequest instanceof NextRequest ? mwRequest : new NextRequest(mwRequest);
 
   // Execute the middleware
   let response: Response | undefined;
