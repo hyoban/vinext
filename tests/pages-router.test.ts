@@ -486,8 +486,8 @@ describe("Pages Router integration", () => {
   it("blocks page requests with cross-origin Origin header", async () => {
     const res = await fetch(`${baseUrl}/`, {
       headers: {
-        Origin: "https://evil.com",
-        Host: new URL(baseUrl).host,
+        "Origin": "https://evil.com",
+        "Host": new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(403);
@@ -498,8 +498,8 @@ describe("Pages Router integration", () => {
   it("blocks API requests with cross-origin Origin header", async () => {
     const res = await fetch(`${baseUrl}/api/hello`, {
       headers: {
-        Origin: "https://external.io",
-        Host: new URL(baseUrl).host,
+        "Origin": "https://external.io",
+        "Host": new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(403);
@@ -511,19 +511,16 @@ describe("Pages Router integration", () => {
     const http = await import("node:http");
     const url = new URL(baseUrl);
     const status = await new Promise<number>((resolve, reject) => {
-      const req = http.request(
-        {
-          hostname: url.hostname,
-          port: url.port,
-          path: "/",
-          method: "GET",
-          headers: {
-            "sec-fetch-site": "cross-site",
-            "sec-fetch-mode": "no-cors",
-          },
+      const req = http.request({
+        hostname: url.hostname,
+        port: url.port,
+        path: "/",
+        method: "GET",
+        headers: {
+          "sec-fetch-site": "cross-site",
+          "sec-fetch-mode": "no-cors",
         },
-        (res) => resolve(res.statusCode ?? 0),
-      );
+      }, (res) => resolve(res.statusCode ?? 0));
       req.on("error", reject);
       req.end();
     });
@@ -533,8 +530,8 @@ describe("Pages Router integration", () => {
   it("allows page requests from localhost origin", async () => {
     const res = await fetch(`${baseUrl}/`, {
       headers: {
-        Origin: baseUrl,
-        Host: new URL(baseUrl).host,
+        "Origin": baseUrl,
+        "Host": new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(200);
@@ -559,9 +556,7 @@ describe("Virtual server entry generation", () => {
 
     try {
       // Load the virtual module through Vite's SSR pipeline
-      const entry = await testServer.ssrLoadModule(
-        "virtual:vinext-server-entry",
-      );
+      const entry = await testServer.ssrLoadModule("virtual:vinext-server-entry");
 
       // Verify it exports the expected functions
       expect(typeof entry.renderPage).toBe("function");
@@ -585,14 +580,11 @@ describe("Virtual server entry generation", () => {
     });
 
     try {
-      const resolved = await testServer.pluginContainer.resolveId(
-        "virtual:vinext-client-entry",
-      );
+      const resolved = await testServer.pluginContainer.resolveId("virtual:vinext-client-entry");
       expect(resolved).toBeTruthy();
       const loaded = await testServer.pluginContainer.load(resolved!.id);
       expect(loaded).toBeTruthy();
-      const code =
-        typeof loaded === "string" ? loaded : ((loaded as any)?.code ?? "");
+      const code = typeof loaded === "string" ? loaded : (loaded as any)?.code ?? "";
 
       // Dynamic routes should use [param] format, not :param
       // The fixture has pages/posts/[id].tsx
@@ -600,9 +592,7 @@ describe("Virtual server entry generation", () => {
       // Catch-all routes: pages/docs/[...slug].tsx
       expect(code).toContain('"/docs/[...slug]"');
       // Should NOT contain Express-style :param patterns for any route
-      expect(code).not.toMatch(
-        /["']\/(posts|blog|articles|docs|products)\/:[\w]+["']/,
-      );
+      expect(code).not.toMatch(/["']\/(posts|blog|articles|docs|products)\/:[\w]+["']/);
       expect(code).not.toContain(":slug+");
       expect(code).not.toContain(":slug*");
     } finally {
@@ -618,10 +608,7 @@ describe("Plugin config", () => {
     expect(configPlugin).toBeDefined();
 
     // Call the config hook with a minimal config
-    const result = await configPlugin.config({
-      root: FIXTURE_DIR,
-      plugins: [],
-    });
+    const result = await configPlugin.config({ root: FIXTURE_DIR, plugins: [] });
 
     expect(result.resolve).toBeDefined();
     expect(result.resolve.dedupe).toBeDefined();
@@ -636,10 +623,7 @@ describe("Plugin config", () => {
     const configPlugin = plugins.find((p) => p.name === "vinext:config");
     expect(configPlugin).toBeDefined();
 
-    const result = await configPlugin.config({
-      root: FIXTURE_DIR,
-      plugins: [],
-    });
+    const result = await configPlugin.config({ root: FIXTURE_DIR, plugins: [] });
 
     expect(result.build).toBeDefined();
     expect(result.build.rollupOptions).toBeDefined();
@@ -674,16 +658,6 @@ describe("Plugin config", () => {
     const otherWarning = { code: "CIRCULAR_DEPENDENCY", message: "circular" };
     result.build.rollupOptions.onwarn(otherWarning, defaultHandler);
     expect(defaultHandler).toHaveBeenCalledWith(otherWarning);
-  });
-
-  it("registers vinext:mdx proxy plugin with enforce pre for correct ordering", () => {
-    const plugins = vinext() as any[];
-    const mdxProxy = plugins.find((p) => p.name === "vinext:mdx");
-    expect(mdxProxy).toBeDefined();
-    expect(mdxProxy.enforce).toBe("pre");
-    // Proxy should be inert when no MDX files are detected (mdxDelegate is null)
-    expect(mdxProxy.resolveId("./foo.ts", undefined, {})).toBeUndefined();
-    expect(mdxProxy.transform("code", "./foo.ts", {})).toBeUndefined();
   });
 
   it("preserves user-supplied build.rollupOptions.onwarn", async () => {
@@ -777,12 +751,7 @@ describe("Production build", () => {
     expect(fs.existsSync(assetsDir)).toBe(true);
 
     // Verify SSR manifest was produced
-    const manifestPath = path.join(
-      outDir,
-      "client",
-      ".vite",
-      "ssr-manifest.json",
-    );
+    const manifestPath = path.join(outDir, "client", ".vite", "ssr-manifest.json");
     expect(fs.existsSync(manifestPath)).toBe(true);
 
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
@@ -790,12 +759,7 @@ describe("Production build", () => {
     expect(Object.keys(manifest).length).toBeGreaterThan(0);
 
     // Verify build manifest was also produced (needed for lazy chunk computation)
-    const buildManifestPath = path.join(
-      outDir,
-      "client",
-      ".vite",
-      "manifest.json",
-    );
+    const buildManifestPath = path.join(outDir, "client", ".vite", "manifest.json");
     expect(fs.existsSync(buildManifestPath)).toBe(true);
 
     // There should be JS files in the assets directory
@@ -806,13 +770,9 @@ describe("Production build", () => {
     // Client bundle should be code-split: framework (React/ReactDOM) in its
     // own chunk, vinext runtime in another, and the entry bootstrap should be
     // small (not a monolithic bundle containing all vendor code).
-    const frameworkChunk = jsFiles.find((f: string) =>
-      f.startsWith("framework-"),
-    );
+    const frameworkChunk = jsFiles.find((f: string) => f.startsWith("framework-"));
     const vinextChunk = jsFiles.find((f: string) => f.startsWith("vinext-"));
-    const entryChunk = jsFiles.find((f: string) =>
-      f.includes("vinext-client-entry"),
-    );
+    const entryChunk = jsFiles.find((f: string) => f.includes("vinext-client-entry"));
     expect(frameworkChunk).toBeDefined();
     expect(vinextChunk).toBeDefined();
     expect(entryChunk).toBeDefined();
@@ -827,12 +787,7 @@ describe("Production build", () => {
 
   it("serves pages from production build end-to-end", async () => {
     const serverEntryPath = path.join(outDir, "server", "entry.js");
-    const manifestPath = path.join(
-      outDir,
-      "client",
-      ".vite",
-      "ssr-manifest.json",
-    );
+    const manifestPath = path.join(outDir, "client", ".vite", "ssr-manifest.json");
 
     // Both should exist from prior tests
     if (!fs.existsSync(serverEntryPath) || !fs.existsSync(manifestPath)) {
@@ -895,9 +850,7 @@ describe("Production build", () => {
       // Pipe Web Response back to Node.js res
       const body = await response.text();
       const resHeaders: Record<string, string> = {};
-      response.headers.forEach((v: string, k: string) => {
-        resHeaders[k] = v;
-      });
+      response.headers.forEach((v: string, k: string) => { resHeaders[k] = v; });
       res.writeHead(response.status, resHeaders);
       res.end(body);
     });
@@ -1015,12 +968,7 @@ describe("Production server middleware (Pages Router)", () => {
 
   beforeAll(async () => {
     const serverEntryPath = path.join(outDir, "server", "entry.js");
-    const manifestPath = path.join(
-      outDir,
-      "client",
-      ".vite",
-      "ssr-manifest.json",
-    );
+    const manifestPath = path.join(outDir, "client", ".vite", "ssr-manifest.json");
 
     // Build if needed (tests may run in isolation)
     if (!fs.existsSync(serverEntryPath) || !fs.existsSync(manifestPath)) {
@@ -1109,16 +1057,12 @@ describe("Production server middleware (Pages Router)", () => {
   it("preserves binary API response bytes", async () => {
     const res = await fetch(`${prodUrl}/api/binary`);
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain(
-      "application/octet-stream",
-    );
+    expect(res.headers.get("content-type")).toContain("application/octet-stream");
 
     const body = Buffer.from(await res.arrayBuffer());
     // Must match exactly: invalid UTF-8-leading bytes + null + ASCII tail.
     // This catches any accidental text() decode/re-encode in prod-server.
-    expect(
-      body.equals(Buffer.from([0xff, 0xfe, 0xfd, 0x00, 0x61, 0x62, 0x63])),
-    ).toBe(true);
+    expect(body.equals(Buffer.from([0xff, 0xfe, 0xfd, 0x00, 0x61, 0x62, 0x63]))).toBe(true);
   });
 
   it("serves normal pages without middleware interference", async () => {
@@ -1150,12 +1094,7 @@ describe("Production server next.config.js features (Pages Router)", () => {
 
   beforeAll(async () => {
     const serverEntryPath = path.join(outDir, "server", "entry.js");
-    const manifestPath = path.join(
-      outDir,
-      "client",
-      ".vite",
-      "ssr-manifest.json",
-    );
+    const manifestPath = path.join(outDir, "client", ".vite", "ssr-manifest.json");
 
     // Build if needed (tests may run in isolation)
     if (!fs.existsSync(serverEntryPath) || !fs.existsSync(manifestPath)) {
@@ -1359,7 +1298,10 @@ describe("Static export (Pages Router)", () => {
 
   it("generates 404.html", async () => {
     expect(fs.existsSync(path.join(exportDir, "404.html"))).toBe(true);
-    const html404 = fs.readFileSync(path.join(exportDir, "404.html"), "utf-8");
+    const html404 = fs.readFileSync(
+      path.join(exportDir, "404.html"),
+      "utf-8",
+    );
     expect(html404).toContain("404");
   });
 
@@ -1369,10 +1311,8 @@ describe("Static export (Pages Router)", () => {
       path.join(exportDir, "redirect-xss.html"),
       "utf-8",
     );
-    expect(html).toContain(
-      'content="0;url=foo&quot; /&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;meta x=&quot;"',
-    );
-    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain('content="0;url=foo&quot; /&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;meta x=&quot;"');
+    expect(html).not.toContain('<script>alert(1)</script>');
   });
 
   it("reports errors for pages using getServerSideProps", async () => {
@@ -1456,9 +1396,9 @@ describe("Static export (Pages Router)", () => {
 
       // With trailingSlash, about → about/index.html
       expect(result.files).toContain("about/index.html");
-      expect(fs.existsSync(path.join(trailingDir, "about", "index.html"))).toBe(
-        true,
-      );
+      expect(
+        fs.existsSync(path.join(trailingDir, "about", "index.html")),
+      ).toBe(true);
     } finally {
       fs.rmSync(trailingDir, { recursive: true, force: true });
     }
@@ -1470,8 +1410,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
   let routerBaseUrl: string;
 
   beforeAll(async () => {
-    ({ server: routerServer, baseUrl: routerBaseUrl } =
-      await startFixtureServer(FIXTURE_DIR));
+    ({ server: routerServer, baseUrl: routerBaseUrl } = await startFixtureServer(FIXTURE_DIR));
   });
 
   afterAll(async () => {
@@ -1482,9 +1421,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
     const res = await fetch(`${routerBaseUrl}/blog/hello-world`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     expect(match).toBeTruthy();
     const nextData = JSON.parse(match![1]);
     expect(nextData.query).toEqual({ slug: "hello-world" });
@@ -1495,9 +1432,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
     const res = await fetch(`${routerBaseUrl}/posts/hello-world`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     const nextData = JSON.parse(match![1]);
     expect(nextData.page).toBe("/posts/[id]");
     expect(nextData.query.id).toBe("hello-world");
@@ -1507,9 +1442,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
     const res = await fetch(`${routerBaseUrl}/docs/a/b/c`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     const nextData = JSON.parse(match![1]);
     expect(nextData.page).toBe("/docs/[...slug]");
   });
@@ -1517,9 +1450,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
   it("__NEXT_DATA__ includes isFallback: false", async () => {
     const res = await fetch(`${routerBaseUrl}/blog/hello-world`);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     const nextData = JSON.parse(match![1]);
     expect(nextData.isFallback).toBe(false);
   });
@@ -1527,9 +1458,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
   it("static page __NEXT_DATA__.page is the pathname", async () => {
     const res = await fetch(`${routerBaseUrl}/about`);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     const nextData = JSON.parse(match![1]);
     expect(nextData.page).toBe("/about");
   });
@@ -1538,9 +1467,7 @@ describe("router __NEXT_DATA__ correctness (Pages Router)", () => {
     const res = await fetch(`${routerBaseUrl}/shallow-test`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    const match = html.match(
-      /<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/,
-    );
+    const match = html.match(/<script>window\.__NEXT_DATA__\s*=\s*({.*?})<\/script>/);
     const nextData = JSON.parse(match![1]);
     expect(nextData.page).toBe("/shallow-test");
     expect(nextData.props.pageProps.gsspCallId).toBeGreaterThan(0);
