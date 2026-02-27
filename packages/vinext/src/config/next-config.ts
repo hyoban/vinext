@@ -198,8 +198,6 @@ export async function loadNextConfig(root: string): Promise<NextConfig | null> {
       const { runnerImport } = await import("vite");
       const { module } = await runnerImport(configPath, {
         root,
-        configFile: false,
-        envDir: false,
         logLevel: "error",
         clearScreen: false,
       });
