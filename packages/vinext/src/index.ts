@@ -673,7 +673,7 @@ ${generateSafeRegExpCode("es5")}
 ${generateMiddlewareMatcherCode("es5")}
 
 export async function runMiddleware(request) {
-  var middlewareFn = middlewareModule.default || middlewareModule.middleware;
+  var middlewareFn = middlewareModule.default || middlewareModule.proxy || middlewareModule.middleware;
   if (typeof middlewareFn !== "function") return { continue: true };
 
   var config = middlewareModule.config;
