@@ -535,6 +535,12 @@ vinext has peer dependencies on `react ^19.2.4`, `react-dom ^19.2.4`, and `vite 
 
 This project is experimental and under active development. Issues and PRs are welcome.
 
+### CI
+
+When you open a PR, CI (lint, typecheck, Vitest, Playwright E2E) runs automatically. First-time contributors need one manual approval from a maintainer, then subsequent PRs run without intervention.
+
+Deploy previews (building and deploying examples to Cloudflare Workers) only run for branches pushed to the main repo. If you're a Cloudflare employee, push your branch to the main repo instead of forking, and previews deploy automatically. For fork PRs, a maintainer can comment `/deploy-preview` to trigger the deploy and post preview URLs.
+
 ### Reporting bugs
 
 If something doesn't work with your Next.js app, please file an issue — we want to hear about it.

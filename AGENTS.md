@@ -215,6 +215,30 @@ If a Node built-in does the job, use it. Only reach for a dependency when the bu
   6. Merge via `gh pr merge --squash --delete-branch`
   7. If merge is blocked, check which status check failed and fix it — do not bypass with `--admin`
 
+### CI for External Contributors
+
+CI is split into safe checks (no secrets) and deploy previews (requires secrets). This lets external contributors get feedback on their PRs without exposing credentials.
+
+**Safe CI (`ci.yml`)** runs for all PRs after first-time contributor approval:
+- Lint, Typecheck, Vitest, Playwright E2E
+- Uses zero secrets and read-only permissions
+- First-time contributors need one manual approval, then subsequent PRs run automatically
+
+**Deploy previews (`deploy-examples.yml`)** run automatically only for same-repo branches:
+- The entire workflow is skipped for fork PRs via a job-level `if` condition
+- Cloudflare employees should push branches to the main repo (not fork), so previews deploy automatically
+- For fork PRs, a maintainer can comment `/deploy-preview` to trigger the deploy (see `deploy-preview-command.yml`)
+
+**`/deploy-preview` slash command** (`deploy-preview-command.yml`):
+- Triggered by commenting `/deploy-preview` on any PR
+- Restricted to org members, collaborators, and repo owners via `author_association`
+- Builds all examples, deploys previews, runs smoke tests, and posts preview URLs
+
+When modifying CI workflows, keep these rules in mind:
+- `ci.yml` must never use secrets. It runs untrusted code from forks.
+- `deploy-examples.yml` must skip entirely for fork PRs. Don't remove the job-level `if` guard.
+- The `/deploy-preview` slash command gates secret usage behind the `author_association` check.
+
 ---
 
 ## Architecture & Gotchas
