@@ -1434,6 +1434,145 @@ describe("middleware runner", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Middleware/proxy export validation tests
+// Ported from Next.js: test/e2e/app-dir/proxy-missing-export/proxy-missing-export.test.ts
+// https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/proxy-missing-export/proxy-missing-export.test.ts
+
+describe("middleware/proxy export validation", () => {
+  it("isProxyFile returns true for proxy files", async () => {
+    const { isProxyFile } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(isProxyFile("/app/proxy.ts")).toBe(true);
+    expect(isProxyFile("/app/proxy.js")).toBe(true);
+    expect(isProxyFile("/app/proxy.mjs")).toBe(true);
+    expect(isProxyFile("/app/src/proxy.ts")).toBe(true);
+  });
+
+  it("isProxyFile returns false for middleware files", async () => {
+    const { isProxyFile } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(isProxyFile("/app/middleware.ts")).toBe(false);
+    expect(isProxyFile("/app/middleware.js")).toBe(false);
+    expect(isProxyFile("/app/middleware.mjs")).toBe(false);
+    expect(isProxyFile("/app/src/middleware.ts")).toBe(false);
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts with named proxy export", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const fn = () => {};
+    const handler = resolveMiddlewareHandler({ proxy: fn }, "/app/proxy.ts");
+    expect(handler).toBe(fn);
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts with default export", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const fn = () => {};
+    const handler = resolveMiddlewareHandler({ default: fn }, "/app/proxy.ts");
+    expect(handler).toBe(fn);
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts prefers named proxy over default", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const proxyFn = () => {};
+    const defaultFn = () => {};
+    const handler = resolveMiddlewareHandler(
+      { proxy: proxyFn, default: defaultFn },
+      "/app/proxy.ts",
+    );
+    expect(handler).toBe(proxyFn);
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts with default arrow function export", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const fn = () => {};
+    const handler = resolveMiddlewareHandler({ default: fn }, "/app/proxy.ts");
+    expect(handler).toBe(fn);
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts throws when only 'middleware' is exported (wrong name)", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({ middleware: () => {} }, "/app/proxy.ts"),
+    ).toThrow('must export a function named `proxy` or a `default` function');
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts throws when export is aliased to wrong name", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({ handler: () => {} }, "/app/proxy.ts"),
+    ).toThrow('must export a function named `proxy` or a `default` function');
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts throws when no exports", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({}, "/app/proxy.ts"),
+    ).toThrow('must export a function named `proxy` or a `default` function');
+  });
+
+  it("resolveMiddlewareHandler: proxy.ts throws when export is not a function", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({ proxy: "not a function" }, "/app/proxy.ts"),
+    ).toThrow('must export a function named `proxy` or a `default` function');
+  });
+
+  it("resolveMiddlewareHandler: middleware.ts with named middleware export", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const fn = () => {};
+    const handler = resolveMiddlewareHandler({ middleware: fn }, "/app/middleware.ts");
+    expect(handler).toBe(fn);
+  });
+
+  it("resolveMiddlewareHandler: middleware.ts with default export", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    const fn = () => {};
+    const handler = resolveMiddlewareHandler({ default: fn }, "/app/middleware.ts");
+    expect(handler).toBe(fn);
+  });
+
+  it("resolveMiddlewareHandler: middleware.ts throws when only 'proxy' is exported (wrong name)", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({ proxy: () => {} }, "/app/middleware.ts"),
+    ).toThrow('must export a function named `middleware` or a `default` function');
+  });
+
+  it("resolveMiddlewareHandler: middleware.ts throws when no exports", async () => {
+    const { resolveMiddlewareHandler } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+    expect(() =>
+      resolveMiddlewareHandler({}, "/app/middleware.ts"),
+    ).toThrow('must export a function named `middleware` or a `default` function');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // matchPattern / matchesMiddleware unit tests
 
 describe("middleware matcher patterns", () => {
@@ -2013,6 +2152,30 @@ describe("double-encoded path handling in middleware", () => {
     expect(mwPathname).not.toBe("/%2564ashboard");
     // It must NOT be double-decoded to /dashboard
     expect(mwPathname).not.toBe("/dashboard");
+  });
+
+  it("runMiddleware accepts named proxy export", async () => {
+    const { runMiddleware } = await import(
+      "../packages/vinext/src/server/middleware.js"
+    );
+
+    const mockServer = {
+      ssrLoadModule: async () => ({
+        proxy: () => {
+          const response = new Response(null, { status: 307 });
+          response.headers.set("location", "/login");
+          return response;
+        },
+        config: { matcher: ["/protected"] },
+      }),
+    };
+
+    const request = new Request("http://localhost/protected");
+    const result = await runMiddleware(mockServer as any, "/tmp/proxy.js", request);
+
+    expect(result.continue).toBe(false);
+    expect(result.redirectUrl).toContain("/login");
+    expect(result.redirectStatus).toBe(307);
   });
 
   it("app-router-entry.ts does not double-decode (delegates to RSC handler)", async () => {
@@ -3177,6 +3340,91 @@ describe("checkHasConditions", () => {
       undefined,
       ctx,
     )).toBe(false);
+  });
+});
+
+describe("matchHeaders", () => {
+  function makeCtx(overrides: Partial<{
+    headers: Record<string, string>;
+    cookies: Record<string, string>;
+    query: Record<string, string>;
+    host: string;
+  }> = {}) {
+    const headers = new Headers(overrides.headers ?? {});
+    if (overrides.cookies) {
+      headers.set("cookie", Object.entries(overrides.cookies).map(([k, v]) => `${k}=${v}`).join("; "));
+    }
+    const query = new URLSearchParams(overrides.query ?? {});
+    return {
+      headers,
+      cookies: overrides.cookies ?? {},
+      query,
+      host: overrides.host ?? "localhost",
+    };
+  }
+
+  it("applies headers when has header condition is satisfied", async () => {
+    const { matchHeaders } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const rules: any[] = [
+      {
+        source: "/about",
+        has: [{ type: "header", key: "x-user-tier", value: "pro" }],
+        headers: [{ key: "x-conditional-header", value: "enabled" }],
+      },
+    ];
+
+    const matched = matchHeaders("/about", rules, makeCtx({ headers: { "x-user-tier": "pro" } }));
+    expect(matched).toEqual([{ key: "x-conditional-header", value: "enabled" }]);
+  });
+
+  it("does not apply headers when missing cookie condition fails", async () => {
+    const { matchHeaders } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const rules: any[] = [
+      {
+        source: "/about",
+        missing: [{ type: "cookie", key: "no-config-header" }],
+        headers: [{ key: "x-conditional-header", value: "enabled" }],
+      },
+    ];
+
+    const matched = matchHeaders("/about", rules, makeCtx({ cookies: { "no-config-header": "1" } }));
+    expect(matched).toEqual([]);
+  });
+
+  it("applies headers when has query condition is satisfied", async () => {
+    const { matchHeaders } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const rules: any[] = [
+      {
+        source: "/about",
+        has: [{ type: "query", key: "preview", value: "1" }],
+        headers: [{ key: "x-preview-header", value: "true" }],
+      },
+    ];
+
+    const matched = matchHeaders("/about", rules, makeCtx({ query: { preview: "1" } }));
+    expect(matched).toEqual([{ key: "x-preview-header", value: "true" }]);
+  });
+
+  it("keeps backward-compatible behavior when ctx is omitted", async () => {
+    const { matchHeaders } = await import(
+      "../packages/vinext/src/config/config-matchers.js"
+    );
+    const rules: any[] = [
+      {
+        source: "/about",
+        has: [{ type: "header", key: "x-user-tier", value: "pro" }],
+        headers: [{ key: "x-conditional-header", value: "enabled" }],
+      },
+    ];
+
+    const matched = matchHeaders("/about", rules);
+    expect(matched).toEqual([{ key: "x-conditional-header", value: "enabled" }]);
   });
 });
 

@@ -15,14 +15,24 @@ import {
   type ResolvedNextConfig,
   type NextRedirect,
   type NextRewrite,
+  type NextHeader,
 } from "./config/next-config.js";
 
-import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
+import { findMiddlewareFile, isProxyFile, runMiddleware } from "./server/middleware.js";
 import { generateSafeRegExpCode, generateMiddlewareMatcherCode, generateNormalizePathCode } from "./server/middleware-codegen.js";
 import { normalizePath } from "./server/normalize-path.js";
 import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
-import { safeRegExp, escapeHeaderSource, isExternalUrl, proxyExternalRequest } from "./config/config-matchers.js";
+import {
+  safeRegExp,
+  isExternalUrl,
+  proxyExternalRequest,
+  parseCookies,
+  matchHeaders,
+  matchRedirect,
+  matchRewrite,
+  type RequestContext,
+} from "./config/config-matchers.js";
 import { scanMetadataFiles } from "./server/metadata-routes.js";
 import { staticExportPages } from "./build/static-export.js";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -31,6 +41,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
+import commonjs from "vite-plugin-commonjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -662,8 +673,15 @@ ${generateSafeRegExpCode("es5")}
 ${generateMiddlewareMatcherCode("es5")}
 
 export async function runMiddleware(request) {
-  var middlewareFn = middlewareModule.default || middlewareModule.middleware;
-  if (typeof middlewareFn !== "function") return { continue: true };
+  var isProxy = ${middlewarePath ? JSON.stringify(isProxyFile(middlewarePath)) : "false"};
+  var middlewareFn = isProxy
+    ? (middlewareModule.proxy ?? middlewareModule.default)
+    : (middlewareModule.middleware ?? middlewareModule.default);
+  if (typeof middlewareFn !== "function") {
+    var fileType = isProxy ? "Proxy" : "Middleware";
+    var expectedExport = isProxy ? "proxy" : "middleware";
+    throw new Error("The " + fileType + " file must export a function named \`" + expectedExport + "\` or a \`default\` function.");
+  }
 
   var config = middlewareModule.config;
   var matcher = config && config.matcher;
@@ -700,9 +718,13 @@ export async function runMiddleware(request) {
   if (response.headers.get("x-middleware-next") === "1") {
     var rHeaders = new Headers();
     for (var [key, value] of response.headers) {
-      // Strip ALL x-middleware-* headers — they are internal routing signals
-      // and must never reach clients.
-      if (!key.startsWith("x-middleware-")) rHeaders.set(key, value);
+      // Keep x-middleware-request-* headers so the production server can
+      // apply middleware-request header overrides before stripping internals
+      // from the final client response.
+      if (
+        !key.startsWith("x-middleware-") ||
+        key.startsWith("x-middleware-request-")
+      ) rHeaders.append(key, value);
     }
     return { continue: true, responseHeaders: rHeaders };
   }
@@ -715,7 +737,9 @@ export async function runMiddleware(request) {
   var rewriteUrl = response.headers.get("x-middleware-rewrite");
   if (rewriteUrl) {
     var rwHeaders = new Headers();
-    for (var [k, v] of response.headers) { if (!k.startsWith("x-middleware-")) rwHeaders.set(k, v); }
+    for (var [k, v] of response.headers) {
+      if (!k.startsWith("x-middleware-") || k.startsWith("x-middleware-request-")) rwHeaders.append(k, v);
+    }
     var rewritePath;
     try { var parsed = new URL(rewriteUrl, request.url); rewritePath = parsed.pathname + parsed.search; }
     catch { rewritePath = rewriteUrl; }
@@ -1641,6 +1665,9 @@ hydrate();
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
     tsconfigPaths(),
+    // Transform CJS require()/module.exports to ESM before other plugins
+    // analyze imports (RSC directive scanning, shim resolution, etc.)
+    commonjs(),
     {
       name: "vinext:config",
       enforce: "pre",
@@ -2002,11 +2029,15 @@ hydrate();
             client: {
               optimizeDeps: {
                 exclude: ["vinext"],
-                // react and react-dom are framework dependencies used for
-                // hydration. They aren't crawled from app/ source files so
-                // must be pre-included to prevent late discovery and page
-                // reloads during development.
-                include: ["react", "react-dom", "react-dom/client"],
+                // React packages aren't crawled from app/ source files,
+                // so must be pre-included to avoid late discovery (#25).
+                include: [
+                  "react",
+                  "react-dom",
+                  "react-dom/client",
+                  "react/jsx-runtime",
+                  "react/jsx-dev-runtime",
+                ],
               },
               build: {
                 // When targeting Cloudflare Workers, enable manifest generation
@@ -2438,7 +2469,7 @@ hydrate();
                   if (result.response) {
                     res.statusCode = result.response.status;
                     for (const [key, value] of result.response.headers) {
-                      res.setHeader(key, value);
+                      res.appendHeader(key, value);
                     }
                     const body = await result.response.text();
                     res.end(body);
@@ -2449,7 +2480,7 @@ hydrate();
                 // Apply middleware response headers
                 if (result.responseHeaders) {
                   for (const [key, value] of result.responseHeaders) {
-                    res.setHeader(key, value);
+                    res.appendHeader(key, value);
                   }
                 }
 
@@ -2462,9 +2493,26 @@ hydrate();
                 }
               }
 
+              // Build request context once for has/missing condition checks
+              // across headers, redirects, and rewrites.
+              const reqUrl = new URL(url, `http://${req.headers.host || "localhost"}`);
+              const reqCtxHeaders = new Headers(
+                Object.fromEntries(
+                  Object.entries(req.headers)
+                    .filter(([, v]) => v !== undefined)
+                    .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)])
+                ),
+              );
+              const reqCtx: RequestContext = {
+                headers: reqCtxHeaders,
+                cookies: parseCookies(reqCtxHeaders.get("cookie")),
+                query: reqUrl.searchParams,
+                host: reqCtxHeaders.get("host") ?? reqUrl.host,
+              };
+
               // Apply custom headers from next.config.js
               if (nextConfig?.headers.length) {
-                applyHeaders(pathname, res, nextConfig.headers);
+                applyHeaders(pathname, res, nextConfig.headers, reqCtx);
               }
 
               // Apply redirects from next.config.js
@@ -2473,6 +2521,7 @@ hydrate();
                   pathname,
                   res,
                   nextConfig.redirects,
+                  reqCtx,
                 );
                 if (redirected) return;
               }
@@ -2481,7 +2530,7 @@ hydrate();
               let resolvedUrl = url;
               if (nextConfig?.rewrites.beforeFiles.length) {
                 resolvedUrl =
-                  applyRewrites(pathname, nextConfig.rewrites.beforeFiles) ??
+                  applyRewrites(pathname, nextConfig.rewrites.beforeFiles, reqCtx) ??
                   url;
               }
 
@@ -2522,6 +2571,7 @@ hydrate();
                 const afterRewrite = applyRewrites(
                   resolvedUrl.split("?")[0],
                   nextConfig.rewrites.afterFiles,
+                  reqCtx,
                 );
                 if (afterRewrite) resolvedUrl = afterRewrite;
               }
@@ -2547,6 +2597,7 @@ hydrate();
                 const fallbackRewrite = applyRewrites(
                   resolvedUrl.split("?")[0],
                   nextConfig.rewrites.fallback,
+                  reqCtx,
                 );
                 if (fallbackRewrite) {
                   // External fallback rewrite — proxy to external URL
@@ -3392,22 +3443,15 @@ function applyRedirects(
   pathname: string,
   res: any,
   redirects: NextRedirect[],
+  ctx?: RequestContext,
 ): boolean {
-  for (const redirect of redirects) {
-    const params = matchConfigPattern(pathname, redirect.source);
-    if (params) {
-      let dest = redirect.destination;
-      for (const [key, value] of Object.entries(params)) {
-        dest = dest.replace(`:${key}*`, value);
-        dest = dest.replace(`:${key}+`, value);
-        dest = dest.replace(`:${key}`, value);
-      }
-      // Sanitize to prevent open redirect via protocol-relative URLs
-      dest = sanitizeDestinationLocal(dest);
-      res.writeHead(redirect.permanent ? 308 : 307, { Location: dest });
-      res.end();
-      return true;
-    }
+  const result = matchRedirect(pathname, redirects, ctx);
+  if (result) {
+    // Sanitize to prevent open redirect via protocol-relative URLs
+    const dest = sanitizeDestinationLocal(result.destination);
+    res.writeHead(result.permanent ? 308 : 307, { Location: dest });
+    res.end();
+    return true;
   }
   return false;
 }
@@ -3484,20 +3528,12 @@ async function proxyExternalRewriteNode(
 function applyRewrites(
   pathname: string,
   rewrites: NextRewrite[],
+  ctx?: RequestContext,
 ): string | null {
-  for (const rewrite of rewrites) {
-    const params = matchConfigPattern(pathname, rewrite.source);
-    if (params) {
-      let dest = rewrite.destination;
-      for (const [key, value] of Object.entries(params)) {
-        dest = dest.replace(`:${key}*`, value);
-        dest = dest.replace(`:${key}+`, value);
-        dest = dest.replace(`:${key}`, value);
-      }
-      // Sanitize to prevent open redirect via protocol-relative URLs
-      dest = sanitizeDestinationLocal(dest);
-      return dest;
-    }
+  const dest = matchRewrite(pathname, rewrites, ctx);
+  if (dest) {
+    // Sanitize to prevent open redirect via protocol-relative URLs
+    return sanitizeDestinationLocal(dest);
   }
   return null;
 }
@@ -3508,16 +3544,12 @@ function applyRewrites(
 function applyHeaders(
   pathname: string,
   res: any,
-  headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>,
+  headers: NextHeader[],
+  ctx?: RequestContext,
 ): void {
-  for (const rule of headers) {
-    const escaped = escapeHeaderSource(rule.source);
-    const sourceRegex = safeRegExp("^" + escaped + "$");
-    if (sourceRegex && sourceRegex.test(pathname)) {
-      for (const header of rule.headers) {
-        res.setHeader(header.key, header.value);
-      }
-    }
+  const matched = matchHeaders(pathname, headers, ctx);
+  for (const header of matched) {
+    res.setHeader(header.key, header.value);
   }
 }
 
