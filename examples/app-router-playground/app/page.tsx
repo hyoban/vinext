@@ -1,7 +1,7 @@
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { LinkStatus } from '#/ui/link-status';
-import Link from 'next/link';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { LinkStatus } from "#/ui/link-status";
+import Link from "next/link";
 
 export default function Page() {
   const demos = db.demo.findMany();

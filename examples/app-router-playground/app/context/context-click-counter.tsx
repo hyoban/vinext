@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCounter } from './counter-context';
-import React from 'react';
-import { Boundary } from '#/ui/boundary';
+import { useCounter } from "./counter-context";
+import React from "react";
+import { Boundary } from "#/ui/boundary";
 
 const ContextClickCounter = () => {
   const [count, setCount] = useCounter();
@@ -29,7 +29,7 @@ export const Counter = () => {
 
   return (
     <Boundary
-      label={['Counter Context [Client Component]']}
+      label={["Counter Context [Client Component]"]}
       color="blue"
       size="small"
       animateRerendering={false}

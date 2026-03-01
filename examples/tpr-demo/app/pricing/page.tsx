@@ -8,9 +8,8 @@ export default function Pricing() {
       </Link>
       <h1>Pricing</h1>
       <p className="product-desc">
-        This is a static page in the TPR demo. Static pages like this one
-        are always pre-rendered because they consistently appear in the top
-        traffic data.
+        This is a static page in the TPR demo. Static pages like this one are always pre-rendered
+        because they consistently appear in the top traffic data.
       </p>
     </div>
   );

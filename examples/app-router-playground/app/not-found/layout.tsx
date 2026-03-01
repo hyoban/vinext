@@ -1,15 +1,15 @@
-'use cache';
+"use cache";
 
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tabs } from '#/ui/tabs';
-import { type Metadata } from 'next';
-import React from 'react';
-import Readme from './readme.mdx';
-import { Mdx } from '#/ui/codehike';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tabs } from "#/ui/tabs";
+import { type Metadata } from "next";
+import React from "react";
+import Readme from "./readme.mdx";
+import { Mdx } from "#/ui/codehike";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const demo = db.demo.find({ where: { slug: 'not-found' } });
+  const demo = db.demo.find({ where: { slug: "not-found" } });
 
   return {
     title: demo.name,
@@ -17,12 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const demo = db.demo.find({ where: { slug: 'not-found' } });
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const demo = db.demo.find({ where: { slug: "not-found" } });
   const sections = db.section.findMany({ limit: 1 });
 
   return (
@@ -40,9 +36,9 @@ export default async function Layout({
         <Tabs
           basePath={`/${demo.slug}`}
           items={[
-            { text: 'Home' },
+            { text: "Home" },
             ...sections.map((x) => ({ text: x.name, slug: x.slug })),
-            { text: 'Does Not Exist', slug: 'does-not-exist' },
+            { text: "Does Not Exist", slug: "does-not-exist" },
           ]}
         />
 

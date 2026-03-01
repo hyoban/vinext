@@ -1,15 +1,9 @@
-import { Boundary } from '#/ui/boundary';
+import { Boundary } from "#/ui/boundary";
 
 export default function Page() {
   return (
-    <Boundary
-      label="@audience/demographics/page.tsx"
-      size="small"
-      className="flex flex-col gap-4"
-    >
-      <h1 className="font-semibold text-gray-300">
-        Audience demographics stats
-      </h1>
+    <Boundary label="@audience/demographics/page.tsx" size="small" className="flex flex-col gap-4">
+      <h1 className="font-semibold text-gray-300">Audience demographics stats</h1>
 
       <div className="flex flex-col gap-2">
         <div className="h-2 w-4/5 rounded-full bg-gray-800" />

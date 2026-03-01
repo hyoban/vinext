@@ -1,7 +1,7 @@
-import db from '#/lib/db';
-import { Grid } from '#/ui/codehike';
+import db from "#/lib/db";
+import { Grid } from "#/ui/codehike";
 
-export const demo = db.demo.find({ where: { slug: 'cached-routes' } });
+export const demo = db.demo.find({ where: { slug: "cached-routes" } });
 
 # {demo.name}
 
@@ -15,7 +15,7 @@ Mark a route segment as _cacheable_ by adding the `use cache` directive to the t
 
 ```tsx app/page.tsx
 // !mark
-'use cache';
+"use cache";
 
 export default async function Page() {
   // ...
@@ -93,7 +93,7 @@ export default async function Page() {
 - An artificial one second delay is added to the `page.tsx` to make the difference more obvious.
 
   ```tsx app/page.tsx
-  'use cache';
+  "use cache";
 
   export default async function Page() {
     // !mark

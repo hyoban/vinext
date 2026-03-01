@@ -9,8 +9,12 @@ export default function HomePage() {
       <Counter />
       <nav>
         <ul>
-          <li><a href="/about">About</a></li>
-          <li><a href="/api/hello">API Route</a></li>
+          <li>
+            <a href="/about">About</a>
+          </li>
+          <li>
+            <a href="/api/hello">API Route</a>
+          </li>
         </ul>
       </nav>
     </main>

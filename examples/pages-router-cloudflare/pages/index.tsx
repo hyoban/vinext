@@ -27,7 +27,8 @@ export default function Home({ timestamp }: HomeProps) {
       <p>Rendered at: {timestamp}</p>
       <Counter />
       <nav>
-        <Link href="/about">About</Link>{" | "}
+        <Link href="/about">About</Link>
+        {" | "}
         <Link href="/ssr">SSR Page</Link>
       </nav>
     </>

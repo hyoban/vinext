@@ -143,8 +143,8 @@ export function safeRegExp(pattern: string, flags?: string): RegExp | null {
   if (!isSafeRegex(pattern)) {
     console.warn(
       `[vinext] Ignoring potentially unsafe regex pattern (ReDoS risk): ${pattern}\n` +
-      `  Patterns with nested quantifiers (e.g. (a+)+) can cause catastrophic backtracking.\n` +
-      `  Simplify the pattern to avoid nested repetition.`,
+        `  Patterns with nested quantifiers (e.g. (a+)+) can cause catastrophic backtracking.\n` +
+        `  Simplify the pattern to avoid nested repetition.`,
     );
     return null;
   }
@@ -206,11 +206,21 @@ export function escapeHeaderSource(source: string): string {
       }
     } else {
       switch (m[0]) {
-        case ".": result += "\\."; break;
-        case "+": result += "\\+"; break;
-        case "?": result += "\\?"; break;
-        case "*": result += ".*"; break;
-        default: result += m[0]; break;
+        case ".":
+          result += "\\.";
+          break;
+        case "+":
+          result += "\\+";
+          break;
+        case "?":
+          result += "\\?";
+          break;
+        case "*":
+          result += ".*";
+          break;
+        default:
+          result += m[0];
+          break;
       }
     }
   }
@@ -372,11 +382,7 @@ export function matchConfigPattern(
   // followed by a literal suffix (e.g. "/:path*.md"). Without this, the suffix
   // pattern falls through to the simple segment matcher which incorrectly treats
   // the whole segment (":path*.md") as a named parameter and matches everything.
-  if (
-    pattern.includes("(") ||
-    pattern.includes("\\") ||
-    /:[\w-]+[*+][^/]/.test(pattern)
-  ) {
+  if (pattern.includes("(") || pattern.includes("\\") || /:[\w-]+[*+][^/]/.test(pattern)) {
     try {
       // Param names may contain hyphens (e.g. :auth-method, :sign-in).
       const paramNames: string[] = [];

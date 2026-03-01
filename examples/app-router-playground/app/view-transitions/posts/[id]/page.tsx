@@ -1,17 +1,17 @@
-'use cache';
+"use cache";
 
-import db from '#/lib/db';
+import db from "#/lib/db";
 import {
   HorizontalTransition,
   SharedTransition,
   TransitionButtonLink,
   TransitionLink,
-} from '#/app/view-transitions/_ui/transitions';
-import { Boundary } from '#/ui/boundary';
-import { SkeletonText } from '#/ui/skeleton';
-import { ChevronLeftIcon } from '@heroicons/react/24/solid';
-import Image from 'next/image';
-import { notFound } from 'next/navigation';
+} from "#/app/view-transitions/_ui/transitions";
+import { Boundary } from "#/ui/boundary";
+import { SkeletonText } from "#/ui/skeleton";
+import { ChevronLeftIcon } from "@heroicons/react/24/solid";
+import Image from "next/image";
+import { notFound } from "next/navigation";
 
 export async function generateStaticParams() {
   const products = db.product.findMany();
@@ -19,36 +19,32 @@ export async function generateStaticParams() {
   return products.map((product) => ({ id: product.id }));
 }
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const product = db.product.find({ where: { id } });
   if (!product) {
     notFound();
   }
 
-  const demo = db.demo.find({ where: { slug: 'view-transitions' } });
+  const demo = db.demo.find({ where: { slug: "view-transitions" } });
   const prevProduct = `/${demo.slug}/posts/${product.prev}`;
   const nextProduct = `/${demo.slug}/posts/${product.next}`;
 
   return (
     <HorizontalTransition
       enter={{
-        default: 'none',
-        'transition-to-list': 'animate-slide-from-left',
-        'transition-to-detail': 'animate-slide-from-right',
-        'transition-backwards': 'animate-slide-from-left',
-        'transition-forwards': 'animate-slide-from-right',
+        default: "none",
+        "transition-to-list": "animate-slide-from-left",
+        "transition-to-detail": "animate-slide-from-right",
+        "transition-backwards": "animate-slide-from-left",
+        "transition-forwards": "animate-slide-from-right",
       }}
       exit={{
-        default: 'none',
-        'transition-to-list': 'animate-slide-to-right',
-        'transition-to-detail': 'animate-slide-to-left',
-        'transition-backwards': 'animate-slide-to-right',
-        'transition-forwards': 'animate-slide-to-left',
+        default: "none",
+        "transition-to-list": "animate-slide-to-right",
+        "transition-to-detail": "animate-slide-to-left",
+        "transition-backwards": "animate-slide-to-right",
+        "transition-forwards": "animate-slide-to-left",
       }}
     >
       <Boundary label="posts/[id]/page.tsx" animateRerendering={true}>
@@ -61,9 +57,9 @@ export default async function Page({
             <SharedTransition
               name="navigation-icon"
               share={{
-                default: 'auto',
-                'transition-to-list': 'animate-morph',
-                'transition-to-detail': 'animate-morph',
+                default: "auto",
+                "transition-to-list": "animate-morph",
+                "transition-to-detail": "animate-morph",
               }}
             >
               <ChevronLeftIcon className="size-6 text-gray-600" />
@@ -72,9 +68,9 @@ export default async function Page({
             <SharedTransition
               name="navigation-title"
               share={{
-                default: 'auto',
-                'transition-to-list': 'animate-morph',
-                'transition-to-detail': 'animate-morph',
+                default: "auto",
+                "transition-to-list": "animate-morph",
+                "transition-to-detail": "animate-morph",
               }}
             >
               <div>Shop</div>
@@ -85,9 +81,9 @@ export default async function Page({
             <SharedTransition
               name={`product-${product.id}`}
               share={{
-                default: 'auto',
-                'transition-to-list': 'animate-morph',
-                'transition-to-detail': 'animate-morph',
+                default: "auto",
+                "transition-to-list": "animate-morph",
+                "transition-to-detail": "animate-morph",
               }}
             >
               <ProductImage src={product.image} alt={product.name} />
@@ -98,16 +94,10 @@ export default async function Page({
 
           <SharedTransition name="navigation-pagination">
             <div className="flex justify-between gap-4">
-              <TransitionButtonLink
-                href={prevProduct}
-                type="transition-backwards"
-              >
+              <TransitionButtonLink href={prevProduct} type="transition-backwards">
                 Previous
               </TransitionButtonLink>
-              <TransitionButtonLink
-                href={nextProduct}
-                type="transition-forwards"
-              >
+              <TransitionButtonLink href={nextProduct} type="transition-forwards">
                 Next
               </TransitionButtonLink>
             </div>

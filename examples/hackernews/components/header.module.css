@@ -65,7 +65,7 @@ a.login {
 }
 
 .nav-ul li:not(:last-child):after {
-  content: ' | ';
+  content: " | ";
   padding-right: 4px;
 }
 

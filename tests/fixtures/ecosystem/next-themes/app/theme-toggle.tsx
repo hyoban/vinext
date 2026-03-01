@@ -17,22 +17,13 @@ export function ThemeToggle() {
     <div>
       <p data-testid="current-theme">Current theme: {theme}</p>
       <p data-testid="resolved-theme">Resolved theme: {resolvedTheme}</p>
-      <button
-        data-testid="toggle-light"
-        onClick={() => setTheme("light")}
-      >
+      <button data-testid="toggle-light" onClick={() => setTheme("light")}>
         Light
       </button>
-      <button
-        data-testid="toggle-dark"
-        onClick={() => setTheme("dark")}
-      >
+      <button data-testid="toggle-dark" onClick={() => setTheme("dark")}>
         Dark
       </button>
-      <button
-        data-testid="toggle-system"
-        onClick={() => setTheme("system")}
-      >
+      <button data-testid="toggle-system" onClick={() => setTheme("system")}>
         System
       </button>
     </div>

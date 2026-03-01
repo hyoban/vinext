@@ -20,7 +20,12 @@ import {
 } from "vinext/config/config-matchers";
 
 // @ts-expect-error -- virtual module resolved by vinext at build time
-import { renderPage, handleApiRoute, runMiddleware, vinextConfig } from "virtual:vinext-server-entry";
+import {
+  renderPage,
+  handleApiRoute,
+  runMiddleware,
+  vinextConfig,
+} from "virtual:vinext-server-entry";
 
 // Extract config values (embedded at build time in the server entry)
 const basePath: string = vinextConfig?.basePath ?? "";
@@ -142,9 +147,10 @@ export default {
       if (configRedirects.length) {
         const redirect = matchRedirect(resolvedPathname, configRedirects, reqCtx);
         if (redirect) {
-          const dest = basePath && !redirect.destination.startsWith(basePath)
-            ? basePath + redirect.destination
-            : redirect.destination;
+          const dest =
+            basePath && !redirect.destination.startsWith(basePath)
+              ? basePath + redirect.destination
+              : redirect.destination;
           return new Response(null, {
             status: redirect.permanent ? 308 : 307,
             headers: { Location: dest },
@@ -166,9 +172,10 @@ export default {
 
       // API routes
       if (resolvedPathname.startsWith("/api/") || resolvedPathname === "/api") {
-        const response = typeof handleApiRoute === "function"
-          ? await handleApiRoute(request, resolvedUrl)
-          : new Response("404 - API route not found", { status: 404 });
+        const response =
+          typeof handleApiRoute === "function"
+            ? await handleApiRoute(request, resolvedUrl)
+            : new Response("404 - API route not found", { status: 404 });
         return mergeHeaders(response, middlewareHeaders, middlewareRewriteStatus);
       }
 
@@ -224,7 +231,9 @@ function mergeHeaders(
 ): Response {
   if (!Object.keys(extraHeaders).length && !statusOverride) return response;
   const merged: Record<string, string> = { ...extraHeaders };
-  response.headers.forEach((v, k) => { merged[k] = v; });
+  response.headers.forEach((v, k) => {
+    merged[k] = v;
+  });
   return new Response(response.body, {
     status: statusOverride ?? response.status,
     statusText: response.statusText,

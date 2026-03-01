@@ -18,13 +18,7 @@ import { getLayoutSegmentContext } from "next/navigation";
  * Each layout in the App Router tree wraps its children with this provider,
  * passing the number of URL segments consumed up to that layout's level.
  */
-export function LayoutSegmentProvider({
-  depth,
-  children,
-}: {
-  depth: number;
-  children: ReactNode;
-}) {
+export function LayoutSegmentProvider({ depth, children }: { depth: number; children: ReactNode }) {
   const ctx = getLayoutSegmentContext();
   if (!ctx) {
     // Fallback: no context available (shouldn't happen in SSR/Browser)

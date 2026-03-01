@@ -167,9 +167,7 @@ function LatestResultsTable({ commit }: { commit: BenchmarkCommit }) {
                 <div className="flex items-center gap-2">
                   <span>{formatMs(metrics.buildTimeMean)}</span>
                   {key !== "nextjs" && nextjs && (
-                    <ComparisonBadge
-                      label={speedup(nextjs.buildTimeMean, metrics.buildTimeMean)}
-                    />
+                    <ComparisonBadge label={speedup(nextjs.buildTimeMean, metrics.buildTimeMean)} />
                   )}
                 </div>
               </Table.Cell>
@@ -194,9 +192,7 @@ function LatestResultsTable({ commit }: { commit: BenchmarkCommit }) {
                 </div>
               </Table.Cell>
               <Table.Cell>
-                {metrics.devPeakRssKb
-                  ? `${Math.round(metrics.devPeakRssKb / 1024)} MB`
-                  : "-"}
+                {metrics.devPeakRssKb ? `${Math.round(metrics.devPeakRssKb / 1024)} MB` : "-"}
               </Table.Cell>
             </Table.Row>
           ))}
@@ -208,22 +204,12 @@ function LatestResultsTable({ commit }: { commit: BenchmarkCommit }) {
 
 function ComparisonBadge({ label }: { label: string | null }) {
   if (!label) return null;
-  return (
-    <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
-      {label}
-    </Badge>
-  );
+  return <Badge variant={isImprovement(label) ? "primary" : "destructive"}>{label}</Badge>;
 }
 
 // ─── Metric Chart ────────────────────────────────────────────────────────────
 
-function MetricChart({
-  data,
-  metric,
-}: {
-  data: BenchmarkCommit[];
-  metric: MetricTab;
-}) {
+function MetricChart({ data, metric }: { data: BenchmarkCommit[]; metric: MetricTab }) {
   const runners = Object.keys(RUNNER_LABELS);
 
   // Shared x-axis labels — one per commit, in chronological order
@@ -243,17 +229,10 @@ function MetricChart({
     }),
   }));
 
-  const yLabel =
-    metric === "build_time"
-      ? "ms"
-      : metric === "bundle_size"
-        ? "bytes"
-        : "ms";
+  const yLabel = metric === "build_time" ? "ms" : metric === "bundle_size" ? "bytes" : "ms";
 
   const formatY =
-    metric === "bundle_size"
-      ? (v: number) => formatBytes(v)
-      : (v: number) => formatMs(v);
+    metric === "bundle_size" ? (v: number) => formatBytes(v) : (v: number) => formatMs(v);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">

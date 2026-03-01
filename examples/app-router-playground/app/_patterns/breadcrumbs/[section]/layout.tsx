@@ -1,6 +1,6 @@
-import db from '#/lib/db';
-import { Tabs } from '#/ui/tabs';
-import { notFound } from 'next/navigation';
+import db from "#/lib/db";
+import { Tabs } from "#/ui/tabs";
+import { notFound } from "next/navigation";
 
 export default async function Layout({
   children,
@@ -22,10 +22,7 @@ export default async function Layout({
       <div className="flex justify-between">
         <Tabs
           basePath={`/patterns/breadcrumbs/${section.slug}`}
-          items={[
-            { text: 'All' },
-            ...categories.map((x) => ({ text: x.name, slug: x.slug })),
-          ]}
+          items={[{ text: "All" }, ...categories.map((x) => ({ text: x.name, slug: x.slug }))]}
         />
       </div>
 

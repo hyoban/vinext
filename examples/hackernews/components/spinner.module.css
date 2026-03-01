@@ -7,7 +7,7 @@
 }
 
 .spinner:before {
-  content: '';
+  content: "";
   display: block;
   width: 4px;
   height: 4px;
@@ -16,8 +16,17 @@
   border-radius: 50%;
   background: #888;
   color: #ccc;
-  box-shadow: 6px 1.61px, 10.39px 6px, 12px 12px, 10.39px 18px, 6px 22.39px,
-    0 24px, -6px 1.61px #999, -10.39px 6px #aaa, -12px 12px #bbb, -10.39px 18px,
+  box-shadow:
+    6px 1.61px,
+    10.39px 6px,
+    12px 12px,
+    10.39px 18px,
+    6px 22.39px,
+    0 24px,
+    -6px 1.61px #999,
+    -10.39px 6px #aaa,
+    -12px 12px #bbb,
+    -10.39px 18px,
     -6px 22.39px;
 }
 

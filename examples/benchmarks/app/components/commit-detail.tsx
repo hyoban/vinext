@@ -45,7 +45,8 @@ export function CommitDetail({ sha }: { sha: string }) {
   useEffect(() => {
     fetch(`/api/commit/${sha}`)
       .then((res) => {
-        if (!res.ok) throw new Error(res.status === 404 ? "Commit not found" : `HTTP ${res.status}`);
+        if (!res.ok)
+          throw new Error(res.status === 404 ? "Commit not found" : `HTTP ${res.status}`);
         return res.json();
       })
       .then((d) => {
@@ -130,14 +131,18 @@ export function CommitDetail({ sha }: { sha: string }) {
                 <Table.Cell>
                   {r.runner === "nextjs" ? (
                     <span className="text-gray-400">baseline</span>
-                  ) : (() => {
-                    const label = speedup(nextjs?.build_time_mean ?? null, r.build_time_mean);
-                    return label ? (
-                      <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
-                        {label}
-                      </Badge>
-                    ) : "-";
-                  })()}
+                  ) : (
+                    (() => {
+                      const label = speedup(nextjs?.build_time_mean ?? null, r.build_time_mean);
+                      return label ? (
+                        <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
+                          {label}
+                        </Badge>
+                      ) : (
+                        "-"
+                      );
+                    })()
+                  )}
                 </Table.Cell>
               </Table.Row>
             ))}
@@ -169,14 +174,21 @@ export function CommitDetail({ sha }: { sha: string }) {
                 <Table.Cell>
                   {r.runner === "nextjs" ? (
                     <span className="text-gray-400">baseline</span>
-                  ) : (() => {
-                    const label = sizeReduction(nextjs?.bundle_size_gzip ?? null, r.bundle_size_gzip);
-                    return label ? (
-                      <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
-                        {label}
-                      </Badge>
-                    ) : "-";
-                  })()}
+                  ) : (
+                    (() => {
+                      const label = sizeReduction(
+                        nextjs?.bundle_size_gzip ?? null,
+                        r.bundle_size_gzip,
+                      );
+                      return label ? (
+                        <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
+                          {label}
+                        </Badge>
+                      ) : (
+                        "-"
+                      );
+                    })()
+                  )}
                 </Table.Cell>
               </Table.Row>
             ))}
@@ -208,14 +220,18 @@ export function CommitDetail({ sha }: { sha: string }) {
                 <Table.Cell>
                   {r.runner === "nextjs" ? (
                     <span className="text-gray-400">baseline</span>
-                  ) : (() => {
-                    const label = speedup(nextjs?.dev_cold_start_ms ?? null, r.dev_cold_start_ms);
-                    return label ? (
-                      <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
-                        {label}
-                      </Badge>
-                    ) : "-";
-                  })()}
+                  ) : (
+                    (() => {
+                      const label = speedup(nextjs?.dev_cold_start_ms ?? null, r.dev_cold_start_ms);
+                      return label ? (
+                        <Badge variant={isImprovement(label) ? "primary" : "destructive"}>
+                          {label}
+                        </Badge>
+                      ) : (
+                        "-"
+                      );
+                    })()
+                  )}
                 </Table.Cell>
               </Table.Row>
             ))}

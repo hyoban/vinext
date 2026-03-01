@@ -1,9 +1,9 @@
-'use cache';
+"use cache";
 
-import { notFound } from 'next/navigation';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tabs } from '#/ui/tabs';
+import { notFound } from "next/navigation";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tabs } from "#/ui/tabs";
 
 export default async function Layout({
   params,
@@ -18,7 +18,7 @@ export default async function Layout({
     notFound();
   }
 
-  const demo = db.demo.find({ where: { slug: 'not-found' } });
+  const demo = db.demo.find({ where: { slug: "not-found" } });
   const categories = db.category.findMany({ where: { section: section?.id } });
 
   return (
@@ -26,9 +26,9 @@ export default async function Layout({
       <Tabs
         basePath={`/${demo.slug}/${section.slug}`}
         items={[
-          { text: 'All' },
+          { text: "All" },
           ...categories.map((x) => ({ text: x.name, slug: x.slug })),
-          { text: 'Does Not Exist', slug: 'does-not-exist' },
+          { text: "Does Not Exist", slug: "does-not-exist" },
         ]}
       />
 

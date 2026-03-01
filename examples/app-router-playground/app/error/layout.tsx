@@ -1,13 +1,13 @@
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tabs } from '#/ui/tabs';
-import { type Metadata } from 'next';
-import React from 'react';
-import Readme from './readme.mdx';
-import { Mdx } from '#/ui/codehike';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tabs } from "#/ui/tabs";
+import { type Metadata } from "next";
+import React from "react";
+import Readme from "./readme.mdx";
+import { Mdx } from "#/ui/codehike";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const demo = db.demo.find({ where: { slug: 'error' } });
+  const demo = db.demo.find({ where: { slug: "error" } });
 
   return {
     title: demo.name,
@@ -15,12 +15,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const demo = db.demo.find({ where: { slug: 'error' } });
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  const demo = db.demo.find({ where: { slug: "error" } });
   const sections = db.section.findMany();
 
   return (
@@ -37,10 +33,7 @@ export default async function Layout({
       >
         <Tabs
           basePath={`/${demo.slug}`}
-          items={[
-            { text: 'Home' },
-            ...sections.map((x) => ({ text: x.name, slug: x.slug })),
-          ]}
+          items={[{ text: "Home" }, ...sections.map((x) => ({ text: x.name, slug: x.slug }))]}
         />
 
         {children}

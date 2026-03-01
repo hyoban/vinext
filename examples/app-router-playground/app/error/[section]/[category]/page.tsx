@@ -1,10 +1,10 @@
-'use cache';
+"use cache";
 
-import { notFound } from 'next/navigation';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { ProductCard } from '#/ui/product-card';
-import BuggyButton from '#/app/error/_ui/buggy-button';
+import { notFound } from "next/navigation";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { ProductCard } from "#/ui/product-card";
+import BuggyButton from "#/app/error/_ui/buggy-button";
 
 export async function generateStaticParams() {
   const categories = db.category.findMany();
@@ -29,10 +29,8 @@ export default async function Page({
       <div className="flex flex-col gap-4">
         <div className="flex justify-between">
           <h1 className="text-xl font-semibold text-gray-300">
-            All{' '}
-            <span className="font-mono tracking-tighter text-gray-600">
-              ({products.length})
-            </span>
+            All{" "}
+            <span className="font-mono tracking-tighter text-gray-600">({products.length})</span>
           </h1>
 
           <div className="flex">

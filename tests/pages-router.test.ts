@@ -503,8 +503,8 @@ describe("Pages Router integration", () => {
   it("blocks page requests with cross-origin Origin header", async () => {
     const res = await fetch(`${baseUrl}/`, {
       headers: {
-        "Origin": "https://evil.com",
-        "Host": new URL(baseUrl).host,
+        Origin: "https://evil.com",
+        Host: new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(403);
@@ -515,8 +515,8 @@ describe("Pages Router integration", () => {
   it("blocks API requests with cross-origin Origin header", async () => {
     const res = await fetch(`${baseUrl}/api/hello`, {
       headers: {
-        "Origin": "https://external.io",
-        "Host": new URL(baseUrl).host,
+        Origin: "https://external.io",
+        Host: new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(403);
@@ -528,16 +528,19 @@ describe("Pages Router integration", () => {
     const http = await import("node:http");
     const url = new URL(baseUrl);
     const status = await new Promise<number>((resolve, reject) => {
-      const req = http.request({
-        hostname: url.hostname,
-        port: url.port,
-        path: "/",
-        method: "GET",
-        headers: {
-          "sec-fetch-site": "cross-site",
-          "sec-fetch-mode": "no-cors",
+      const req = http.request(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: "/",
+          method: "GET",
+          headers: {
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-mode": "no-cors",
+          },
         },
-      }, (res) => resolve(res.statusCode ?? 0));
+        (res) => resolve(res.statusCode ?? 0),
+      );
       req.on("error", reject);
       req.end();
     });
@@ -547,8 +550,8 @@ describe("Pages Router integration", () => {
   it("allows page requests from localhost origin", async () => {
     const res = await fetch(`${baseUrl}/`, {
       headers: {
-        "Origin": baseUrl,
-        "Host": new URL(baseUrl).host,
+        Origin: baseUrl,
+        Host: new URL(baseUrl).host,
       },
     });
     expect(res.status).toBe(200);
@@ -601,7 +604,7 @@ describe("Virtual server entry generation", () => {
       expect(resolved).toBeTruthy();
       const loaded = await testServer.pluginContainer.load(resolved!.id);
       expect(loaded).toBeTruthy();
-      const code = typeof loaded === "string" ? loaded : (loaded as any)?.code ?? "";
+      const code = typeof loaded === "string" ? loaded : ((loaded as any)?.code ?? "");
 
       // Dynamic routes should use [param] format, not :param
       // The fixture has pages/posts/[id].tsx
@@ -993,7 +996,9 @@ export const config = { matcher: ["/protected"] };
       // Pipe Web Response back to Node.js res
       const body = await response.text();
       const resHeaders: Record<string, string> = {};
-      response.headers.forEach((v: string, k: string) => { resHeaders[k] = v; });
+      response.headers.forEach((v: string, k: string) => {
+        resHeaders[k] = v;
+      });
       res.writeHead(response.status, resHeaders);
       res.end(body);
     });
@@ -1104,7 +1109,9 @@ export const config = { matcher: ["/protected"] };
     expect(result.continue).toBe(true);
     expect(result.responseHeaders).toBeDefined();
     // x-middleware-request-* headers must be preserved (the fix)
-    expect(result.responseHeaders.get("x-middleware-request-x-custom-injected")).toBe("from-middleware");
+    expect(result.responseHeaders.get("x-middleware-request-x-custom-injected")).toBe(
+      "from-middleware",
+    );
     // Other x-middleware-* internal headers must be stripped
     expect(result.responseHeaders.get("x-middleware-next")).toBeNull();
   });
@@ -1156,9 +1163,7 @@ describe("Production server middleware (Pages Router)", () => {
       });
     }
 
-    const { startProdServer } = await import(
-      "../packages/vinext/src/server/prod-server.js"
-    );
+    const { startProdServer } = await import("../packages/vinext/src/server/prod-server.js");
     prodServer = await startProdServer({
       port: 0,
       host: "127.0.0.1",
@@ -1282,9 +1287,7 @@ describe("Production server next.config.js features (Pages Router)", () => {
       });
     }
 
-    const { startProdServer } = await import(
-      "../packages/vinext/src/server/prod-server.js"
-    );
+    const { startProdServer } = await import("../packages/vinext/src/server/prod-server.js");
     prodServer = await startProdServer({
       port: 0,
       host: "127.0.0.1",
@@ -1408,15 +1411,10 @@ describe("Static export (Pages Router)", () => {
   });
 
   it("exports static pages to HTML files", async () => {
-    const { staticExportPages } = await import(
-      "../packages/vinext/src/build/static-export.js"
-    );
-    const { pagesRouter, apiRouter } = await import(
-      "../packages/vinext/src/routing/pages-router.js"
-    );
-    const { resolveNextConfig } = await import(
-      "../packages/vinext/src/config/next-config.js"
-    );
+    const { staticExportPages } = await import("../packages/vinext/src/build/static-export.js");
+    const { pagesRouter, apiRouter } =
+      await import("../packages/vinext/src/routing/pages-router.js");
+    const { resolveNextConfig } = await import("../packages/vinext/src/config/next-config.js");
 
     const pagesDir = path.resolve(FIXTURE_DIR, "pages");
     const routes = await pagesRouter(pagesDir);
@@ -1437,69 +1435,47 @@ describe("Static export (Pages Router)", () => {
 
     // Index page
     expect(result.files).toContain("index.html");
-    const indexHtml = fs.readFileSync(
-      path.join(exportDir, "index.html"),
-      "utf-8",
-    );
+    const indexHtml = fs.readFileSync(path.join(exportDir, "index.html"), "utf-8");
     expect(indexHtml).toContain("<!DOCTYPE html>");
     expect(indexHtml).toContain("Hello, vinext!");
 
     // About page
     expect(result.files).toContain("about.html");
-    const aboutHtml = fs.readFileSync(
-      path.join(exportDir, "about.html"),
-      "utf-8",
-    );
+    const aboutHtml = fs.readFileSync(path.join(exportDir, "about.html"), "utf-8");
     expect(aboutHtml).toContain("About");
   });
 
   it("pre-renders dynamic routes from getStaticPaths", async () => {
     // blog/[slug] has getStaticPaths returning hello-world and getting-started
-    expect(
-      fs.existsSync(path.join(exportDir, "blog", "hello-world.html")),
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(exportDir, "blog", "getting-started.html")),
-    ).toBe(true);
+    expect(fs.existsSync(path.join(exportDir, "blog", "hello-world.html"))).toBe(true);
+    expect(fs.existsSync(path.join(exportDir, "blog", "getting-started.html"))).toBe(true);
 
-    const blogHtml = fs.readFileSync(
-      path.join(exportDir, "blog", "hello-world.html"),
-      "utf-8",
-    );
+    const blogHtml = fs.readFileSync(path.join(exportDir, "blog", "hello-world.html"), "utf-8");
     expect(blogHtml).toContain("Hello World");
     expect(blogHtml).toContain("hello-world");
   });
 
   it("generates 404.html", async () => {
     expect(fs.existsSync(path.join(exportDir, "404.html"))).toBe(true);
-    const html404 = fs.readFileSync(
-      path.join(exportDir, "404.html"),
-      "utf-8",
-    );
+    const html404 = fs.readFileSync(path.join(exportDir, "404.html"), "utf-8");
     expect(html404).toContain("404");
   });
 
   it("escapes meta refresh URL to prevent HTML injection", async () => {
     expect(fs.existsSync(path.join(exportDir, "redirect-xss.html"))).toBe(true);
-    const html = fs.readFileSync(
-      path.join(exportDir, "redirect-xss.html"),
-      "utf-8",
+    const html = fs.readFileSync(path.join(exportDir, "redirect-xss.html"), "utf-8");
+    expect(html).toContain(
+      'content="0;url=foo&quot; /&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;meta x=&quot;"',
     );
-    expect(html).toContain('content="0;url=foo&quot; /&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;meta x=&quot;"');
-    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).not.toContain("<script>alert(1)</script>");
   });
 
   it("reports errors for pages using getServerSideProps", async () => {
     // The result from the first test should have errors for SSR-only pages
-    const { staticExportPages } = await import(
-      "../packages/vinext/src/build/static-export.js"
-    );
-    const { pagesRouter, apiRouter } = await import(
-      "../packages/vinext/src/routing/pages-router.js"
-    );
-    const { resolveNextConfig } = await import(
-      "../packages/vinext/src/config/next-config.js"
-    );
+    const { staticExportPages } = await import("../packages/vinext/src/build/static-export.js");
+    const { pagesRouter, apiRouter } =
+      await import("../packages/vinext/src/routing/pages-router.js");
+    const { resolveNextConfig } = await import("../packages/vinext/src/config/next-config.js");
 
     const pagesDir = path.resolve(FIXTURE_DIR, "pages");
     const routes = await pagesRouter(pagesDir);
@@ -1518,9 +1494,7 @@ describe("Static export (Pages Router)", () => {
       });
 
       // Should report errors for getServerSideProps pages
-      const ssrErrors = result.errors.filter((e) =>
-        e.error.includes("getServerSideProps"),
-      );
+      const ssrErrors = result.errors.filter((e) => e.error.includes("getServerSideProps"));
       expect(ssrErrors.length).toBeGreaterThan(0);
 
       // Should warn about API routes
@@ -1531,23 +1505,15 @@ describe("Static export (Pages Router)", () => {
   });
 
   it("includes __NEXT_DATA__ in exported HTML", async () => {
-    const indexHtml = fs.readFileSync(
-      path.join(exportDir, "index.html"),
-      "utf-8",
-    );
+    const indexHtml = fs.readFileSync(path.join(exportDir, "index.html"), "utf-8");
     expect(indexHtml).toContain("__NEXT_DATA__");
   });
 
   it("respects trailingSlash config", async () => {
-    const { staticExportPages } = await import(
-      "../packages/vinext/src/build/static-export.js"
-    );
-    const { pagesRouter, apiRouter } = await import(
-      "../packages/vinext/src/routing/pages-router.js"
-    );
-    const { resolveNextConfig } = await import(
-      "../packages/vinext/src/config/next-config.js"
-    );
+    const { staticExportPages } = await import("../packages/vinext/src/build/static-export.js");
+    const { pagesRouter, apiRouter } =
+      await import("../packages/vinext/src/routing/pages-router.js");
+    const { resolveNextConfig } = await import("../packages/vinext/src/config/next-config.js");
 
     const pagesDir = path.resolve(FIXTURE_DIR, "pages");
     const routes = await pagesRouter(pagesDir);
@@ -1570,9 +1536,7 @@ describe("Static export (Pages Router)", () => {
 
       // With trailingSlash, about → about/index.html
       expect(result.files).toContain("about/index.html");
-      expect(
-        fs.existsSync(path.join(trailingDir, "about", "index.html")),
-      ).toBe(true);
+      expect(fs.existsSync(path.join(trailingDir, "about", "index.html"))).toBe(true);
     } finally {
       fs.rmSync(trailingDir, { recursive: true, force: true });
     }

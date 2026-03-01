@@ -25,9 +25,9 @@ export default function Home() {
             Pre-Rendering
           </h1>
           <p>
-            SSG makes you guess which pages matter. TPR knows. It queries
-            Cloudflare zone analytics at deploy time, pre-renders only the
-            pages that cover 90% of your traffic, and caches them in KV.
+            SSG makes you guess which pages matter. TPR knows. It queries Cloudflare zone analytics
+            at deploy time, pre-renders only the pages that cover 90% of your traffic, and caches
+            them in KV.
           </p>
         </div>
       </section>
@@ -44,10 +44,7 @@ export default function Home() {
         }}
       >
         Built with{" "}
-        <a
-          href="https://github.com/cloudflare/vinext"
-          style={{ color: "var(--accent)" }}
-        >
+        <a href="https://github.com/cloudflare/vinext" style={{ color: "var(--accent)" }}>
           vinext
         </a>{" "}
         — Next.js apps on Vite, deployed to Cloudflare Workers.

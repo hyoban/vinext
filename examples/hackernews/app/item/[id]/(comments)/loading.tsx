@@ -1,5 +1,5 @@
-import Skeletons from 'components/skeletons'
+import Skeletons from "components/skeletons";
 
 export default function CommentsLoading() {
-  return <Skeletons count={3} />
+  return <Skeletons count={3} />;
 }

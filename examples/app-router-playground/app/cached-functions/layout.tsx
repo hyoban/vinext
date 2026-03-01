@@ -1,12 +1,12 @@
-import { Metadata } from 'next';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Mdx } from '#/ui/codehike';
-import React from 'react';
-import readme from './readme.mdx';
+import { Metadata } from "next";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Mdx } from "#/ui/codehike";
+import React from "react";
+import readme from "./readme.mdx";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const demo = db.demo.find({ where: { slug: 'cached-functions' } });
+  const demo = db.demo.find({ where: { slug: "cached-functions" } });
 
   return {
     title: demo.name,
@@ -14,22 +14,14 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function Layout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Boundary label="Demo" kind="solid" animateRerendering={false}>
         <Mdx source={readme} collapsed={true} />
       </Boundary>
 
-      <Boundary
-        label="layout.tsx (statically inferred)"
-        kind="solid"
-        animateRerendering={false}
-      >
+      <Boundary label="layout.tsx (statically inferred)" kind="solid" animateRerendering={false}>
         {children}
       </Boundary>
     </>

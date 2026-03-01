@@ -1,14 +1,14 @@
-import { NavLinks } from '#/app/_patterns/active-links/_components/nav-links';
-import Image from 'next/image';
-import Link from 'next/link';
+import { NavLinks } from "#/app/_patterns/active-links/_components/nav-links";
+import Image from "next/image";
+import Link from "next/link";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   // Hardcoded links or fetched from db
   const links = [
-    { href: '/patterns/active-links', name: 'Home' },
-    { href: '/patterns/active-links/profile', name: 'Profile' },
-    { href: '/patterns/active-links/community', name: 'Community' },
-    { href: '/patterns/active-links/settings', name: 'Settings' },
+    { href: "/patterns/active-links", name: "Home" },
+    { href: "/patterns/active-links/profile", name: "Profile" },
+    { href: "/patterns/active-links/community", name: "Community" },
+    { href: "/patterns/active-links/settings", name: "Settings" },
   ];
 
   return (

@@ -1,11 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import {
-  generateTrafficData,
-  calculateCoverage,
-  type TrafficEntry,
-} from "../data";
+import { generateTrafficData, calculateCoverage, type TrafficEntry } from "../data";
 
 const TOTAL_PAGES = 504; // 500 products + 4 static pages
 const traffic = generateTrafficData(500);
@@ -71,9 +67,7 @@ function TrafficChart({
       .join(" ");
 
   // Coverage threshold line
-  const thresholdX =
-    PAD.left +
-    ((coverage.pagesNeeded - 1) / (data.length - 1)) * chartW;
+  const thresholdX = PAD.left + ((coverage.pagesNeeded - 1) / (data.length - 1)) * chartW;
 
   // Y-axis ticks
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map((pct) => ({
@@ -123,18 +117,9 @@ function TrafficChart({
 
       {/* Pre-rendered area (clipped to threshold) */}
       <clipPath id="prerenderedClip">
-        <rect
-          x={PAD.left}
-          y={PAD.top}
-          width={thresholdX - PAD.left}
-          height={chartH}
-        />
+        <rect x={PAD.left} y={PAD.top} width={thresholdX - PAD.left} height={chartH} />
       </clipPath>
-      <path
-        d={areaPath}
-        fill="url(#prerenderedGrad)"
-        clipPath="url(#prerenderedClip)"
-      />
+      <path d={areaPath} fill="url(#prerenderedGrad)" clipPath="url(#prerenderedClip)" />
 
       {/* Traffic line */}
       <path
@@ -225,13 +210,7 @@ function TrafficChart({
 
 // ─── Build Time Comparison Bars ──────────────────────────────
 
-function ComparisonBars({
-  tprPages,
-  totalPages,
-}: {
-  tprPages: number;
-  totalPages: number;
-}) {
+function ComparisonBars({ tprPages, totalPages }: { tprPages: number; totalPages: number }) {
   const ssgTime = totalPages * 50; // 50ms per page (in ms)
   const tprTime = tprPages * 50;
   const maxTime = ssgTime;
@@ -271,17 +250,13 @@ function ComparisonBars({
 
   return (
     <div className="bar-chart">
-      <h3 style={{ marginBottom: 20 }}>
-        Pre-render time at deploy
-      </h3>
+      <h3 style={{ marginBottom: 20 }}>Pre-render time at deploy</h3>
       {rows.map((row) => (
         <div className="bar-row" key={row.label}>
           <div className="bar-label">
             {row.label}
             {row.note && (
-              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                {row.note}
-              </div>
+              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{row.note}</div>
             )}
           </div>
           <div className="bar-track">
@@ -295,9 +270,7 @@ function ComparisonBars({
               {row.pages > 0 ? `${row.pages} pages` : ""}
             </div>
           </div>
-          <div className="bar-value">
-            {row.time > 0 ? formatDuration(row.time) : "0s"}
-          </div>
+          <div className="bar-value">{row.time > 0 ? formatDuration(row.time) : "0s"}</div>
         </div>
       ))}
     </div>
@@ -339,16 +312,12 @@ function LatencyComparison({ tprCoverage }: { tprCoverage: number }) {
 
   return (
     <div className="bar-chart" style={{ marginTop: 40 }}>
-      <h3 style={{ marginBottom: 20 }}>
-        Average first-request latency
-      </h3>
+      <h3 style={{ marginBottom: 20 }}>Average first-request latency</h3>
       {rows.map((row) => (
         <div className="bar-row" key={row.label}>
           <div className="bar-label">
             {row.label}
-            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-              {row.desc}
-            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{row.desc}</div>
           </div>
           <div className="bar-track">
             <div
@@ -361,9 +330,7 @@ function LatencyComparison({ tprCoverage }: { tprCoverage: number }) {
               {row.p50 > 0 ? `~${row.p50}ms` : ""}
             </div>
           </div>
-          <div className="bar-value">
-            {row.p50 > 0 ? `~${row.p50}ms` : "~0ms"}
-          </div>
+          <div className="bar-value">{row.p50 > 0 ? `~${row.p50}ms` : "~0ms"}</div>
         </div>
       ))}
     </div>
@@ -375,10 +342,7 @@ function LatencyComparison({ tprCoverage }: { tprCoverage: number }) {
 export default function TPRVisualization() {
   const [coveragePct, setCoveragePct] = useState(90);
 
-  const coverage = useMemo(
-    () => calculateCoverage(traffic, coveragePct),
-    [coveragePct],
-  );
+  const coverage = useMemo(() => calculateCoverage(traffic, coveragePct), [coveragePct]);
 
   return (
     <>
@@ -387,8 +351,8 @@ export default function TPRVisualization() {
         <div className="container">
           <h2 id="trade-off">The trade-off</h2>
           <p className="muted">
-            Every framework makes you choose between fast builds and fast pages.
-            None of these are optimal.
+            Every framework makes you choose between fast builds and fast pages. None of these are
+            optimal.
           </p>
 
           <div className="approaches">
@@ -398,9 +362,8 @@ export default function TPRVisualization() {
               </div>
               <div className="value">{estimateBuildTime(TOTAL_PAGES)}</div>
               <div className="desc">
-                Pre-render all {TOTAL_PAGES} pages at build time.
-                Fast for visitors, but builds scale linearly with page count.
-                99% of those pages never get a request.
+                Pre-render all {TOTAL_PAGES} pages at build time. Fast for visitors, but builds
+                scale linearly with page count. 99% of those pages never get a request.
               </div>
             </div>
 
@@ -410,9 +373,8 @@ export default function TPRVisualization() {
               </div>
               <div className="value">0s</div>
               <div className="desc">
-                Render on every request. Zero build cost, but every visitor
-                pays ~200ms of server render time. Popular pages re-rendered
-                thousands of times for the same result.
+                Render on every request. Zero build cost, but every visitor pays ~200ms of server
+                render time. Popular pages re-rendered thousands of times for the same result.
               </div>
             </div>
 
@@ -420,14 +382,11 @@ export default function TPRVisualization() {
               <div className="label" style={{ color: "var(--accent)" }}>
                 TPR
               </div>
-              <div className="value">
-                {estimateBuildTime(coverage.pagesNeeded)}
-              </div>
+              <div className="value">{estimateBuildTime(coverage.pagesNeeded)}</div>
               <div className="desc">
                 Pre-render only the {coverage.pagesNeeded} pages that cover{" "}
-                {Math.round(coverage.coveragePercent)}% of traffic.
-                Popular pages are instant. Everything else falls back to SSR
-                and gets cached.
+                {Math.round(coverage.coveragePercent)}% of traffic. Popular pages are instant.
+                Everything else falls back to SSR and gets cached.
               </div>
             </div>
           </div>
@@ -439,8 +398,8 @@ export default function TPRVisualization() {
         <div className="container">
           <h2 id="power-law">The power law</h2>
           <p className="muted">
-            Web traffic follows a power law distribution. A tiny fraction
-            of pages receive the vast majority of requests. TPR exploits this.
+            Web traffic follows a power law distribution. A tiny fraction of pages receive the vast
+            majority of requests. TPR exploits this.
           </p>
 
           <div className="chart-container">
@@ -450,9 +409,7 @@ export default function TPRVisualization() {
                 <span className="muted"> total pages</span>
               </div>
               <div>
-                <strong style={{ color: "var(--green)" }}>
-                  {coverage.pagesNeeded}
-                </strong>
+                <strong style={{ color: "var(--green)" }}>{coverage.pagesNeeded}</strong>
                 <span className="muted"> pages cover </span>
                 <strong style={{ color: "var(--green)" }}>
                   {Math.round(coverage.coveragePercent)}%
@@ -482,9 +439,7 @@ export default function TPRVisualization() {
               </div>
               <div className="stat">
                 <div className="stat-label">Pre-render time</div>
-                <div className="stat-value">
-                  {estimateBuildTime(coverage.pagesNeeded)}
-                </div>
+                <div className="stat-value">{estimateBuildTime(coverage.pagesNeeded)}</div>
               </div>
               <div className="stat">
                 <div className="stat-label">Visitors served from cache</div>
@@ -493,9 +448,7 @@ export default function TPRVisualization() {
                 </div>
               </div>
               <div className="stat">
-                <div className="stat-label">
-                  Pages skipped vs SSG
-                </div>
+                <div className="stat-label">Pages skipped vs SSG</div>
                 <div className="stat-value" style={{ color: "var(--accent)" }}>
                   {TOTAL_PAGES - coverage.pagesNeeded}
                 </div>
@@ -510,13 +463,10 @@ export default function TPRVisualization() {
         <div className="container">
           <h2 id="comparison">Head to head</h2>
           <p className="muted">
-            TPR gives you SSG-level performance for the pages that matter,
-            with SSR-level build times.
+            TPR gives you SSG-level performance for the pages that matter, with SSR-level build
+            times.
           </p>
-          <ComparisonBars
-            tprPages={coverage.pagesNeeded}
-            totalPages={TOTAL_PAGES}
-          />
+          <ComparisonBars tprPages={coverage.pagesNeeded} totalPages={TOTAL_PAGES} />
           <LatencyComparison tprCoverage={coverage.coveragePercent} />
         </div>
       </section>
@@ -525,49 +475,42 @@ export default function TPRVisualization() {
       <section>
         <div className="container">
           <h2>How it works</h2>
-          <p className="muted">
-            TPR adds one step to your deploy. No runtime changes needed.
-          </p>
+          <p className="muted">TPR adds one step to your deploy. No runtime changes needed.</p>
 
           <div className="steps">
             <div className="step">
               <div className="step-num">01</div>
               <div className="step-title">Query analytics</div>
               <div className="step-desc">
-                Fetch top pages from Cloudflare zone analytics
-                (GraphQL API, last 24h)
+                Fetch top pages from Cloudflare zone analytics (GraphQL API, last 24h)
               </div>
             </div>
             <div className="step">
               <div className="step-num">02</div>
               <div className="step-title">Rank by traffic</div>
               <div className="step-desc">
-                Sort pages by request count, accumulate until{" "}
-                {coveragePct}% of traffic is covered
+                Sort pages by request count, accumulate until {coveragePct}% of traffic is covered
               </div>
             </div>
             <div className="step">
               <div className="step-num">03</div>
               <div className="step-title">Pre-render</div>
               <div className="step-desc">
-                Spin up the built app locally, fetch each hot route to
-                produce HTML
+                Spin up the built app locally, fetch each hot route to produce HTML
               </div>
             </div>
             <div className="step">
               <div className="step-num">04</div>
               <div className="step-title">Upload to KV</div>
               <div className="step-desc">
-                Write pre-rendered pages to KV cache in the same format
-                ISR uses at runtime
+                Write pre-rendered pages to KV cache in the same format ISR uses at runtime
               </div>
             </div>
             <div className="step">
               <div className="step-num">05</div>
               <div className="step-title">Deploy</div>
               <div className="step-desc">
-                Run wrangler deploy as normal. Popular pages are
-                instantly warm.
+                Run wrangler deploy as normal. Popular pages are instantly warm.
               </div>
             </div>
           </div>
@@ -578,9 +521,13 @@ export default function TPRVisualization() {
             {"\n\n"}
             <span className="dimmed">{"  "}Project: tpr-demo</span>
             {"\n"}
-            <span className="dimmed">{"  "}Router:{"  "}App Router</span>
+            <span className="dimmed">
+              {"  "}Router:{"  "}App Router
+            </span>
             {"\n"}
-            <span className="dimmed">{"  "}ISR:{"     "}detected</span>
+            <span className="dimmed">
+              {"  "}ISR:{"     "}detected
+            </span>
             {"\n\n"}
             <span className="dimmed">{"  "}Building...</span>
             {"\n"}
@@ -591,9 +538,8 @@ export default function TPRVisualization() {
             </span>
             {"\n"}
             <span className="green">
-              {"  "}TPR: {traffic.length.toLocaleString()} unique paths —{" "}
-              {coverage.pagesNeeded} pages cover{" "}
-              {Math.round(coverage.coveragePercent)}% of traffic
+              {"  "}TPR: {traffic.length.toLocaleString()} unique paths — {coverage.pagesNeeded}{" "}
+              pages cover {Math.round(coverage.coveragePercent)}% of traffic
             </span>
             {"\n"}
             <span className="green">
@@ -607,9 +553,7 @@ export default function TPRVisualization() {
             {"\n\n"}
             <span className="blue">{"  "}Deploying to Cloudflare Workers...</span>
             {"\n"}
-            <span className="blue">
-              {"  "}Deployed to: https://tpr-demo.example.com
-            </span>
+            <span className="blue">{"  "}Deployed to: https://tpr-demo.example.com</span>
           </div>
         </div>
       </section>
@@ -619,11 +563,8 @@ export default function TPRVisualization() {
         <div className="container">
           <h2>This demo site</h2>
           <p className="muted">
-            This app has {TOTAL_PAGES} pages. Browse some products to see
-            them in action — each has{" "}
-            <code style={{ color: "var(--accent)", fontSize: "0.85em" }}>
-              revalidate = 3600
-            </code>{" "}
+            This app has {TOTAL_PAGES} pages. Browse some products to see them in action — each has{" "}
+            <code style={{ color: "var(--accent)", fontSize: "0.85em" }}>revalidate = 3600</code>{" "}
             for ISR.
           </p>
 
@@ -651,9 +592,7 @@ export default function TPRVisualization() {
           </div>
 
           <div style={{ marginTop: 32 }}>
-            <h3 style={{ marginBottom: 12 }}>
-              Top pre-rendered pages
-            </h3>
+            <h3 style={{ marginBottom: 12 }}>Top pre-rendered pages</h3>
             <div
               style={{
                 display: "grid",

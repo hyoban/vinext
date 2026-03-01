@@ -1,28 +1,22 @@
-import { Suspense } from 'react';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { ProductCard } from '#/ui/product-card';
-import { cacheLife, cacheTag } from 'next/cache';
-import { cookies } from 'next/headers';
-import { getPersonalizedRecommendations } from '../../../_components/recommendations';
-import { notFound } from 'next/navigation';
-import { ProductDetails } from '#/app/private-cache/_components/product-detail';
-import Link from 'next/link';
-import { ChevronLeftIcon } from '@heroicons/react/24/solid';
+import { Suspense } from "react";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { ProductCard } from "#/ui/product-card";
+import { cacheLife, cacheTag } from "next/cache";
+import { cookies } from "next/headers";
+import { getPersonalizedRecommendations } from "../../../_components/recommendations";
+import { notFound } from "next/navigation";
+import { ProductDetails } from "#/app/private-cache/_components/product-detail";
+import Link from "next/link";
+import { ChevronLeftIcon } from "@heroicons/react/24/solid";
 
 // CRITICAL: This enables runtime prefetching!
 export const unstable_prefetch = {
-  mode: 'runtime',
-  samples: [
-    { params: { id: '1' }, cookies: [{ name: 'session-id', value: '1' }] },
-  ],
+  mode: "runtime",
+  samples: [{ params: { id: "1" }, cookies: [{ name: "session-id", value: "1" }] }],
 };
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const product = await db.product.find({ where: { id } });
 
@@ -82,12 +76,12 @@ async function Recommendations({ productId }: { productId: string }) {
 
 // Private cache - RUNTIME PREFETCHABLE!
 async function getRecommendations(productId: string) {
-  'use cache: private';
+  "use cache: private";
   cacheTag(`recommendations-${productId}`);
   cacheLife({ stale: 60 }); // 60s stale time (≥30s required for runtime prefetch)
 
   // Can call cookies() inside private cache!
-  const sessionId = (await cookies()).get('session-id')?.value || 'guest';
+  const sessionId = (await cookies()).get("session-id")?.value || "guest";
 
   // Get personalized recommendations
   return getPersonalizedRecommendations(productId, sessionId);
@@ -105,10 +99,7 @@ function RecommendationsSkeleton() {
         <h2 className="text-lg font-semibold text-gray-300">Recommendations</h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-48 animate-pulse rounded-lg bg-gray-800"
-            />
+            <div key={i} className="h-48 animate-pulse rounded-lg bg-gray-800" />
           ))}
         </div>
       </div>

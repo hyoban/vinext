@@ -68,10 +68,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
   const results = body.results;
 
   if (!commitSha || !results) {
-    return Response.json(
-      { error: "Missing required fields: commitSha, results" },
-      { status: 400 },
-    );
+    return Response.json({ error: "Missing required fields: commitSha, results" }, { status: 400 });
   }
 
   // Insert one row per runner, batched in a single transaction
@@ -126,10 +123,7 @@ async function handleUpload(request: Request, env: Env): Promise<Response> {
       await env.DB.batch(stmts);
     } catch (err) {
       console.error("DB.batch failed:", err);
-      return Response.json(
-        { error: "Failed to insert benchmark results" },
-        { status: 500 },
-      );
+      return Response.json({ error: "Failed to insert benchmark results" }, { status: 500 });
     }
   }
 
@@ -151,7 +145,9 @@ async function handleResults(url: URL, env: Env): Promise<Response> {
   `;
   const params: any[] = runner ? [runner, limit] : [limit];
 
-  const { results } = await env.DB.prepare(query).bind(...params).all();
+  const { results } = await env.DB.prepare(query)
+    .bind(...params)
+    .all();
 
   // Group by commit for easier consumption
   const grouped = groupByCommit(results as any[]);
@@ -171,7 +167,9 @@ async function handleCommitDetail(sha: string, env: Env): Promise<Response> {
     SELECT * FROM benchmark_results
     WHERE commit_sha = ? OR commit_short = ?
     ORDER BY runner ASC
-  `).bind(sha, sha).all();
+  `)
+    .bind(sha, sha)
+    .all();
 
   if (!results || results.length === 0) {
     return Response.json({ error: "Commit not found" }, { status: 404 });

@@ -107,13 +107,12 @@ async function run() {
     preview[route] = (preview[route] || 0) + 1;
   }
 
-  const sorted = Object.entries(preview)
-    .sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(preview).sort((a, b) => b[1] - a[1]);
 
   console.log(`\n  Traffic distribution (top 20):\n`);
   for (const [route, count] of sorted.slice(0, 20)) {
     const pct = ((count / TOTAL_REQUESTS) * 100).toFixed(1);
-    const bar = "\u2588".repeat(Math.round(count / TOTAL_REQUESTS * 50));
+    const bar = "\u2588".repeat(Math.round((count / TOTAL_REQUESTS) * 50));
     console.log(`  ${pct.padStart(5)}%  ${bar.padEnd(25)} ${route}`);
   }
   console.log(`  ...and ${sorted.length - 20} more routes\n`);
@@ -127,9 +126,7 @@ async function run() {
     pagesFor90++;
     if (accumulated >= totalReqs * 0.9) break;
   }
-  console.log(
-    `  ${sorted.length} unique paths — ${pagesFor90} pages cover 90% of traffic\n`,
-  );
+  console.log(`  ${sorted.length} unique paths — ${pagesFor90} pages cover 90% of traffic\n`);
 
   if (DRY_RUN) {
     console.log("  Dry run — no requests sent.\n");
@@ -158,7 +155,7 @@ async function run() {
 
       if (completed % 500 === 0 || completed === TOTAL_REQUESTS) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const rps = Math.round(completed / (Date.now() - startTime) * 1000);
+        const rps = Math.round((completed / (Date.now() - startTime)) * 1000);
         process.stdout.write(
           `\r  ${completed.toLocaleString()} / ${TOTAL_REQUESTS.toLocaleString()} (${rps} req/s, ${elapsed}s)`,
         );
@@ -172,10 +169,7 @@ async function run() {
       await Promise.race(queue);
       // Remove settled promises
       for (let j = queue.length - 1; j >= 0; j--) {
-        const settled = await Promise.race([
-          queue[j].then(() => true),
-          Promise.resolve(false),
-        ]);
+        const settled = await Promise.race([queue[j].then(() => true), Promise.resolve(false)]);
         if (settled) queue.splice(j, 1);
       }
     }

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import clsx from 'clsx';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo } from 'react';
+import clsx from "clsx";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useMemo } from "react";
 
 export default function Client({
   options,
@@ -36,7 +36,7 @@ export default function Client({
 
       // Perform a new navigation to the updated URL. The current `page.js` will
       // receive a new `searchParams` prop with the updated values.
-      router.push(pathname + '?' + params.toString()); // or router.replace()
+      router.push(pathname + "?" + params.toString()); // or router.replace()
     },
     [router, pathname, searchParams],
   );
@@ -56,14 +56,10 @@ export default function Client({
                   <button
                     key={item}
                     onClick={() => updateSearchParam(option.value, item)}
-                    className={clsx(
-                      'rounded-lg px-3 py-1 text-sm font-medium',
-                      {
-                        'bg-gray-700 text-gray-100 hover:bg-gray-500 hover:text-white':
-                          !isActive,
-                        'bg-blue-600 text-white': isActive,
-                      },
-                    )}
+                    className={clsx("rounded-lg px-3 py-1 text-sm font-medium", {
+                      "bg-gray-700 text-gray-100 hover:bg-gray-500 hover:text-white": !isActive,
+                      "bg-blue-600 text-white": isActive,
+                    })}
                   >
                     {item}
                   </button>

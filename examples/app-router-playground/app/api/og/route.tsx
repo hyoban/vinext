@@ -1,55 +1,51 @@
-import type { NextRequest } from 'next/server';
-import type { ReactElement } from 'react';
+import type { NextRequest } from "next/server";
+import type { ReactElement } from "react";
 
 export async function GET(req: NextRequest): Promise<Response> {
   try {
     // Dynamic import to avoid @vercel/og's eager font loading at module init
     // which breaks in Cloudflare Workers due to import.meta.url issues
-    const { ImageResponse } = await import('next/og');
-    
-    const { searchParams } = new URL(req.url);
-    const isLight = req.headers.get('Sec-CH-Prefers-Color-Scheme') === 'light';
+    const { ImageResponse } = await import("next/og");
 
-    const title = searchParams.has('title')
-      ? searchParams.get('title')
-      : 'App Router Playground';
+    const { searchParams } = new URL(req.url);
+    const isLight = req.headers.get("Sec-CH-Prefers-Color-Scheme") === "light";
+
+    const title = searchParams.has("title") ? searchParams.get("title") : "App Router Playground";
 
     // Note: Custom fonts require fetching from a URL in Workers environment
     // since fs/path APIs are not available. Using default font for now.
 
     return new ImageResponse(
-      (
+      <div
+        style={{
+          position: "relative",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        {isLight ? <LightSvg /> : <DarkSvg />}
         <div
           style={{
-            position: 'relative',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
+            position: "absolute",
+            fontFamily: "Inter",
+            fontSize: "48px",
+            fontWeight: "600",
+            letterSpacing: "-0.04em",
+            color: isLight ? "black" : "white",
+            top: "250px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            whiteSpace: "pre-wrap",
+            maxWidth: "750px",
+            textAlign: "center",
+            wordWrap: "break-word",
+            overflowWrap: "break-word",
           }}
         >
-          {isLight ? <LightSvg /> : <DarkSvg />}
-          <div
-            style={{
-              position: 'absolute',
-              fontFamily: 'Inter',
-              fontSize: '48px',
-              fontWeight: '600',
-              letterSpacing: '-0.04em',
-              color: isLight ? 'black' : 'white',
-              top: '250px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              whiteSpace: 'pre-wrap',
-              maxWidth: '750px',
-              textAlign: 'center',
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-            }}
-          >
-            {title}
-          </div>
+          {title}
         </div>
-      ),
+      </div>,
       {
         width: 843,
         height: 441,
@@ -77,108 +73,23 @@ function LightSvg(): ReactElement {
     >
       <g clipPath="url(#clip0_5_3)">
         <rect fill="white" height="441" width="843" />
-        <path
-          d="M421 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M469 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M516 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M564 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M374 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M326 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M135 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M183 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M231 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M278 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M88 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M40 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M707 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M755 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M802 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M659 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
-        <path
-          d="M612 0V307"
-          stroke="#999999"
-          strokeDasharray="3.18 3.18"
-          strokeWidth="0.794118"
-        />
+        <path d="M421 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M469 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M516 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M564 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M374 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M326 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M135 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M183 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M231 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M278 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M88 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M40 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M707 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M755 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M802 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M659 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
+        <path d="M612 0V307" stroke="#999999" strokeDasharray="3.18 3.18" strokeWidth="0.794118" />
         <path
           d="M841 105L7.39098e-06 105"
           stroke="#999999"
@@ -276,16 +187,8 @@ function LightSvg(): ReactElement {
           y="-156"
         >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend
-            in="SourceGraphic"
-            in2="BackgroundImageFix"
-            mode="normal"
-            result="shape"
-          />
-          <feGaussianBlur
-            result="effect1_foregroundBlur_5_3"
-            stdDeviation="100"
-          />
+          <feBlend in="SourceGraphic" in2="BackgroundImageFix" mode="normal" result="shape" />
+          <feGaussianBlur result="effect1_foregroundBlur_5_3" stdDeviation="100" />
         </filter>
         <filter
           colorInterpolationFilters="sRGB"
@@ -297,16 +200,8 @@ function LightSvg(): ReactElement {
           y="103"
         >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend
-            in="SourceGraphic"
-            in2="BackgroundImageFix"
-            mode="normal"
-            result="shape"
-          />
-          <feGaussianBlur
-            result="effect1_foregroundBlur_5_3"
-            stdDeviation="2"
-          />
+          <feBlend in="SourceGraphic" in2="BackgroundImageFix" mode="normal" result="shape" />
+          <feGaussianBlur result="effect1_foregroundBlur_5_3" stdDeviation="2" />
         </filter>
         <radialGradient
           cx="0"
@@ -521,15 +416,7 @@ function DarkSvg(): ReactElement {
             fill="#0141FF"
           />
         </g>
-        <rect
-          fill="black"
-          fillOpacity="0.5"
-          height="87"
-          rx="13.05"
-          width="87"
-          x="378"
-          y="110"
-        />
+        <rect fill="black" fillOpacity="0.5" height="87" rx="13.05" width="87" x="378" y="110" />
         <rect
           height="88.0875"
           rx="13.5937"
@@ -573,16 +460,8 @@ function DarkSvg(): ReactElement {
           y="-156"
         >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend
-            in="SourceGraphic"
-            in2="BackgroundImageFix"
-            mode="normal"
-            result="shape"
-          />
-          <feGaussianBlur
-            result="effect1_foregroundBlur_1_4"
-            stdDeviation="100"
-          />
+          <feBlend in="SourceGraphic" in2="BackgroundImageFix" mode="normal" result="shape" />
+          <feGaussianBlur result="effect1_foregroundBlur_1_4" stdDeviation="100" />
         </filter>
         <radialGradient
           cx="0"

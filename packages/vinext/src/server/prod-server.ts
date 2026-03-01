@@ -23,9 +23,24 @@ import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { matchRedirect, matchRewrite, matchHeaders, requestContextFromRequest, isExternalUrl, proxyExternalRequest, sanitizeDestination } from "../config/config-matchers.js";
+import {
+  matchRedirect,
+  matchRewrite,
+  matchHeaders,
+  requestContextFromRequest,
+  isExternalUrl,
+  proxyExternalRequest,
+  sanitizeDestination,
+} from "../config/config-matchers.js";
 import type { RequestContext } from "../config/config-matchers.js";
-import { IMAGE_OPTIMIZATION_PATH, IMAGE_CONTENT_SECURITY_POLICY, parseImageParams, isSafeImageContentType, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "./image-optimization.js";
+import {
+  IMAGE_OPTIMIZATION_PATH,
+  IMAGE_CONTENT_SECURITY_POLICY,
+  parseImageParams,
+  isSafeImageContentType,
+  DEFAULT_DEVICE_SIZES,
+  DEFAULT_IMAGE_SIZES,
+} from "./image-optimization.js";
 import { normalizePath } from "./normalize-path.js";
 import { computeLazyChunks } from "../index.js";
 
@@ -89,7 +104,9 @@ function negotiateEncoding(req: IncomingMessage): "br" | "gzip" | "deflate" | nu
 /**
  * Create a compression stream for the given encoding.
  */
-function createCompressor(encoding: "br" | "gzip" | "deflate"): zlib.BrotliCompress | zlib.Gzip | zlib.Deflate {
+function createCompressor(
+  encoding: "br" | "gzip" | "deflate",
+): zlib.BrotliCompress | zlib.Gzip | zlib.Deflate {
   switch (encoding) {
     case "br":
       return zlib.createBrotliCompress({
@@ -130,7 +147,9 @@ function sendCompressed(
     let varyValue: string;
     if (existingVary) {
       const existing = String(existingVary).toLowerCase();
-      varyValue = existing.includes("accept-encoding") ? String(existingVary) : existingVary + ", Accept-Encoding";
+      varyValue = existing.includes("accept-encoding")
+        ? String(existingVary)
+        : existingVary + ", Accept-Encoding";
     } else {
       varyValue = "Accept-Encoding";
     }
@@ -141,7 +160,9 @@ function sendCompressed(
       Vary: varyValue,
     });
     compressor.end(buf);
-    pipeline(compressor, res, () => { /* ignore pipeline errors on closed connections */ });
+    pipeline(compressor, res, () => {
+      /* ignore pipeline errors on closed connections */
+    });
   } else {
     res.writeHead(statusCode, {
       ...extraHeaders,
@@ -198,20 +219,14 @@ function tryServeStatic(
   if (!staticFile.startsWith(resolvedClient + path.sep) && staticFile !== resolvedClient) {
     return false;
   }
-  if (
-    pathname === "/" ||
-    !fs.existsSync(staticFile) ||
-    !fs.statSync(staticFile).isFile()
-  ) {
+  if (pathname === "/" || !fs.existsSync(staticFile) || !fs.statSync(staticFile).isFile()) {
     return false;
   }
 
   const ext = path.extname(staticFile);
   const ct = CONTENT_TYPES[ext] ?? "application/octet-stream";
   const isHashed = pathname.startsWith("/assets/");
-  const cacheControl = isHashed
-    ? "public, max-age=31536000, immutable"
-    : "public, max-age=3600";
+  const cacheControl = isHashed ? "public, max-age=31536000, immutable" : "public, max-age=3600";
 
   const baseHeaders = {
     "Content-Type": ct,
@@ -230,7 +245,9 @@ function tryServeStatic(
         "Content-Encoding": encoding,
         Vary: "Accept-Encoding",
       });
-      pipeline(fileStream, compressor, res, () => { /* ignore */ });
+      pipeline(fileStream, compressor, res, () => {
+        /* ignore */
+      });
       return true;
     }
   }
@@ -340,9 +357,7 @@ async function sendWebResponse(
   webResponse.headers.forEach((value, key) => {
     const existing = nodeHeaders[key];
     if (existing !== undefined) {
-      nodeHeaders[key] = Array.isArray(existing)
-        ? [...existing, value]
-        : [existing, value];
+      nodeHeaders[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
     } else {
       nodeHeaders[key] = value;
     }
@@ -359,7 +374,7 @@ async function sendWebResponse(
   const alreadyEncoded = webResponse.headers.has("content-encoding");
   const contentType = webResponse.headers.get("content-type") ?? "";
   const baseType = contentType.split(";")[0].trim();
-  const encoding = (compress && !alreadyEncoded) ? negotiateEncoding(req) : null;
+  const encoding = compress && !alreadyEncoded ? negotiateEncoding(req) : null;
   const shouldCompress = !!(encoding && COMPRESSIBLE_TYPES.has(baseType));
 
   if (shouldCompress) {
@@ -394,9 +409,13 @@ async function sendWebResponse(
 
   if (shouldCompress) {
     const compressor = createCompressor(encoding!);
-    pipeline(nodeStream, compressor, res, () => { /* ignore pipeline errors on closed connections */ });
+    pipeline(nodeStream, compressor, res, () => {
+      /* ignore pipeline errors on closed connections */
+    });
   } else {
-    pipeline(nodeStream, res, () => { /* ignore pipeline errors on closed connections */ });
+    pipeline(nodeStream, res, () => {
+      /* ignore pipeline errors on closed connections */
+    });
   }
 }
 
@@ -604,7 +623,9 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
       if (lazyChunks.length > 0) {
         (globalThis as any).__VINEXT_LAZY_CHUNKS__ = lazyChunks;
       }
-    } catch { /* ignore parse errors */ }
+    } catch {
+      /* ignore parse errors */
+    }
   }
 
   // Import the server entry module (use file:// URL for reliable dynamic import)
@@ -615,7 +636,11 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
   const basePath: string = vinextConfig?.basePath ?? "";
   const trailingSlash: boolean = vinextConfig?.trailingSlash ?? false;
   const configRedirects = vinextConfig?.redirects ?? [];
-  const configRewrites = vinextConfig?.rewrites ?? { beforeFiles: [], afterFiles: [], fallback: [] };
+  const configRewrites = vinextConfig?.rewrites ?? {
+    beforeFiles: [],
+    afterFiles: [],
+    fallback: [],
+  };
   const configHeaders = vinextConfig?.headers ?? [];
   // Compute allowed image widths from config (union of deviceSizes + imageSizes)
   const allowedImageWidths: number[] = [
@@ -654,9 +679,8 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
     // Serve static files from client build. When basePath is configured,
     // Vite's `base` config ensures assets are under basePath/assets/.
     // We check both with and without basePath.
-    const staticLookupPath = basePath && pathname.startsWith(basePath)
-      ? pathname.slice(basePath.length) || "/"
-      : pathname;
+    const staticLookupPath =
+      basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) || "/" : pathname;
     if (
       staticLookupPath !== "/" &&
       !staticLookupPath.startsWith("/api/") &&
@@ -876,9 +900,19 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
         const responseBody = Buffer.from(await response.arrayBuffer());
         const ct = response.headers.get("content-type") ?? "text/html";
         const responseHeaders: Record<string, string> = { ...middlewareHeaders };
-        response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+        response.headers.forEach((v, k) => {
+          responseHeaders[k] = v;
+        });
 
-        sendCompressed(req, res, responseBody, ct, middlewareRewriteStatus ?? response.status, responseHeaders, compress);
+        sendCompressed(
+          req,
+          res,
+          responseBody,
+          ct,
+          middlewareRewriteStatus ?? response.status,
+          responseHeaders,
+          compress,
+        );
         return;
       }
 
@@ -925,9 +959,19 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
       const responseBody = Buffer.from(await response.arrayBuffer());
       const ct = response.headers.get("content-type") ?? "text/html";
       const responseHeaders: Record<string, string> = { ...middlewareHeaders };
-      response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+      response.headers.forEach((v, k) => {
+        responseHeaders[k] = v;
+      });
 
-      sendCompressed(req, res, responseBody, ct, middlewareRewriteStatus ?? response.status, responseHeaders, compress);
+      sendCompressed(
+        req,
+        res,
+        responseBody,
+        ct,
+        middlewareRewriteStatus ?? response.status,
+        responseHeaders,
+        compress,
+      );
     } catch (e) {
       console.error("[vinext] Server error:", e);
       res.writeHead(500);
@@ -948,4 +992,13 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
 }
 
 // Export helpers for testing
-export { sendCompressed, negotiateEncoding, COMPRESSIBLE_TYPES, COMPRESS_THRESHOLD, resolveHost, trustedHosts, trustProxy, nodeToWebRequest };
+export {
+  sendCompressed,
+  negotiateEncoding,
+  COMPRESSIBLE_TYPES,
+  COMPRESS_THRESHOLD,
+  resolveHost,
+  trustedHosts,
+  trustProxy,
+  nodeToWebRequest,
+};

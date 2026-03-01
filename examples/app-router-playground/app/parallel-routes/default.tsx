@@ -1,9 +1,9 @@
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tab } from '#/ui/tabs';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tab } from "#/ui/tabs";
 
 export default function Default() {
-  const demo = db.demo.find({ where: { slug: 'parallel-routes' } });
+  const demo = db.demo.find({ where: { slug: "parallel-routes" } });
 
   return (
     <Boundary label="default.tsx" size="small" className="flex flex-col gap-4">
@@ -15,7 +15,7 @@ export default function Default() {
       </div>
 
       <div className="flex">
-        <Tab item={{ text: 'Home', slug: demo.slug }} />
+        <Tab item={{ text: "Home", slug: demo.slug }} />
       </div>
     </Boundary>
   );

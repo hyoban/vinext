@@ -64,7 +64,7 @@ function setupProject(
 
   if (router === "app") {
     mkdir(dir, "app");
-    writeFile(dir, "app/page.tsx", 'export default function Home() { return <div>hi</div> }');
+    writeFile(dir, "app/page.tsx", "export default function Home() { return <div>hi</div> }");
     writeFile(
       dir,
       "app/layout.tsx",
@@ -72,7 +72,7 @@ function setupProject(
     );
   } else {
     mkdir(dir, "pages");
-    writeFile(dir, "pages/index.tsx", 'export default function Home() { return <div>hi</div> }');
+    writeFile(dir, "pages/index.tsx", "export default function Home() { return <div>hi</div> }");
   }
 }
 
@@ -126,10 +126,7 @@ async function runInit(
 /**
  * Run init expecting it to fail (process.exit).
  */
-async function runInitExpectExit(
-  dir: string,
-  opts: Partial<InitOptions> = {},
-): Promise<string> {
+async function runInitExpectExit(dir: string, opts: Partial<InitOptions> = {}): Promise<string> {
   const { exec } = noopExec();
 
   const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -472,9 +469,13 @@ describe("init — dependency installation", () => {
   it("treats src/app projects as App Router", async () => {
     setupProject(tmpDir);
     fs.rmSync(path.join(tmpDir, "app"), { recursive: true, force: true });
-    
+
     mkdir(tmpDir, "src/app");
-    writeFile(tmpDir, "src/app/page.tsx", 'export default function Home() { return <div>hi</div> }');
+    writeFile(
+      tmpDir,
+      "src/app/page.tsx",
+      "export default function Home() { return <div>hi</div> }",
+    );
     writeFile(
       tmpDir,
       "src/app/layout.tsx",
@@ -544,9 +545,7 @@ describe("init — dependency installation", () => {
     const { execCalls } = await runInit(tmpDir);
 
     // No React upgrade call
-    const reactUpgradeCall = execCalls.find(
-      (c) => c.cmd.includes("react@latest"),
-    );
+    const reactUpgradeCall = execCalls.find((c) => c.cmd.includes("react@latest"));
     expect(reactUpgradeCall).toBeUndefined();
   });
 
@@ -556,7 +555,9 @@ describe("init — dependency installation", () => {
 
     const { execCalls } = await runInit(tmpDir);
 
-    const installCall = execCalls.find((c) => c.cmd.includes("add -D") || c.cmd.includes("install -D"));
+    const installCall = execCalls.find(
+      (c) => c.cmd.includes("add -D") || c.cmd.includes("install -D"),
+    );
     expect(installCall).toBeDefined();
     expect(installCall!.cmd).toMatch(/^pnpm add -D/);
   });
@@ -566,7 +567,9 @@ describe("init — dependency installation", () => {
 
     const { execCalls } = await runInit(tmpDir);
 
-    const installCall = execCalls.find((c) => c.cmd.includes("install -D") || c.cmd.includes("add -D"));
+    const installCall = execCalls.find(
+      (c) => c.cmd.includes("install -D") || c.cmd.includes("add -D"),
+    );
     expect(installCall).toBeDefined();
     expect(installCall!.cmd).toMatch(/^npm install -D/);
   });

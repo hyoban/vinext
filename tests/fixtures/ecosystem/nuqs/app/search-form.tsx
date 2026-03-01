@@ -22,16 +22,10 @@ export function SearchForm() {
       <div>
         <p data-testid="current-query">Query: {query || "(empty)"}</p>
         <p data-testid="current-page">Page: {page}</p>
-        <button
-          data-testid="prev-page"
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-        >
+        <button data-testid="prev-page" onClick={() => setPage((p) => Math.max(1, p - 1))}>
           Previous
         </button>
-        <button
-          data-testid="next-page"
-          onClick={() => setPage((p) => p + 1)}
-        >
+        <button data-testid="next-page" onClick={() => setPage((p) => p + 1)}>
           Next
         </button>
       </div>

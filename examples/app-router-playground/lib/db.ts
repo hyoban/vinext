@@ -2,7 +2,7 @@
 // parts of the app not relevant to the demo. It is not intended
 // as a learning resource or example of best practices.
 
-import 'server-only';
+import "server-only";
 import {
   data,
   type Category,
@@ -11,7 +11,7 @@ import {
   type DemoSlug,
   type Product,
   type Section,
-} from '../app/_internal/_data';
+} from "../app/_internal/_data";
 
 type ProductWhere = { id?: string; category?: string; section?: string };
 
@@ -37,9 +37,7 @@ const db = {
       if (options.where?.id !== undefined) {
         product = data.products.find((p) => p.id === options.where?.id);
       } else if (options.where?.category !== undefined) {
-        product = data.products.find(
-          (p) => p.category === options.where?.category,
-        );
+        product = data.products.find((p) => p.category === options.where?.category);
       }
 
       let prev: string | undefined = undefined;
@@ -61,18 +59,14 @@ const db = {
       let result = data.products;
 
       if (options.where?.category) {
-        result = result.filter(
-          (product) => product.category === options.where!.category,
-        );
+        result = result.filter((product) => product.category === options.where!.category);
       }
 
       if (options.where?.section) {
         const sectionCategories = data.categories
           .filter((category) => category.section === options.where!.section)
           .map((category) => category.id);
-        result = result.filter((product) =>
-          sectionCategories.includes(product.category),
-        );
+        result = result.filter((product) => sectionCategories.includes(product.category));
       }
 
       if (options.limit !== undefined) {
@@ -102,9 +96,7 @@ const db = {
       }
 
       if (options.where?.slug) {
-        result = result.filter(
-          (section) => section.slug === options.where!.slug,
-        );
+        result = result.filter((section) => section.slug === options.where!.slug);
       }
 
       if (options.limit !== undefined) {
@@ -123,9 +115,7 @@ const db = {
       } else if (options.where?.slug !== undefined) {
         category = data.categories.find((c) => c.slug === options.where?.slug);
       } else if (options.where?.section !== undefined) {
-        category = data.categories.find(
-          (c) => c.section === options.where?.section,
-        );
+        category = data.categories.find((c) => c.section === options.where?.section);
       }
 
       return category || null;
@@ -138,15 +128,11 @@ const db = {
       }
 
       if (options.where?.slug) {
-        result = result.filter(
-          (category) => category.slug === options.where!.slug,
-        );
+        result = result.filter((category) => category.slug === options.where!.slug);
       }
 
       if (options.where?.section) {
-        result = result.filter(
-          (category) => category.section === options.where!.section,
-        );
+        result = result.filter((category) => category.section === options.where!.section);
       }
 
       return result;
@@ -158,9 +144,7 @@ const db = {
 
       if (options.where?.slug !== undefined) {
         for (const category of data.demos) {
-          const found = category.items.find(
-            (d) => d.slug === options.where?.slug,
-          );
+          const found = category.items.find((d) => d.slug === options.where?.slug);
           if (found) {
             demo = found;
             break;
@@ -170,7 +154,7 @@ const db = {
 
       // More strict than other entities because demos are used to
       // build the site not just display data.
-      if (typeof demo === 'undefined') {
+      if (typeof demo === "undefined") {
         throw new Error(`Demo not found: ${options.where?.slug}`);
       }
 

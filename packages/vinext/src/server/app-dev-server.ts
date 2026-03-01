@@ -12,7 +12,11 @@ import type { AppRoute } from "../routing/app-router.js";
 import type { MetadataFileRoute } from "./metadata-routes.js";
 import type { NextRedirect, NextRewrite, NextHeader } from "../config/next-config.js";
 import { generateDevOriginCheckCode } from "./dev-origin-check.js";
-import { generateSafeRegExpCode, generateMiddlewareMatcherCode, generateNormalizePathCode } from "./middleware-codegen.js";
+import {
+  generateSafeRegExpCode,
+  generateMiddlewareMatcherCode,
+  generateNormalizePathCode,
+} from "./middleware-codegen.js";
 import { isProxyFile } from "./middleware.js";
 
 /**
@@ -78,9 +82,14 @@ export function generateRscEntry(
     for (const tmpl of route.templates) getImportVar(tmpl);
     if (route.loadingPath) getImportVar(route.loadingPath);
     if (route.errorPath) getImportVar(route.errorPath);
-    if (route.layoutErrorPaths) for (const ep of route.layoutErrorPaths) { if (ep) getImportVar(ep); }
+    if (route.layoutErrorPaths)
+      for (const ep of route.layoutErrorPaths) {
+        if (ep) getImportVar(ep);
+      }
     if (route.notFoundPath) getImportVar(route.notFoundPath);
-    for (const nfp of route.notFoundPaths || []) { if (nfp) getImportVar(nfp); }
+    for (const nfp of route.notFoundPaths || []) {
+      if (nfp) getImportVar(nfp);
+    }
     if (route.forbiddenPath) getImportVar(route.forbiddenPath);
     if (route.unauthorizedPath) getImportVar(route.unauthorizedPath);
     // Register parallel slot modules
@@ -101,7 +110,7 @@ export function generateRscEntry(
   const routeEntries = routes.map((route) => {
     const layoutVars = route.layouts.map((l) => getImportVar(l));
     const templateVars = route.templates.map((t) => getImportVar(t));
-    const notFoundVars = (route.notFoundPaths || []).map((nf) => nf ? getImportVar(nf) : "null");
+    const notFoundVars = (route.notFoundPaths || []).map((nf) => (nf ? getImportVar(nf) : "null"));
     const slotEntries = route.parallelSlots.map((slot) => {
       const interceptEntries = slot.interceptingRoutes.map((ir) => {
         return `        {
@@ -123,7 +132,9 @@ ${interceptEntries.join(",\n")}
         ],
       }`;
     });
-    const layoutErrorVars = (route.layoutErrorPaths || []).map((ep) => ep ? getImportVar(ep) : "null");
+    const layoutErrorVars = (route.layoutErrorPaths || []).map((ep) =>
+      ep ? getImportVar(ep) : "null",
+    );
     return `  {
     pattern: ${JSON.stringify(route.pattern)},
     isDynamic: ${route.isDynamic},
@@ -148,18 +159,12 @@ ${slotEntries.join(",\n")}
 
   // Find root not-found/forbidden/unauthorized pages and root layouts for global error handling
   const rootRoute = routes.find((r) => r.pattern === "/");
-  const rootNotFoundVar = rootRoute?.notFoundPath
-    ? getImportVar(rootRoute.notFoundPath)
-    : null;
-  const rootForbiddenVar = rootRoute?.forbiddenPath
-    ? getImportVar(rootRoute.forbiddenPath)
-    : null;
+  const rootNotFoundVar = rootRoute?.notFoundPath ? getImportVar(rootRoute.notFoundPath) : null;
+  const rootForbiddenVar = rootRoute?.forbiddenPath ? getImportVar(rootRoute.forbiddenPath) : null;
   const rootUnauthorizedVar = rootRoute?.unauthorizedPath
     ? getImportVar(rootRoute.unauthorizedPath)
     : null;
-  const rootLayoutVars = rootRoute
-    ? rootRoute.layouts.map((l) => getImportVar(l))
-    : [];
+  const rootLayoutVars = rootRoute ? rootRoute.layouts.map((l) => getImportVar(l)) : [];
 
   // Global error boundary (app/global-error.tsx)
   const globalErrorVar = globalErrorPath ? getImportVar(globalErrorPath) : null;
@@ -389,7 +394,9 @@ async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, req
         element = createElement(LayoutSegmentProvider, { depth: layoutDepth }, element);
       }
     }
-    ${globalErrorVar ? `
+    ${
+      globalErrorVar
+        ? `
     const _GlobalErrorComponent = ${globalErrorVar}.default;
     if (_GlobalErrorComponent) {
       element = createElement(ErrorBoundary, {
@@ -397,7 +404,9 @@ async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, req
         children: element,
       });
     }
-    ` : ""}
+    `
+        : ""
+    }
     const rscStream = renderToReadableStream(element, { onError: rscOnError });
     setHeadersContext(null);
     setNavigationContext(null);
@@ -488,7 +497,9 @@ async function renderErrorBoundaryPage(route, error, isRscRequest, request) {
         element = createElement(LayoutSegmentProvider, { depth: layoutDepth }, element);
       }
     }
-    ${globalErrorVar ? `
+    ${
+      globalErrorVar
+        ? `
     const _ErrGlobalComponent = ${globalErrorVar}.default;
     if (_ErrGlobalComponent) {
       element = createElement(ErrorBoundary, {
@@ -496,7 +507,9 @@ async function renderErrorBoundaryPage(route, error, isRscRequest, request) {
         children: element,
       });
     }
-    ` : ""}
+    `
+        : ""
+    }
     const rscStream = renderToReadableStream(element, { onError: rscOnError });
     setHeadersContext(null);
     setNavigationContext(null);
@@ -828,7 +841,9 @@ async function buildPageElement(route, params, opts, searchParams) {
 
   // Wrap with global error boundary if app/global-error.tsx exists.
   // This catches errors in the root layout itself.
-  ${globalErrorVar ? `
+  ${
+    globalErrorVar
+      ? `
   const GlobalErrorComponent = ${globalErrorVar}.default;
   if (GlobalErrorComponent) {
     element = createElement(ErrorBoundary, {
@@ -836,7 +851,9 @@ async function buildPageElement(route, params, opts, searchParams) {
       children: element,
     });
   }
-  ` : ""}
+  `
+      : ""
+  }
 
   return element;
 }
@@ -1242,12 +1259,16 @@ async function _handleRequest(request, __reqCtx) {
   }
   let pathname = __normalizePath(decodedUrlPathname);
 
-  ${bp ? `
+  ${
+    bp
+      ? `
   // Strip basePath prefix
   if (__basePath && pathname.startsWith(__basePath)) {
     pathname = pathname.slice(__basePath.length) || "/";
   }
-  ` : ""}
+  `
+      : ""
+  }
 
   // Trailing slash normalization (redirect to canonical form)
   if (pathname !== "/" && !pathname.startsWith("/api")) {
@@ -1296,7 +1317,9 @@ async function _handleRequest(request, __reqCtx) {
   // Custom status code from middleware rewrite (e.g. NextResponse.rewrite(url, { status: 403 }))
   let _middlewareRewriteStatus = null;
 
-  ${middlewarePath ? `
+  ${
+    middlewarePath
+      ? `
    // Run proxy/middleware if present and path matches.
    // Validate exports match the file type (proxy.ts vs middleware.ts), matching Next.js behavior.
    // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/proxy-missing-export/proxy-missing-export.test.ts
@@ -1380,7 +1403,9 @@ async function _handleRequest(request, __reqCtx) {
       }
     }
   }
-  ` : ""}
+  `
+      : ""
+  }
 
   // ── Image optimization passthrough (dev mode — no transformation) ───────
   if (cleanPathname === "/_vinext/image") {

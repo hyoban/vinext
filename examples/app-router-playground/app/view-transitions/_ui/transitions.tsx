@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/20/solid';
-import { addTransitionType, startTransition, ViewTransition } from 'react';
-import clsx from 'clsx';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/20/solid";
+import { addTransitionType, startTransition, ViewTransition } from "react";
+import clsx from "clsx";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 /**
  * Extended Link component that adds a type to a navigation transition.
@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation';
 export function TransitionLink({ type, ...props }: TransitionLinkProps) {
   const router = useRouter();
 
-  const handleNavigate: TransitionLinkProps['onNavigate'] = (event) => {
+  const handleNavigate: TransitionLinkProps["onNavigate"] = (event) => {
     event.preventDefault();
 
     startTransition(() => {
@@ -38,30 +38,21 @@ export function TransitionLink({ type, ...props }: TransitionLinkProps) {
  *   Back to Products
  * </TransitionButtonLink>
  */
-export function TransitionButtonLink({
-  type,
-  children,
-  className,
-  ...props
-}: TransitionLinkProps) {
+export function TransitionButtonLink({ type, children, className, ...props }: TransitionLinkProps) {
   return (
     <TransitionLink
       type={type}
       className={clsx(
-        'flex w-fit items-center gap-1 rounded-md bg-gray-700 px-3 py-1 text-sm font-medium text-gray-100 hover:bg-gray-500 hover:text-white',
+        "flex w-fit items-center gap-1 rounded-md bg-gray-700 px-3 py-1 text-sm font-medium text-gray-100 hover:bg-gray-500 hover:text-white",
         className,
-        type === 'transition-backwards' && 'pl-1.5',
-        type === 'transition-forwards' && 'pr-1.5',
+        type === "transition-backwards" && "pl-1.5",
+        type === "transition-forwards" && "pr-1.5",
       )}
       {...props}
     >
-      {type === 'transition-backwards' && (
-        <ChevronLeftIcon className="size-5 opacity-40" />
-      )}
+      {type === "transition-backwards" && <ChevronLeftIcon className="size-5 opacity-40" />}
       {children}
-      {type === 'transition-forwards' && (
-        <ChevronRightIcon className="size-5 opacity-40" />
-      )}
+      {type === "transition-forwards" && <ChevronRightIcon className="size-5 opacity-40" />}
     </TransitionLink>
   );
 }
@@ -127,22 +118,18 @@ export function SharedTransition({
  * Available transition IDs for shared elements
  * @internal
  */
-const transitionIds = [
-  'navigation-icon',
-  'navigation-title',
-  'navigation-pagination',
-] as const;
+const transitionIds = ["navigation-icon", "navigation-title", "navigation-pagination"] as const;
 
 /**
  * Available transition types for navigation
  * @internal
  */
 const transitionTypes = [
-  'default',
-  'transition-to-detail',
-  'transition-to-list',
-  'transition-backwards',
-  'transition-forwards',
+  "default",
+  "transition-to-detail",
+  "transition-to-list",
+  "transition-backwards",
+  "transition-forwards",
 ] as const;
 
 /**
@@ -150,13 +137,13 @@ const transitionTypes = [
  * @internal
  */
 const animationTypes = [
-  'auto',
-  'none',
-  'animate-slide-from-left',
-  'animate-slide-from-right',
-  'animate-slide-to-left',
-  'animate-slide-to-right',
-  'animate-morph',
+  "auto",
+  "none",
+  "animate-slide-from-left",
+  "animate-slide-from-right",
+  "animate-slide-to-left",
+  "animate-slide-to-right",
+  "animate-morph",
 ] as const;
 
 /**
@@ -179,7 +166,7 @@ type AnimationType = (typeof animationTypes)[number];
  * }
  */
 type TransitionMap = { default: AnimationType } & Partial<
-  Record<Exclude<TransitionType, 'default'>, AnimationType>
+  Record<Exclude<TransitionType, "default">, AnimationType>
 >;
 
 /**
@@ -197,7 +184,7 @@ type TransitionId = (typeof transitionIds)[number] | `product-${string}`;
  * Props for TransitionLink component
  * Extends Next.js Link props with transition type
  */
-type TransitionLinkProps = Omit<React.ComponentProps<typeof Link>, 'href'> & {
+type TransitionLinkProps = Omit<React.ComponentProps<typeof Link>, "href"> & {
   type: TransitionType;
   /**
    * Target URL for navigation

@@ -52,15 +52,15 @@ Your existing `pages/`, `app/`, `next.config.js`, and `public/` directories work
 
 ### CLI reference
 
-| Command | Description |
-|---------|-------------|
-| `vinext dev` | Start dev server with HMR |
-| `vinext build` | Production build (multi-environment for App Router: RSC + SSR + client) |
-| `vinext start` | Start local production server for testing |
-| `vinext deploy` | Build and deploy to Cloudflare Workers |
-| `vinext init` | Migrate a Next.js project to run under vinext |
-| `vinext check` | Scan your Next.js app for compatibility issues before migrating |
-| `vinext lint` | Delegate to eslint or oxlint |
+| Command         | Description                                                             |
+| --------------- | ----------------------------------------------------------------------- |
+| `vinext dev`    | Start dev server with HMR                                               |
+| `vinext build`  | Production build (multi-environment for App Router: RSC + SSR + client) |
+| `vinext start`  | Start local production server for testing                               |
+| `vinext deploy` | Build and deploy to Cloudflare Workers                                  |
+| `vinext init`   | Migrate a Next.js project to run under vinext                           |
+| `vinext check`  | Scan your Next.js app for compatibility issues before migrating         |
+| `vinext lint`   | Delegate to eslint or oxlint                                            |
 
 Options: `-p / --port <port>`, `-H / --hostname <host>`, `--turbopack` (accepted, no-op).
 
@@ -72,7 +72,7 @@ Options: `-p / --port <port>`, `-H / --hostname <host>`, `--turbopack` (accepted
 
 Run `npm create next-app@latest` to create a new Next.js project, and then follow these instructions to migrate it to vinext.
 
-In the future, we will havre a proper `npm create vinext` new project workflow. 
+In the future, we will havre a proper `npm create vinext` new project workflow.
 
 ### Migrating an existing Next.js project
 
@@ -109,6 +109,7 @@ vinext is an experiment: can we reimplement the Next.js API surface on Vite, so 
 The current deployment target is Cloudflare Workers — zero cold starts, global by default, integrated platform (KV, R2, D1, AI). The `vinext deploy` command handles the full build-and-deploy pipeline. Expanding to other deployment targets is something we'd like to explore.
 
 **Alternatives worth knowing about:**
+
 - **[OpenNext](https://opennext.js.org/)** — adapts `next build` output for AWS, Cloudflare, and other platforms. OpenNext has been around much longer than vinext, is more mature, and covers more of the Next.js API surface because it builds on top of Next.js's own output rather than reimplementing it. If you want the safer, more proven option, start there.
 - **[Next.js self-hosting](https://nextjs.org/docs/app/building-your-application/deploying#self-hosting)** — Next.js can be deployed to any Node.js server, Docker container, or as a static export.
 
@@ -128,7 +129,7 @@ vinext is a Vite plugin that reimplements the public Next.js API — routing, se
 No. vinext is an alternative implementation of the Next.js API surface built on Vite. It does import some Next.js types and utilities, but the core is written from scratch. The goal is not to create a competing framework or add features beyond what Next.js offers — it's an experiment in how far AI-driven development and Vite's toolchain can go in replicating an existing, well-defined API surface.
 
 **How is this different from OpenNext?**
-[OpenNext](https://opennext.js.org/) adapts the *output* of a standard `next build` to run on various platforms. Because it builds on Next.js's own output, it inherits broad API coverage and has been well-tested for much longer. vinext takes a different approach: it reimplements the Next.js APIs on Vite from scratch, which means faster builds and smaller bundles, but less coverage of the long tail of Next.js features. If you need a mature, well-tested way to run Next.js outside Vercel, OpenNext is the safer choice. If you're interested in experimenting with a lighter toolchain and don't need every Next.js API, vinext might be worth a look.
+[OpenNext](https://opennext.js.org/) adapts the _output_ of a standard `next build` to run on various platforms. Because it builds on Next.js's own output, it inherits broad API coverage and has been well-tested for much longer. vinext takes a different approach: it reimplements the Next.js APIs on Vite from scratch, which means faster builds and smaller bundles, but less coverage of the long tail of Next.js features. If you need a mature, well-tested way to run Next.js outside Vercel, OpenNext is the safer choice. If you're interested in experimenting with a lighter toolchain and don't need every Next.js API, vinext might be worth a look.
 
 **Can I use this in production?**
 You can, with caution. This is experimental software with known bugs. It works well enough for demos and exploration, but it hasn't been battle-tested with real production traffic.
@@ -169,6 +170,7 @@ vinext deploy --env staging
 Use `--env <name>` to target `wrangler.jsonc` `env.<name>`. `--preview` is shorthand for `--env preview`.
 
 The deploy command also auto-detects and fixes common migration issues:
+
 - Adds `"type": "module"` to package.json if missing
 - Resolves tsconfig.json path aliases automatically (via `vite-tsconfig-paths`)
 - Detects MDX usage and configures `@mdx-js/rollup`
@@ -232,15 +234,15 @@ See the [examples](#live-examples) for complete working configurations.
 
 These are deployed to Cloudflare Workers and updated on every push to `main`:
 
-| Example | Description | URL |
-|---------|-------------|-----|
-| App Router Playground | [Vercel's Next.js App Router Playground](https://github.com/vercel/next-app-router-playground) running on vinext | [app-router-playground.vinext.workers.dev](https://app-router-playground.vinext.workers.dev) |
-| Hacker News | HN clone (App Router, RSC) | [hackernews.vinext.workers.dev](https://hackernews.vinext.workers.dev) |
-| Nextra Docs | Nextra docs site (MDX, App Router) | [nextra-docs-template.vinext.workers.dev](https://nextra-docs-template.vinext.workers.dev) |
-| App Router (minimal) | Minimal App Router on Workers | [app-router-cloudflare.vinext.workers.dev](https://app-router-cloudflare.vinext.workers.dev) |
-| Pages Router (minimal) | Minimal Pages Router on Workers | [pages-router-cloudflare.vinext.workers.dev](https://pages-router-cloudflare.vinext.workers.dev) |
-| RealWorld API | REST API routes example | [realworld-api-rest.vinext.workers.dev](https://realworld-api-rest.vinext.workers.dev) |
-| Benchmarks Dashboard | Build performance tracking over time (D1-backed) | [benchmarks.vinext.workers.dev](https://benchmarks.vinext.workers.dev) |
+| Example                | Description                                                                                                      | URL                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| App Router Playground  | [Vercel's Next.js App Router Playground](https://github.com/vercel/next-app-router-playground) running on vinext | [app-router-playground.vinext.workers.dev](https://app-router-playground.vinext.workers.dev)     |
+| Hacker News            | HN clone (App Router, RSC)                                                                                       | [hackernews.vinext.workers.dev](https://hackernews.vinext.workers.dev)                           |
+| Nextra Docs            | Nextra docs site (MDX, App Router)                                                                               | [nextra-docs-template.vinext.workers.dev](https://nextra-docs-template.vinext.workers.dev)       |
+| App Router (minimal)   | Minimal App Router on Workers                                                                                    | [app-router-cloudflare.vinext.workers.dev](https://app-router-cloudflare.vinext.workers.dev)     |
+| Pages Router (minimal) | Minimal Pages Router on Workers                                                                                  | [pages-router-cloudflare.vinext.workers.dev](https://pages-router-cloudflare.vinext.workers.dev) |
+| RealWorld API          | REST API routes example                                                                                          | [realworld-api-rest.vinext.workers.dev](https://realworld-api-rest.vinext.workers.dev)           |
+| Benchmarks Dashboard   | Build performance tracking over time (D1-backed)                                                                 | [benchmarks.vinext.workers.dev](https://benchmarks.vinext.workers.dev)                           |
 
 ## API coverage
 
@@ -252,78 +254,78 @@ These are deployed to Cloudflare Workers and updated on every push to `main`:
 
 Every `next/*` import is shimmed to a Vite-compatible implementation.
 
-| Module | | Notes |
-|--------|---|-------|
-| `next/link` | ✅ | All props including `prefetch` (IntersectionObserver), `onNavigate`, scroll restoration, `basePath`, `locale` |
-| `next/image` | 🟡 | Remote images via [@unpic/react](https://unpic.pics) (28 CDNs). Local images via `<img>` + srcSet. No build-time optimization/resizing |
-| `next/head` | ✅ | SSR collection + client-side DOM manipulation |
-| `next/router` | ✅ | `useRouter`, `Router` singleton, events, client-side navigation, SSR context, i18n |
-| `next/navigation` | ✅ | `usePathname`, `useSearchParams`, `useParams`, `useRouter`, `redirect`, `notFound`, `forbidden`, `unauthorized` |
-| `next/server` | ✅ | `NextRequest`, `NextResponse`, `NextURL`, cookies, `userAgent`, `after`, `connection`, `URLPattern` |
-| `next/headers` | ✅ | Async `headers()`, `cookies()`, `draftMode()` |
-| `next/dynamic` | ✅ | `ssr: true`, `ssr: false`, `loading` component |
-| `next/script` | ✅ | All 4 strategies (`beforeInteractive`, `afterInteractive`, `lazyOnload`, `worker`) |
-| `next/font/google` | 🟡 | Runtime CDN loading. No self-hosting, font subsetting, or fallback metrics |
-| `next/font/local` | 🟡 | Runtime `@font-face` injection. Not extracted at build time |
-| `next/og` | ✅ | OG image generation via `@vercel/og` (Satori + resvg) |
-| `next/cache` | ✅ | `revalidateTag`, `revalidatePath`, `unstable_cache`, pluggable `CacheHandler`, `"use cache"` with `cacheLife()` and `cacheTag()` |
-| `next/form` | ✅ | GET form interception + POST server action delegation |
-| `next/legacy/image` | ✅ | Translates legacy props to modern Image |
-| `next/error` | ✅ | Default error page component |
-| `next/config` | ✅ | `getConfig` / `setConfig` |
-| `next/document` | ✅ | `Html`, `Head`, `Main`, `NextScript` |
-| `next/constants` | ✅ | All phase constants |
-| `next/amp` | ⬜ | No-op (AMP is deprecated) |
-| `next/web-vitals` | ⬜ | No-op (use the `web-vitals` library directly) |
+| Module              |     | Notes                                                                                                                                  |
+| ------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `next/link`         | ✅  | All props including `prefetch` (IntersectionObserver), `onNavigate`, scroll restoration, `basePath`, `locale`                          |
+| `next/image`        | 🟡  | Remote images via [@unpic/react](https://unpic.pics) (28 CDNs). Local images via `<img>` + srcSet. No build-time optimization/resizing |
+| `next/head`         | ✅  | SSR collection + client-side DOM manipulation                                                                                          |
+| `next/router`       | ✅  | `useRouter`, `Router` singleton, events, client-side navigation, SSR context, i18n                                                     |
+| `next/navigation`   | ✅  | `usePathname`, `useSearchParams`, `useParams`, `useRouter`, `redirect`, `notFound`, `forbidden`, `unauthorized`                        |
+| `next/server`       | ✅  | `NextRequest`, `NextResponse`, `NextURL`, cookies, `userAgent`, `after`, `connection`, `URLPattern`                                    |
+| `next/headers`      | ✅  | Async `headers()`, `cookies()`, `draftMode()`                                                                                          |
+| `next/dynamic`      | ✅  | `ssr: true`, `ssr: false`, `loading` component                                                                                         |
+| `next/script`       | ✅  | All 4 strategies (`beforeInteractive`, `afterInteractive`, `lazyOnload`, `worker`)                                                     |
+| `next/font/google`  | 🟡  | Runtime CDN loading. No self-hosting, font subsetting, or fallback metrics                                                             |
+| `next/font/local`   | 🟡  | Runtime `@font-face` injection. Not extracted at build time                                                                            |
+| `next/og`           | ✅  | OG image generation via `@vercel/og` (Satori + resvg)                                                                                  |
+| `next/cache`        | ✅  | `revalidateTag`, `revalidatePath`, `unstable_cache`, pluggable `CacheHandler`, `"use cache"` with `cacheLife()` and `cacheTag()`       |
+| `next/form`         | ✅  | GET form interception + POST server action delegation                                                                                  |
+| `next/legacy/image` | ✅  | Translates legacy props to modern Image                                                                                                |
+| `next/error`        | ✅  | Default error page component                                                                                                           |
+| `next/config`       | ✅  | `getConfig` / `setConfig`                                                                                                              |
+| `next/document`     | ✅  | `Html`, `Head`, `Main`, `NextScript`                                                                                                   |
+| `next/constants`    | ✅  | All phase constants                                                                                                                    |
+| `next/amp`          | ⬜  | No-op (AMP is deprecated)                                                                                                              |
+| `next/web-vitals`   | ⬜  | No-op (use the `web-vitals` library directly)                                                                                          |
 
 ### Routing
 
-| Feature | | Notes |
-|---------|---|-------|
-| File-system routing (`pages/`) | ✅ | Automatic scanning with hot-reload on file changes |
-| File-system routing (`app/`) | ✅ | Pages, routes, layouts, templates, loading, error, not-found, forbidden, unauthorized |
-| Dynamic routes `[param]` | ✅ | Both routers |
-| Catch-all `[...slug]` | ✅ | Both routers |
-| Optional catch-all `[[...slug]]` | ✅ | Both routers |
-| Route groups `(group)` | ✅ | URL-transparent, layouts still apply |
-| Parallel routes `@slot` | ✅ | Discovery, layout props, `default.tsx`, inherited slots |
-| Intercepting routes | ✅ | `(.)`, `(..)`, `(..)(..)`, `(...)` conventions |
-| Route handlers (`route.ts`) | ✅ | Named HTTP methods, auto OPTIONS/HEAD, cookie attachment |
-| Middleware | ✅ | `middleware.ts` and `proxy.ts` (Next.js 16). Matcher patterns (string, array, regex, `:param`, `:path*`, `:path+`) |
-| i18n routing | 🟡 | Pages Router locale prefix, Accept-Language detection, NEXT_LOCALE cookie. No domain-based routing |
-| `basePath` | ✅ | Applied everywhere — URLs, Link, Router, navigation hooks |
-| `trailingSlash` | ✅ | 308 redirects to canonical form |
+| Feature                          |     | Notes                                                                                                              |
+| -------------------------------- | --- | ------------------------------------------------------------------------------------------------------------------ |
+| File-system routing (`pages/`)   | ✅  | Automatic scanning with hot-reload on file changes                                                                 |
+| File-system routing (`app/`)     | ✅  | Pages, routes, layouts, templates, loading, error, not-found, forbidden, unauthorized                              |
+| Dynamic routes `[param]`         | ✅  | Both routers                                                                                                       |
+| Catch-all `[...slug]`            | ✅  | Both routers                                                                                                       |
+| Optional catch-all `[[...slug]]` | ✅  | Both routers                                                                                                       |
+| Route groups `(group)`           | ✅  | URL-transparent, layouts still apply                                                                               |
+| Parallel routes `@slot`          | ✅  | Discovery, layout props, `default.tsx`, inherited slots                                                            |
+| Intercepting routes              | ✅  | `(.)`, `(..)`, `(..)(..)`, `(...)` conventions                                                                     |
+| Route handlers (`route.ts`)      | ✅  | Named HTTP methods, auto OPTIONS/HEAD, cookie attachment                                                           |
+| Middleware                       | ✅  | `middleware.ts` and `proxy.ts` (Next.js 16). Matcher patterns (string, array, regex, `:param`, `:path*`, `:path+`) |
+| i18n routing                     | 🟡  | Pages Router locale prefix, Accept-Language detection, NEXT_LOCALE cookie. No domain-based routing                 |
+| `basePath`                       | ✅  | Applied everywhere — URLs, Link, Router, navigation hooks                                                          |
+| `trailingSlash`                  | ✅  | 308 redirects to canonical form                                                                                    |
 
 ### Server features
 
-| Feature | | Notes |
-|---------|---|-------|
-| SSR (Pages Router) | ✅ | Streaming, `_app`/`_document`, `__NEXT_DATA__`, hydration |
-| SSR (App Router) | ✅ | RSC pipeline, nested layouts, streaming, nav context for client components |
-| `getStaticProps` | ✅ | Props, redirect, notFound, revalidate |
-| `getStaticPaths` | ✅ | `fallback: false`, `true`, `"blocking"` |
-| `getServerSideProps` | ✅ | Full context including locale |
-| ISR | ✅ | Stale-while-revalidate, pluggable `CacheHandler`, background regeneration |
-| Server Actions (`"use server"`) | ✅ | Action execution, FormData, re-render after mutation, `redirect()` in actions |
-| React Server Components | ✅ | Via `@vitejs/plugin-rsc`. `"use client"` boundaries work correctly |
-| Streaming SSR | ✅ | Both routers |
-| Metadata API | ✅ | `metadata`, `generateMetadata`, `viewport`, `generateViewport`, title templates |
-| `generateStaticParams` | ✅ | With `dynamicParams` enforcement |
-| Metadata file routes | ✅ | sitemap.xml, robots.txt, manifest, favicon, OG images (static + dynamic) |
-| Static export (`output: 'export'`) | ✅ | Generates static HTML/JSON for all routes |
-| `connection()` | ✅ | Forces dynamic rendering |
-| `"use cache"` directive | ✅ | File-level and function-level. `cacheLife()` profiles, `cacheTag()`, stale-while-revalidate |
-| `instrumentation.ts` | ✅ | `register()` and `onRequestError()` callbacks |
-| Route segment config | 🟡 | `revalidate`, `dynamic`, `dynamicParams`. `runtime` and `preferredRegion` are ignored |
+| Feature                            |     | Notes                                                                                       |
+| ---------------------------------- | --- | ------------------------------------------------------------------------------------------- |
+| SSR (Pages Router)                 | ✅  | Streaming, `_app`/`_document`, `__NEXT_DATA__`, hydration                                   |
+| SSR (App Router)                   | ✅  | RSC pipeline, nested layouts, streaming, nav context for client components                  |
+| `getStaticProps`                   | ✅  | Props, redirect, notFound, revalidate                                                       |
+| `getStaticPaths`                   | ✅  | `fallback: false`, `true`, `"blocking"`                                                     |
+| `getServerSideProps`               | ✅  | Full context including locale                                                               |
+| ISR                                | ✅  | Stale-while-revalidate, pluggable `CacheHandler`, background regeneration                   |
+| Server Actions (`"use server"`)    | ✅  | Action execution, FormData, re-render after mutation, `redirect()` in actions               |
+| React Server Components            | ✅  | Via `@vitejs/plugin-rsc`. `"use client"` boundaries work correctly                          |
+| Streaming SSR                      | ✅  | Both routers                                                                                |
+| Metadata API                       | ✅  | `metadata`, `generateMetadata`, `viewport`, `generateViewport`, title templates             |
+| `generateStaticParams`             | ✅  | With `dynamicParams` enforcement                                                            |
+| Metadata file routes               | ✅  | sitemap.xml, robots.txt, manifest, favicon, OG images (static + dynamic)                    |
+| Static export (`output: 'export'`) | ✅  | Generates static HTML/JSON for all routes                                                   |
+| `connection()`                     | ✅  | Forces dynamic rendering                                                                    |
+| `"use cache"` directive            | ✅  | File-level and function-level. `cacheLife()` profiles, `cacheTag()`, stale-while-revalidate |
+| `instrumentation.ts`               | ✅  | `register()` and `onRequestError()` callbacks                                               |
+| Route segment config               | 🟡  | `revalidate`, `dynamic`, `dynamicParams`. `runtime` and `preferredRegion` are ignored       |
 
 ### Configuration
 
-| Feature | | Notes |
-|---------|---|-------|
-| `next.config.js` / `.ts` / `.mjs` | ✅ | Function configs, phase argument |
-| `rewrites` / `redirects` / `headers` | ✅ | All phases, param interpolation |
-| Environment variables (`.env*`, `NEXT_PUBLIC_*`) | ✅ | Auto-loads Next.js-style dotenv files; only public vars are inlined |
-| `images` config | 🟡 | Parsed but not used for optimization |
+| Feature                                          |     | Notes                                                               |
+| ------------------------------------------------ | --- | ------------------------------------------------------------------- |
+| `next.config.js` / `.ts` / `.mjs`                | ✅  | Function configs, phase argument                                    |
+| `rewrites` / `redirects` / `headers`             | ✅  | All phases, param interpolation                                     |
+| Environment variables (`.env*`, `NEXT_PUBLIC_*`) | ✅  | Auto-loads Next.js-style dotenv files; only public vars are inlined |
+| `images` config                                  | 🟡  | Parsed but not used for optimization                                |
 
 ### Environment variable loading (`.env*`)
 

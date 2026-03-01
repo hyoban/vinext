@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { changeSessionAction } from '#/app/private-cache/actions';
-import Button from '#/ui/button';
-import { useState, useTransition } from 'react';
+import { changeSessionAction } from "#/app/private-cache/actions";
+import Button from "#/ui/button";
+import { useState, useTransition } from "react";
 
 export default function SessionButton() {
   const [isPending, startTransition] = useTransition();
@@ -20,11 +20,7 @@ export default function SessionButton() {
       }}
       disabled={isPending}
     >
-      {isPending
-        ? 'Changing Session...'
-        : sessionChanged
-          ? 'Session Changed!'
-          : 'Change Session'}
+      {isPending ? "Changing Session..." : sessionChanged ? "Session Changed!" : "Change Session"}
     </Button>
   );
 }

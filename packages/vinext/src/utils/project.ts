@@ -116,8 +116,5 @@ export function hasViteConfig(root: string): boolean {
  * Check if the project uses App Router (has an app/ directory).
  */
 export function hasAppDir(root: string): boolean {
-  return (
-    fs.existsSync(path.join(root, "app")) ||
-    fs.existsSync(path.join(root, "src", "app"))
-  );
+  return fs.existsSync(path.join(root, "app")) || fs.existsSync(path.join(root, "src", "app"));
 }

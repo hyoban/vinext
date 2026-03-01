@@ -1,9 +1,9 @@
-import { Suspense } from 'react';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { ProductCard } from '#/ui/product-card';
-import { cacheTag } from 'next/cache';
-import { connection } from 'next/server';
+import { Suspense } from "react";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { ProductCard } from "#/ui/product-card";
+import { cacheTag } from "next/cache";
+import { connection } from "next/server";
 
 export default async function Page() {
   return (
@@ -18,17 +18,10 @@ async function ProductList() {
   const products = await getData();
 
   return (
-    <Boundary
-      label="<ProductList> (statically inferred)"
-      size="small"
-      animateRerendering={false}
-    >
+    <Boundary label="<ProductList> (statically inferred)" size="small" animateRerendering={false}>
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-semibold text-gray-300">
-          All{' '}
-          <span className="font-mono tracking-tighter text-gray-600">
-            ({products.length})
-          </span>
+          All <span className="font-mono tracking-tighter text-gray-600">({products.length})</span>
         </h1>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {products.map((product) => (
@@ -46,8 +39,8 @@ async function ProductList() {
 }
 
 async function getData() {
-  'use cache';
-  cacheTag('products');
+  "use cache";
+  cacheTag("products");
 
   // DEMO: Add a delay to simulate a slow data request
   await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -100,7 +93,7 @@ function ProductPriceSkeleton() {
 }
 
 async function getProductPrice(productId: string) {
-  'use cache: remote';
+  "use cache: remote";
 
   // We tag this cache entry with the product ID so that if the product is
   // updated, this will invalidate the cache entry for this product. We also

@@ -1,7 +1,7 @@
-import db from '#/lib/db';
-import { Grid } from '#/ui/codehike';
+import db from "#/lib/db";
+import { Grid } from "#/ui/codehike";
 
-export const demo = db.demo.find({ where: { slug: 'private-cache' } });
+export const demo = db.demo.find({ where: { slug: "private-cache" } });
 
 # {demo.name}
 
@@ -20,13 +20,13 @@ export const demo = db.demo.find({ where: { slug: 'private-cache' } });
 ```tsx app/private-cache/product/[id]/with-private/page.tsx
 async function getRecommendations(productId: string) {
   // !mark
-  'use cache: private';
+  "use cache: private";
   cacheTag(`recommendations-${productId}`);
   cacheLife({ stale: 60 });
 
   // Can call cookies() INSIDE the cached function!
   // !mark
-  const sessionId = (await cookies()).get('session-id')?.value || 'guest';
+  const sessionId = (await cookies()).get("session-id")?.value || "guest";
 
   return getPersonalizedRecommendations(productId, sessionId);
 }
@@ -45,10 +45,8 @@ async function Recommendations({ productId }: { productId: string }) {
 }
 
 export const unstable_prefetch = {
-  mode: 'runtime',
-  samples: [
-    { params: { id: '1' }, cookies: [{ name: 'session-id', value: '1' }] },
-  ],
+  mode: "runtime",
+  samples: [{ params: { id: "1" }, cookies: [{ name: "session-id", value: "1" }] }],
 };
 ```
 

@@ -1,14 +1,14 @@
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tab } from '#/ui/tabs';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tab } from "#/ui/tabs";
 
 export default function Page() {
-  const demo = db.demo.find({ where: { slug: 'route-groups' } });
+  const demo = db.demo.find({ where: { slug: "route-groups" } });
 
   return (
     <Boundary label="(checkout)/page.tsx" className="flex flex-col gap-9">
       <div className="flex">
-        <Tab item={{ text: 'Back', slug: demo.slug }} />
+        <Tab item={{ text: "Back", slug: demo.slug }} />
       </div>
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-semibold text-gray-300">Checkout</h1>

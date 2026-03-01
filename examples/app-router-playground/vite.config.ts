@@ -44,12 +44,16 @@ export default defineConfig({
         // Rewrite imports from 'react' that reference canary APIs
         if (
           !id.includes("node_modules") &&
-          (id.endsWith(".tsx") || id.endsWith(".ts") || id.endsWith(".jsx") || id.endsWith(".js")) &&
+          (id.endsWith(".tsx") ||
+            id.endsWith(".ts") ||
+            id.endsWith(".jsx") ||
+            id.endsWith(".js")) &&
           (code.includes("ViewTransition") || code.includes("addTransitionType")) &&
           /from\s+['"]react['"]/.test(code)
         ) {
           // Only rewrite if the import actually destructures ViewTransition or addTransitionType
-          const importRegex = /import\s*\{[^}]*(ViewTransition|addTransitionType)[^}]*\}\s*from\s*['"]react['"]/;
+          const importRegex =
+            /import\s*\{[^}]*(ViewTransition|addTransitionType)[^}]*\}\s*from\s*['"]react['"]/;
           if (importRegex.test(code)) {
             const result = code.replace(
               /from\s*['"]react['"]/g,
@@ -90,7 +94,7 @@ export default defineConfig({
       // Map #/* imports to the project root (matches tsconfig paths)
       "#": path.resolve(__dirname),
       // Map bare 'app/' imports (tsconfig baseUrl: ".")
-      "app": path.resolve(__dirname, "app"),
+      app: path.resolve(__dirname, "app"),
       // server-only is a guard package — resolve to empty module in SSR
       "server-only": path.resolve(__dirname, "server-only-shim.ts"),
     },

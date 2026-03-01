@@ -51,7 +51,10 @@ export async function pagesRouter(pagesDir: string): Promise<Route[]> {
 async function scanPageRoutes(pagesDir: string): Promise<Route[]> {
   const routes: Route[] = [];
 
-  for await (const file of glob("**/*.{tsx,ts,jsx,js}", { cwd: pagesDir, exclude: ["api", "**/_*"] })) {
+  for await (const file of glob("**/*.{tsx,ts,jsx,js}", {
+    cwd: pagesDir,
+    exclude: ["api", "**/_*"],
+  })) {
     const route = fileToRoute(file, pagesDir);
     if (route) routes.push(route);
   }
@@ -159,9 +162,12 @@ export function matchRoute(
 ): { route: Route; params: Record<string, string | string[]> } | null {
   // Normalize: strip query string and trailing slash
   const pathname = url.split("?")[0];
-  let normalizedUrl =
-    pathname === "/" ? "/" : pathname.replace(/\/$/, "");
-  try { normalizedUrl = decodeURIComponent(normalizedUrl); } catch { /* malformed percent-encoding — match as-is */ }
+  let normalizedUrl = pathname === "/" ? "/" : pathname.replace(/\/$/, "");
+  try {
+    normalizedUrl = decodeURIComponent(normalizedUrl);
+  } catch {
+    /* malformed percent-encoding — match as-is */
+  }
 
   for (const route of routes) {
     const params = matchPattern(normalizedUrl, route.pattern);
@@ -224,10 +230,7 @@ async function scanApiRoutes(pagesDir: string): Promise<Route[]> {
   return routes;
 }
 
-function matchPattern(
-  url: string,
-  pattern: string,
-): Record<string, string | string[]> | null {
+function matchPattern(url: string, pattern: string): Record<string, string | string[]> | null {
   const urlParts = url.split("/").filter(Boolean);
   const patternParts = pattern.split("/").filter(Boolean);
 
@@ -278,7 +281,7 @@ function matchPattern(
  */
 export function patternToNextFormat(pattern: string): string {
   return pattern
-    .replace(/:([\w-]+)\*/g, "[[...$1]]")   // optional catch-all :slug* -> [[...slug]]
-    .replace(/:([\w-]+)\+/g, "[...$1]")     // catch-all :slug+ -> [...slug]
-    .replace(/:([\w-]+)/g, "[$1]");          // dynamic :id -> [id]
+    .replace(/:([\w-]+)\*/g, "[[...$1]]") // optional catch-all :slug* -> [[...slug]]
+    .replace(/:([\w-]+)\+/g, "[...$1]") // catch-all :slug+ -> [...slug]
+    .replace(/:([\w-]+)/g, "[$1]"); // dynamic :id -> [id]
 }

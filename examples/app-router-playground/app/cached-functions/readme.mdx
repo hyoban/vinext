@@ -1,7 +1,7 @@
-import db from '#/lib/db';
-import { Grid } from '#/ui/codehike';
+import db from "#/lib/db";
+import { Grid } from "#/ui/codehike";
 
-export const demo = db.demo.find({ where: { slug: 'cached-functions' } });
+export const demo = db.demo.find({ where: { slug: "cached-functions" } });
 
 # {demo.name}
 
@@ -17,7 +17,7 @@ export const demo = db.demo.find({ where: { slug: 'cached-functions' } });
 ```tsx app/page.tsx
 async function getData() {
   // !mark
-  'use cache';
+  "use cache";
   // ...
 }
 

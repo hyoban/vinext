@@ -1,4 +1,4 @@
-import db from '#/lib/db';
+import db from "#/lib/db";
 
 export async function generateStaticParams() {
   const products = db.product.findMany();
@@ -6,10 +6,6 @@ export async function generateStaticParams() {
   return products.map((product) => ({ id: product.id }));
 }
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function Layout({ children }: { children: React.ReactNode }) {
   return children;
 }

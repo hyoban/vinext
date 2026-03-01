@@ -73,9 +73,13 @@ let _serverInsertedHTMLCallbacks: Array<() => unknown> = [];
 
 // These are overridden by navigation-state.ts on the server to use ALS.
 let _getServerContext = (): NavigationContext | null => _serverContext;
-let _setServerContext = (ctx: NavigationContext | null): void => { _serverContext = ctx; };
+let _setServerContext = (ctx: NavigationContext | null): void => {
+  _serverContext = ctx;
+};
 let _getInsertedHTMLCallbacks = (): Array<() => unknown> => _serverInsertedHTMLCallbacks;
-let _clearInsertedHTMLCallbacks = (): void => { _serverInsertedHTMLCallbacks = []; };
+let _clearInsertedHTMLCallbacks = (): void => {
+  _serverInsertedHTMLCallbacks = [];
+};
 
 /**
  * Register ALS-backed state accessors. Called by navigation-state.ts on import.
@@ -158,9 +162,8 @@ export function toRscUrl(href: string): string {
   const pathname = qIdx === -1 ? beforeHash : beforeHash.slice(0, qIdx);
   const query = qIdx === -1 ? "" : beforeHash.slice(qIdx);
   // Strip trailing slash (but preserve "/" root) for consistent cache keys
-  const normalizedPath = pathname.length > 1 && pathname.endsWith("/")
-    ? pathname.slice(0, -1)
-    : pathname;
+  const normalizedPath =
+    pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   return normalizedPath + ".rsc" + query;
 }
 
@@ -278,8 +281,13 @@ export function usePathname(): string {
     return _getServerContext()?.pathname ?? "/";
   }
   // Client-side: use the hook system for reactivity
-   return React.useSyncExternalStore(
-    (cb: () => void) => { _listeners.add(cb); return () => { _listeners.delete(cb); }; },
+  return React.useSyncExternalStore(
+    (cb: () => void) => {
+      _listeners.add(cb);
+      return () => {
+        _listeners.delete(cb);
+      };
+    },
     getPathnameSnapshot,
     () => _getServerContext()?.pathname ?? "/",
   );
@@ -294,8 +302,13 @@ export function useSearchParams(): URLSearchParams {
     // Return a safe fallback — the client will hydrate with the real value.
     return _getServerContext()?.searchParams ?? new URLSearchParams();
   }
-   return React.useSyncExternalStore(
-    (cb: () => void) => { _listeners.add(cb); return () => { _listeners.delete(cb); }; },
+  return React.useSyncExternalStore(
+    (cb: () => void) => {
+      _listeners.add(cb);
+      return () => {
+        _listeners.delete(cb);
+      };
+    },
     getSearchParamsSnapshot,
     getServerSearchParamsSnapshot,
   );
@@ -529,17 +542,19 @@ export function useRouter() {
         headers: { Accept: "text/x-component" },
         credentials: "include",
         priority: "low" as RequestInit["priority"],
-      }).then((response) => {
-        if (response.ok) {
-          storePrefetchResponse(rscUrl, response);
-        } else {
-          // Non-ok response: allow retry on next prefetch() call
+      })
+        .then((response) => {
+          if (response.ok) {
+            storePrefetchResponse(rscUrl, response);
+          } else {
+            // Non-ok response: allow retry on next prefetch() call
+            prefetched.delete(rscUrl);
+          }
+        })
+        .catch(() => {
+          // Network error: allow retry on next prefetch() call
           prefetched.delete(rscUrl);
-        }
-      }).catch(() => {
-        // Network error: allow retry on next prefetch() call
-        prefetched.delete(rscUrl);
-      });
+        });
     },
   };
   return router;
@@ -555,9 +570,7 @@ export function useRouter() {
  *
  * @param parallelRoutesKey - Which parallel route to read (default: "children")
  */
-export function useSelectedLayoutSegment(
-  parallelRoutesKey?: string,
-): string | null {
+export function useSelectedLayoutSegment(parallelRoutesKey?: string): string | null {
   const segments = useSelectedLayoutSegments(parallelRoutesKey);
   return segments.length > 0 ? segments[0] : null;
 }
@@ -573,9 +586,7 @@ export function useSelectedLayoutSegment(
  *
  * @param parallelRoutesKey - Which parallel route to read (default: "children")
  */
-export function useSelectedLayoutSegments(
-  _parallelRoutesKey?: string,
-): string[] {
+export function useSelectedLayoutSegments(_parallelRoutesKey?: string): string[] {
   const pathname = usePathname();
   const depth = useLayoutSegmentDepth();
   const segments = pathname.split("/").filter(Boolean);

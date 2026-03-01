@@ -82,7 +82,10 @@ export interface NextConfig {
   redirects?: () => Promise<NextRedirect[]> | NextRedirect[];
   /** URL rewrite rules */
   rewrites?: () =>
-    | Promise<NextRewrite[] | { beforeFiles: NextRewrite[]; afterFiles: NextRewrite[]; fallback: NextRewrite[] }>
+    | Promise<
+        | NextRewrite[]
+        | { beforeFiles: NextRewrite[]; afterFiles: NextRewrite[]; fallback: NextRewrite[] }
+      >
     | NextRewrite[]
     | { beforeFiles: NextRewrite[]; afterFiles: NextRewrite[]; fallback: NextRewrite[] };
   /** Custom response headers */
@@ -143,12 +146,7 @@ export interface ResolvedNextConfig {
   serverActionsAllowedOrigins: string[];
 }
 
-const CONFIG_FILES = [
-  "next.config.ts",
-  "next.config.mjs",
-  "next.config.js",
-  "next.config.cjs",
-];
+const CONFIG_FILES = ["next.config.ts", "next.config.mjs", "next.config.js", "next.config.cjs"];
 
 /**
  * Check whether an error indicates a CJS module was loaded in an ESM context
@@ -210,16 +208,12 @@ export async function loadNextConfig(root: string): Promise<NextConfig | null> {
           const mod = require(configPath);
           return await unwrapConfig({ default: mod });
         } catch (e2) {
-          console.warn(
-            `[vinext] Failed to load ${filename}: ${(e2 as Error).message}`,
-          );
+          console.warn(`[vinext] Failed to load ${filename}: ${(e2 as Error).message}`);
           return null;
         }
       }
 
-      console.warn(
-        `[vinext] Failed to load ${filename}: ${(e as Error).message}`,
-      );
+      console.warn(`[vinext] Failed to load ${filename}: ${(e as Error).message}`);
       return null;
     }
   }
@@ -231,9 +225,7 @@ export async function loadNextConfig(root: string): Promise<NextConfig | null> {
  * Resolve a NextConfig into a fully-resolved ResolvedNextConfig.
  * Awaits async functions for redirects/rewrites/headers.
  */
-export async function resolveNextConfig(
-  config: NextConfig | null,
-): Promise<ResolvedNextConfig> {
+export async function resolveNextConfig(config: NextConfig | null): Promise<ResolvedNextConfig> {
   if (!config) {
     return {
       env: {},
@@ -259,7 +251,11 @@ export async function resolveNextConfig(
   }
 
   // Resolve rewrites
-  let rewrites = { beforeFiles: [] as NextRewrite[], afterFiles: [] as NextRewrite[], fallback: [] as NextRewrite[] };
+  let rewrites = {
+    beforeFiles: [] as NextRewrite[],
+    afterFiles: [] as NextRewrite[],
+    fallback: [] as NextRewrite[],
+  };
   if (config.rewrites) {
     const result = await config.rewrites();
     if (Array.isArray(result)) {
@@ -293,9 +289,7 @@ export async function resolveNextConfig(
   const unsupported = mdx ? [] : ["webpack"];
   for (const key of unsupported) {
     if (config[key] !== undefined) {
-      console.warn(
-        `[vinext] next.config option "${key}" is not yet supported and will be ignored`,
-      );
+      console.warn(`[vinext] next.config option "${key}" is not yet supported and will be ignored`);
     }
   }
 
@@ -412,9 +406,9 @@ function isMdxLoader(loaderPath: string): boolean {
   return (
     loaderPath.includes("mdx") &&
     (loaderPath.includes("@next") ||
-     loaderPath.includes("@mdx-js") ||
-     loaderPath.includes("mdx-js-loader") ||
-     loaderPath.includes("next-mdx"))
+      loaderPath.includes("@mdx-js") ||
+      loaderPath.includes("mdx-js-loader") ||
+      loaderPath.includes("next-mdx"))
   );
 }
 

@@ -1,21 +1,21 @@
-import { ExternalLink } from '#/ui/external-link';
-import Link from 'next/link';
+import { ExternalLink } from "#/ui/external-link";
+import Link from "next/link";
 
 const items = [
   {
-    name: 'Active links',
-    slug: 'active-links',
-    description: 'Update the style of the current active link',
+    name: "Active links",
+    slug: "active-links",
+    description: "Update the style of the current active link",
   },
   {
-    name: 'Breadcrumbs',
-    slug: 'breadcrumbs',
-    description: 'Shared server-side Breadcrumb UI using Parallel Routes',
+    name: "Breadcrumbs",
+    slug: "breadcrumbs",
+    description: "Shared server-side Breadcrumb UI using Parallel Routes",
   },
   {
-    name: 'Updating URL search params',
-    slug: 'search-params',
-    description: 'Update searchParams using `useRouter` and `<Link>`',
+    name: "Updating URL search params",
+    slug: "search-params",
+    description: "Update searchParams using `useRouter` and `<Link>`",
   },
 ];
 
@@ -32,9 +32,7 @@ export default function Page() {
               key={item.name}
               className="group block space-y-1.5 rounded-lg bg-gray-900 px-5 py-3 hover:bg-gray-800"
             >
-              <div className="font-medium text-gray-200 group-hover:text-gray-50">
-                {item.name}
-              </div>
+              <div className="font-medium text-gray-200 group-hover:text-gray-50">{item.name}</div>
 
               {item.description ? (
                 <div className="line-clamp-3 text-sm text-gray-400 group-hover:text-gray-300">

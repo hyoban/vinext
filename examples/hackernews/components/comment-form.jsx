@@ -1,4 +1,4 @@
-import styles from './comment-form.module.css';
+import styles from "./comment-form.module.css";
 
 export default () => (
   <div>

@@ -1,9 +1,9 @@
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { Tab } from '#/ui/tabs';
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { Tab } from "#/ui/tabs";
 
 export default function NotFound() {
-  const demo = db.demo.find({ where: { slug: 'not-found' } });
+  const demo = db.demo.find({ where: { slug: "not-found" } });
 
   return (
     <Boundary label="[section]/not-found.tsx" className="flex flex-col gap-4">
@@ -15,7 +15,7 @@ export default function NotFound() {
       </div>
 
       <div className="flex">
-        <Tab item={{ text: 'Home', slug: demo.slug }} />
+        <Tab item={{ text: "Home", slug: demo.slug }} />
       </div>
     </Boundary>
   );

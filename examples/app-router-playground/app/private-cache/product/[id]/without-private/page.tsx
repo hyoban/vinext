@@ -1,19 +1,15 @@
-import { Suspense } from 'react';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import { ProductCard } from '#/ui/product-card';
-import { cookies } from 'next/headers';
-import { getPersonalizedRecommendations } from '../../../_components/recommendations';
-import { notFound } from 'next/navigation';
-import { ProductDetails } from '#/app/private-cache/_components/product-detail';
-import Link from 'next/link';
-import { ChevronLeftIcon } from '@heroicons/react/24/solid';
+import { Suspense } from "react";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import { ProductCard } from "#/ui/product-card";
+import { cookies } from "next/headers";
+import { getPersonalizedRecommendations } from "../../../_components/recommendations";
+import { notFound } from "next/navigation";
+import { ProductDetails } from "#/app/private-cache/_components/product-detail";
+import Link from "next/link";
+import { ChevronLeftIcon } from "@heroicons/react/24/solid";
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const product = await db.product.find({ where: { id } });
 
@@ -72,7 +68,7 @@ async function getRecommendations(productId: string) {
   // Without using `use cache: private`, we can't mark this function as runtime
   // prefetchable, so the following call to cookies will actually only occur
   // after the user has clicked a link to navigate to this page.
-  const sessionId = (await cookies()).get('session-id')?.value || 'guest';
+  const sessionId = (await cookies()).get("session-id")?.value || "guest";
 
   return getPersonalizedRecommendations(productId, sessionId);
 }
@@ -89,10 +85,7 @@ function RecommendationsSkeleton() {
         <h2 className="text-lg font-semibold text-gray-300">Recommendations</h2>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-48 animate-pulse rounded-lg bg-gray-800"
-            />
+            <div key={i} className="h-48 animate-pulse rounded-lg bg-gray-800" />
           ))}
         </div>
       </div>

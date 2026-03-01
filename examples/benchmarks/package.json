@@ -1,24 +1,24 @@
 {
   "name": "vinext-benchmarks",
-  "type": "module",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cloudflare/kumo": "^1.6.0",
+    "@cloudflare/vite-plugin": "^1.25.0",
+    "@phosphor-icons/react": "^2.1.7",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-rsc": "^0.5.19",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "vite": "^7.3.1",
-    "vinext": "workspace:*",
-    "@vitejs/plugin-rsc": "^0.5.19",
     "react-server-dom-webpack": "^19.2.4",
-    "@cloudflare/vite-plugin": "^1.25.0",
-    "@cloudflare/kumo": "^1.6.0",
-    "@phosphor-icons/react": "^2.1.7",
-    "wrangler": "^4.65.0",
     "tailwindcss": "^4.1.0",
-    "@tailwindcss/vite": "^4.1.0"
+    "vinext": "workspace:*",
+    "vite": "^7.3.1",
+    "wrangler": "^4.65.0"
   }
 }

@@ -1,38 +1,30 @@
-import { Product } from '#/lib/db';
-import clsx from 'clsx';
-import Image from 'next/image';
+import { Product } from "#/lib/db";
+import clsx from "clsx";
+import Image from "next/image";
 
-import {
-  ElementType,
-  ComponentPropsWithoutRef,
-  PropsWithChildren,
-} from 'react';
+import { ElementType, ComponentPropsWithoutRef, PropsWithChildren } from "react";
 
-export type PolymorphicProps<
-  E extends ElementType,
-  P = {},
-> = PropsWithChildren<P> & { as?: E } & Omit<
-    ComponentPropsWithoutRef<E>,
-    keyof P | 'as' | 'children'
-  >;
+export type PolymorphicProps<E extends ElementType, P = {}> = PropsWithChildren<P> & {
+  as?: E;
+} & Omit<ComponentPropsWithoutRef<E>, keyof P | "as" | "children">;
 
 type ProductCardProps<E extends ElementType> = PolymorphicProps<
   E,
   { product: Product; animateEnter?: boolean }
 >;
 
-export function ProductCard<E extends ElementType = 'div'>({
+export function ProductCard<E extends ElementType = "div">({
   as,
   product,
   animateEnter,
   ...rest
 }: ProductCardProps<E>) {
-  const Component = as || 'div';
+  const Component = as || "div";
   return (
     <Component className="group flex flex-col gap-2.5" {...rest}>
       <div className="overflow-hidden rounded-md bg-gray-900/50 p-8 group-hover:bg-gray-900">
         <Image
-          className={clsx(animateEnter && 'transition-enter')}
+          className={clsx(animateEnter && "transition-enter")}
           src={`/shop/${product.image}`}
           alt={product.name}
           quality={90}
@@ -54,11 +46,11 @@ export function ProductCardSkeleton() {
     <div className="group flex flex-col gap-2.5">
       <div
         className={clsx(
-          'aspect-square overflow-hidden rounded-md bg-gray-900/50',
-          'relative before:absolute before:inset-0',
-          'before:bg-gradient-to-r before:from-transparent before:via-white/5 before:to-transparent',
-          'before:translate-x-[-50%] before:opacity-0',
-          'before:animate-shimmer',
+          "aspect-square overflow-hidden rounded-md bg-gray-900/50",
+          "relative before:absolute before:inset-0",
+          "before:bg-gradient-to-r before:from-transparent before:via-white/5 before:to-transparent",
+          "before:translate-x-[-50%] before:opacity-0",
+          "before:animate-shimmer",
         )}
       />
 
@@ -83,22 +75,14 @@ export function ProductList({
     <div className="flex flex-col gap-4">
       <h1 className="flex items-center gap-2 text-xl font-medium text-gray-300">
         <div>{title}</div>
-        <span className="font-mono tracking-tighter text-gray-600">
-          ({count})
-        </span>
+        <span className="font-mono tracking-tighter text-gray-600">({count})</span>
       </h1>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">{children}</div>
     </div>
   );
 }
 
-export function ProductListSkeleton({
-  title,
-  count = 3,
-}: {
-  title: string;
-  count?: number;
-}) {
+export function ProductListSkeleton({ title, count = 3 }: { title: string; count?: number }) {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-medium text-gray-600">{title}</h1>

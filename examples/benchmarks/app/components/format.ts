@@ -17,10 +17,7 @@ export function formatBytes(b: number | null): string {
  * Compare a value against a baseline where lower is better (times, sizes).
  * Returns e.g. "2.1x faster", "1.3x slower", or null if inputs are invalid.
  */
-export function speedup(
-  baseline: number | null,
-  value: number | null,
-): string | null {
+export function speedup(baseline: number | null, value: number | null): string | null {
   if (baseline === null || value === null || baseline === 0 || value === 0) return null;
   const ratio = baseline / value;
   if (ratio > 1) return `${ratio.toFixed(1)}x faster`;
@@ -32,10 +29,7 @@ export function speedup(
  * Compare a size value against a baseline.
  * Returns e.g. "56% smaller", "12% larger", or null if inputs are invalid.
  */
-export function sizeReduction(
-  baseline: number | null,
-  value: number | null,
-): string | null {
+export function sizeReduction(baseline: number | null, value: number | null): string | null {
   if (baseline === null || value === null || baseline === 0) return null;
   const pct = Math.round((1 - value / baseline) * 100);
   if (pct > 0) return `${pct}% smaller`;

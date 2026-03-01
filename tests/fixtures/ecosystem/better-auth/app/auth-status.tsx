@@ -13,9 +13,5 @@ export function AuthStatus() {
     return <div data-testid="auth-signed-out">Not signed in</div>;
   }
 
-  return (
-    <div data-testid="auth-signed-in">
-      Signed in as {session.user.email}
-    </div>
-  );
+  return <div data-testid="auth-signed-in">Signed in as {session.user.email}</div>;
 }

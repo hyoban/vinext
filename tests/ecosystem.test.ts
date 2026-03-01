@@ -59,9 +59,7 @@ async function startFixture(
     proc.on("exit", (code) => {
       if (code !== null && code !== 0) {
         clearTimeout(timeoutId);
-        reject(
-          new Error(`Fixture "${name}" exited with code ${code}: ${output}`),
-        );
+        reject(new Error(`Fixture "${name}" exited with code ${code}: ${output}`));
       }
     });
   });
@@ -257,11 +255,7 @@ describe("better-auth", () => {
   });
 
   it("sign-up flow creates user and returns session", async () => {
-    const { res } = await signUpUser(
-      "signup-test@example.com",
-      "password123456",
-      "Signup Test",
-    );
+    const { res } = await signUpUser("signup-test@example.com", "password123456", "Signup Test");
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.user).toBeDefined();

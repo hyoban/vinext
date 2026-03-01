@@ -1,12 +1,8 @@
-import db from '#/lib/db';
-import { SkeletonCard } from '#/ui/skeleton-card';
-import { notFound } from 'next/navigation';
+import db from "#/lib/db";
+import { SkeletonCard } from "#/ui/skeleton-card";
+import { notFound } from "next/navigation";
 
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ category: string }>;
-}) {
+export default async function Page({ params }: { params: Promise<{ category: string }> }) {
   const { category: categorySlug } = await params;
   const category = db.category.find({ where: { slug: categorySlug } });
   if (!category) {

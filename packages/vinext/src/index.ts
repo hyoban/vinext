@@ -1,6 +1,13 @@
 import type { Plugin, UserConfig, ViteDevServer } from "vite";
 import { parseAst } from "vite";
-import { pagesRouter, apiRouter, invalidateRouteCache, matchRoute, patternToNextFormat as pagesPatternToNextFormat, type Route } from "./routing/pages-router.js";
+import {
+  pagesRouter,
+  apiRouter,
+  invalidateRouteCache,
+  matchRoute,
+  patternToNextFormat as pagesPatternToNextFormat,
+  type Route,
+} from "./routing/pages-router.js";
 import { appRouter, invalidateAppRouteCache } from "./routing/app-router.js";
 import { createSSRHandler } from "./server/dev-server.js";
 import { handleApiRoute } from "./server/api-handler.js";
@@ -19,7 +26,11 @@ import {
 } from "./config/next-config.js";
 
 import { findMiddlewareFile, isProxyFile, runMiddleware } from "./server/middleware.js";
-import { generateSafeRegExpCode, generateMiddlewareMatcherCode, generateNormalizePathCode } from "./server/middleware-codegen.js";
+import {
+  generateSafeRegExpCode,
+  generateMiddlewareMatcherCode,
+  generateNormalizePathCode,
+} from "./server/middleware-codegen.js";
 import { normalizePath } from "./server/normalize-path.js";
 import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
@@ -72,7 +83,8 @@ async function fetchAndCacheFont(
   // Fetch CSS from Google Fonts (woff2 user-agent gives woff2 URLs)
   const cssResponse = await fetch(cssUrl, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     },
   });
   if (!cssResponse.ok) {
@@ -87,7 +99,11 @@ async function fetchAndCacheFont(
   while ((urlMatch = urlRe.exec(css)) !== null) {
     const fontUrl = urlMatch[1];
     if (!urls.has(fontUrl)) {
-      const ext = fontUrl.includes(".woff2") ? ".woff2" : fontUrl.includes(".woff") ? ".woff" : ".ttf";
+      const ext = fontUrl.includes(".woff2")
+        ? ".woff2"
+        : fontUrl.includes(".woff")
+          ? ".woff"
+          : ".ttf";
       const fileHash = createHash("md5").update(fontUrl).digest("hex").slice(0, 8);
       urls.set(fontUrl, `${family.toLowerCase().replace(/\s+/g, "-")}-${fileHash}${ext}`);
     }
@@ -159,7 +175,11 @@ function extractStaticValue(node: any): unknown {
 
     case "UnaryExpression":
       // Handle negative numbers: -1, -3.14
-      if (node.operator === "-" && node.argument?.type === "Literal" && typeof node.argument.value === "number") {
+      if (
+        node.operator === "-" &&
+        node.argument?.type === "Literal" &&
+        typeof node.argument.value === "number"
+      ) {
         return -node.argument.value;
       }
       return undefined;
@@ -272,7 +292,11 @@ async function resolvePostcssStringPlugins(
   // Load the config file
   let config: any;
   try {
-    if (configPath.endsWith(".json") || configPath.endsWith(".yaml") || configPath.endsWith(".yml")) {
+    if (
+      configPath.endsWith(".json") ||
+      configPath.endsWith(".yaml") ||
+      configPath.endsWith(".yml")
+    ) {
       // JSON/YAML configs use object form — postcss-load-config handles these fine
       return undefined;
     }
@@ -295,9 +319,7 @@ async function resolvePostcssStringPlugins(
   // (either bare strings or tuple form ["plugin-name", { options }])
   if (!config || !Array.isArray(config.plugins)) return undefined;
   const hasStringPlugins = config.plugins.some(
-    (p: any) =>
-      typeof p === "string" ||
-      (Array.isArray(p) && typeof p[0] === "string"),
+    (p: any) => typeof p === "string" || (Array.isArray(p) && typeof p[0] === "string"),
   );
   if (!hasStringPlugins) return undefined;
 
@@ -403,11 +425,7 @@ function clientManualChunks(id: string): string | undefined {
   if (id.includes("node_modules")) {
     const pkg = getPackageName(id);
     if (!pkg) return undefined;
-    if (
-      pkg === "react" ||
-      pkg === "react-dom" ||
-      pkg === "scheduler"
-    ) {
+    if (pkg === "react" || pkg === "react-dom" || pkg === "scheduler") {
       return "framework";
     }
     // Let Rollup handle all other vendor code via its default
@@ -489,14 +507,17 @@ const clientTreeshakeConfig = {
  *   should be excluded from modulepreload hints.
  */
 function computeLazyChunks(
-  buildManifest: Record<string, {
-    file: string;
-    isEntry?: boolean;
-    isDynamicEntry?: boolean;
-    imports?: string[];
-    dynamicImports?: string[];
-    css?: string[];
-  }>
+  buildManifest: Record<
+    string,
+    {
+      file: string;
+      isEntry?: boolean;
+      isDynamicEntry?: boolean;
+      imports?: string[];
+      dynamicImports?: string[];
+      css?: string[];
+    }
+  >,
 ): string[] {
   // Collect all chunk files that are statically reachable from entries
   const eagerFiles = new Set<string>();
@@ -621,8 +642,16 @@ export default function vinext(options: VinextOptions = {}): Plugin[] {
     });
 
     // Check for _app and _document
-    const hasApp = fs.existsSync(path.join(pagesDir, "_app.tsx")) || fs.existsSync(path.join(pagesDir, "_app.jsx")) || fs.existsSync(path.join(pagesDir, "_app.ts")) || fs.existsSync(path.join(pagesDir, "_app.js"));
-    const hasDoc = fs.existsSync(path.join(pagesDir, "_document.tsx")) || fs.existsSync(path.join(pagesDir, "_document.jsx")) || fs.existsSync(path.join(pagesDir, "_document.ts")) || fs.existsSync(path.join(pagesDir, "_document.js"));
+    const hasApp =
+      fs.existsSync(path.join(pagesDir, "_app.tsx")) ||
+      fs.existsSync(path.join(pagesDir, "_app.jsx")) ||
+      fs.existsSync(path.join(pagesDir, "_app.ts")) ||
+      fs.existsSync(path.join(pagesDir, "_app.js"));
+    const hasDoc =
+      fs.existsSync(path.join(pagesDir, "_document.tsx")) ||
+      fs.existsSync(path.join(pagesDir, "_document.jsx")) ||
+      fs.existsSync(path.join(pagesDir, "_document.ts")) ||
+      fs.existsSync(path.join(pagesDir, "_document.js"));
 
     // Use absolute paths for _app and _document too
     const appFileBase = path.join(pagesDir, "_app").replace(/\\/g, "/");
@@ -1525,7 +1554,11 @@ ${middlewareExportCode}
   async function generateClientEntry(): Promise<string> {
     const pageRoutes = await pagesRouter(pagesDir);
 
-    const hasApp = fs.existsSync(path.join(pagesDir, "_app.tsx")) || fs.existsSync(path.join(pagesDir, "_app.jsx")) || fs.existsSync(path.join(pagesDir, "_app.ts")) || fs.existsSync(path.join(pagesDir, "_app.js"));
+    const hasApp =
+      fs.existsSync(path.join(pagesDir, "_app.tsx")) ||
+      fs.existsSync(path.join(pagesDir, "_app.jsx")) ||
+      fs.existsSync(path.join(pagesDir, "_app.ts")) ||
+      fs.existsSync(path.join(pagesDir, "_app.js"));
 
     // Build a map of route pattern -> dynamic import.
     // Keys must use Next.js bracket format (e.g. "/user/[id]") to match
@@ -1575,7 +1608,9 @@ async function hydrate() {
   }
 
   let element;
-  ${hasApp ? `
+  ${
+    hasApp
+      ? `
   try {
     const appModule = await import(${JSON.stringify(appFileBase)});
     const AppComponent = appModule.default;
@@ -1584,9 +1619,11 @@ async function hydrate() {
   } catch {
     element = React.createElement(PageComponent, pageProps);
   }
-  ` : `
+  `
+      : `
   element = React.createElement(PageComponent, pageProps);
-  `}
+  `
+  }
 
   const container = document.getElementById("__next");
   if (!container) {
@@ -1642,21 +1679,20 @@ hydrate();
     if (!resolvedRscPath) {
       throw new Error(
         "vinext: App Router detected but @vitejs/plugin-rsc is not installed.\n" +
-        "Run: npm install -D @vitejs/plugin-rsc",
+          "Run: npm install -D @vitejs/plugin-rsc",
       );
     }
     const rscImport = import(pathToFileURL(resolvedRscPath).href);
-    rscPluginPromise = rscImport
-      .then((mod) => {
-        const rsc = mod.default;
-        return rsc({
-          entries: {
-            rsc: VIRTUAL_RSC_ENTRY,
-            ssr: VIRTUAL_APP_SSR_ENTRY,
-            client: VIRTUAL_APP_BROWSER_ENTRY,
-          },
-        });
+    rscPluginPromise = rscImport.then((mod) => {
+      const rsc = mod.default;
+      return rsc({
+        entries: {
+          rsc: VIRTUAL_RSC_ENTRY,
+          ssr: VIRTUAL_APP_SSR_ENTRY,
+          client: VIRTUAL_APP_BROWSER_ENTRY,
+        },
       });
+    });
   }
 
   const imageImportDimCache = new Map<string, { width: number; height: number }>();
@@ -1716,9 +1752,7 @@ hydrate();
           defines[`process.env.${key}`] = JSON.stringify(value);
         }
         // Expose basePath to client-side code
-        defines["process.env.__NEXT_ROUTER_BASEPATH"] = JSON.stringify(
-          nextConfig.basePath,
-        );
+        defines["process.env.__NEXT_ROUTER_BASEPATH"] = JSON.stringify(nextConfig.basePath);
         // Expose image remote patterns for validation in next/image shim
         defines["process.env.__VINEXT_IMAGE_REMOTE_PATTERNS"] = JSON.stringify(
           JSON.stringify(nextConfig.images?.remotePatterns ?? []),
@@ -1730,21 +1764,19 @@ hydrate();
         // server-side validation. Matches Next.js behavior: only configured
         // sizes are accepted by the image optimization endpoint.
         {
-          const deviceSizes = nextConfig.images?.deviceSizes ?? [640, 750, 828, 1080, 1200, 1920, 2048, 3840];
+          const deviceSizes = nextConfig.images?.deviceSizes ?? [
+            640, 750, 828, 1080, 1200, 1920, 2048, 3840,
+          ];
           const imageSizes = nextConfig.images?.imageSizes ?? [16, 32, 48, 64, 96, 128, 256, 384];
           defines["process.env.__VINEXT_IMAGE_DEVICE_SIZES"] = JSON.stringify(
             JSON.stringify(deviceSizes),
           );
-          defines["process.env.__VINEXT_IMAGE_SIZES"] = JSON.stringify(
-            JSON.stringify(imageSizes),
-          );
+          defines["process.env.__VINEXT_IMAGE_SIZES"] = JSON.stringify(JSON.stringify(imageSizes));
         }
         // Draft mode secret — generated once at build time so the
         // __prerender_bypass cookie is consistent across all server
         // instances (e.g. multiple Cloudflare Workers isolates).
-        defines["process.env.__VINEXT_DRAFT_SECRET"] = JSON.stringify(
-          crypto.randomUUID(),
-        );
+        defines["process.env.__VINEXT_DRAFT_SECRET"] = JSON.stringify(crypto.randomUUID());
 
         // Build the shim alias map — used by both resolve.alias and resolveId
         // (resolveId handles .js extension variants for libraries like nuqs)
@@ -1773,17 +1805,45 @@ hydrate();
           "next/constants": path.join(shimsDir, "constants"),
           // Internal next/dist/* paths used by popular libraries
           // (next-intl, @clerk/nextjs, @sentry/nextjs, next-nprogress-bar, etc.)
-          "next/dist/shared/lib/app-router-context.shared-runtime": path.join(shimsDir, "internal", "app-router-context"),
-          "next/dist/shared/lib/app-router-context": path.join(shimsDir, "internal", "app-router-context"),
-          "next/dist/shared/lib/router-context.shared-runtime": path.join(shimsDir, "internal", "router-context"),
+          "next/dist/shared/lib/app-router-context.shared-runtime": path.join(
+            shimsDir,
+            "internal",
+            "app-router-context",
+          ),
+          "next/dist/shared/lib/app-router-context": path.join(
+            shimsDir,
+            "internal",
+            "app-router-context",
+          ),
+          "next/dist/shared/lib/router-context.shared-runtime": path.join(
+            shimsDir,
+            "internal",
+            "router-context",
+          ),
           "next/dist/shared/lib/utils": path.join(shimsDir, "internal", "utils"),
           "next/dist/server/api-utils": path.join(shimsDir, "internal", "api-utils"),
           "next/dist/server/web/spec-extension/cookies": path.join(shimsDir, "internal", "cookies"),
           "next/dist/compiled/@edge-runtime/cookies": path.join(shimsDir, "internal", "cookies"),
-          "next/dist/server/app-render/work-unit-async-storage.external": path.join(shimsDir, "internal", "work-unit-async-storage"),
-          "next/dist/client/components/work-unit-async-storage.external": path.join(shimsDir, "internal", "work-unit-async-storage"),
-          "next/dist/client/components/request-async-storage.external": path.join(shimsDir, "internal", "work-unit-async-storage"),
-          "next/dist/client/components/request-async-storage": path.join(shimsDir, "internal", "work-unit-async-storage"),
+          "next/dist/server/app-render/work-unit-async-storage.external": path.join(
+            shimsDir,
+            "internal",
+            "work-unit-async-storage",
+          ),
+          "next/dist/client/components/work-unit-async-storage.external": path.join(
+            shimsDir,
+            "internal",
+            "work-unit-async-storage",
+          ),
+          "next/dist/client/components/request-async-storage.external": path.join(
+            shimsDir,
+            "internal",
+            "work-unit-async-storage",
+          ),
+          "next/dist/client/components/request-async-storage": path.join(
+            shimsDir,
+            "internal",
+            "work-unit-async-storage",
+          ),
           // Re-export public modules for internal path imports
           "next/dist/client/components/navigation": path.join(shimsDir, "navigation"),
           "next/dist/server/config-shared": path.join(shimsDir, "internal", "utils"),
@@ -1811,11 +1871,13 @@ hydrate();
             else if (p) pluginsFlat.push(p);
           }
         }
-        flattenPlugins(config.plugins as any[] ?? []);
+        flattenPlugins((config.plugins as any[]) ?? []);
         hasCloudflarePlugin = pluginsFlat.some(
-          (p: any) => p && typeof p === "object" && typeof p.name === "string" && (
-            p.name === "vite-plugin-cloudflare" || p.name.startsWith("vite-plugin-cloudflare:")
-          ),
+          (p: any) =>
+            p &&
+            typeof p === "object" &&
+            typeof p.name === "string" &&
+            (p.name === "vite-plugin-cloudflare" || p.name.startsWith("vite-plugin-cloudflare:")),
         );
 
         // Resolve PostCSS string plugin names that Vite can't handle.
@@ -1833,23 +1895,33 @@ hydrate();
         // Auto-inject @mdx-js/rollup when MDX files exist and no MDX plugin is
         // already configured. Applies remark/rehype plugins from next.config.
         const hasMdxPlugin = pluginsFlat.some(
-          (p: any) => p && typeof p === "object" && typeof p.name === "string" &&
+          (p: any) =>
+            p &&
+            typeof p === "object" &&
+            typeof p.name === "string" &&
             (p.name === "@mdx-js/rollup" || p.name === "mdx"),
         );
         const mdxPlugins: any[] = [];
-        if (!hasMdxPlugin && hasMdxFiles(root, hasAppDir ? appDir : null, hasPagesDir ? pagesDir : null)) {
+        if (
+          !hasMdxPlugin &&
+          hasMdxFiles(root, hasAppDir ? appDir : null, hasPagesDir ? pagesDir : null)
+        ) {
           try {
             const mdxRollup = await import("@mdx-js/rollup");
             const mdxPlugin = mdxRollup.default ?? mdxRollup;
             const mdxOpts: Record<string, unknown> = {};
             if (nextConfig.mdx) {
-              if (nextConfig.mdx.remarkPlugins) mdxOpts.remarkPlugins = nextConfig.mdx.remarkPlugins;
-              if (nextConfig.mdx.rehypePlugins) mdxOpts.rehypePlugins = nextConfig.mdx.rehypePlugins;
+              if (nextConfig.mdx.remarkPlugins)
+                mdxOpts.remarkPlugins = nextConfig.mdx.remarkPlugins;
+              if (nextConfig.mdx.rehypePlugins)
+                mdxOpts.rehypePlugins = nextConfig.mdx.rehypePlugins;
               if (nextConfig.mdx.recmaPlugins) mdxOpts.recmaPlugins = nextConfig.mdx.recmaPlugins;
             }
             mdxPlugins.push(mdxPlugin(mdxOpts));
             if (nextConfig.mdx) {
-              console.log("[vinext] Auto-injected @mdx-js/rollup with remark/rehype plugins from next.config");
+              console.log(
+                "[vinext] Auto-injected @mdx-js/rollup with remark/rehype plugins from next.config",
+              );
             } else {
               console.log("[vinext] Auto-injected @mdx-js/rollup for MDX support");
             }
@@ -1857,7 +1929,7 @@ hydrate();
             // @mdx-js/rollup not installed — warn but don't fail
             console.warn(
               "[vinext] MDX files detected but @mdx-js/rollup is not installed. " +
-              "Install it with: npm install -D @mdx-js/rollup"
+                "Install it with: npm install -D @mdx-js/rollup",
             );
           }
         }
@@ -1935,11 +2007,13 @@ hydrate();
           // Externalize React packages from SSR transform — they are CJS and
           // must be loaded natively by Node, not through Vite's ESM evaluator.
           // Skip when targeting Cloudflare Workers (they bundle everything).
-          ...(hasCloudflarePlugin ? {} : {
-            ssr: {
-              external: ["react", "react-dom", "react-dom/server"],
-            },
-          }),
+          ...(hasCloudflarePlugin
+            ? {}
+            : {
+                ssr: {
+                  external: ["react", "react-dom", "react-dom/server"],
+                },
+              }),
           resolve: {
             alias: nextShimMap,
             // Dedupe React packages to prevent dual-instance errors.
@@ -1947,12 +2021,7 @@ hydrate();
             // brings its own React copy, multiple React instances can load,
             // causing cryptic "Invalid hook call" errors. This is a no-op
             // when only one copy exists.
-            dedupe: [
-              "react",
-              "react-dom",
-              "react/jsx-runtime",
-              "react/jsx-dev-runtime",
-            ],
+            dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
           },
           // Exclude vinext from dependency optimization so esbuild doesn't
           // scan dist files containing virtual module imports (virtual:vinext-*)
@@ -1982,27 +2051,23 @@ hydrate();
           // "Invalid hook call" from duplicate React instances).
           // The entries must be relative to the project root.
           const relAppDir = path.relative(root, appDir);
-          const appEntries = [
-            `${relAppDir}/**/*.{tsx,ts,jsx,js}`,
-          ];
+          const appEntries = [`${relAppDir}/**/*.{tsx,ts,jsx,js}`];
 
           viteConfig.environments = {
             rsc: {
-              ...(hasCloudflarePlugin ? {} : {
-                resolve: {
-                  // Externalize native/heavy packages so the RSC environment
-                  // loads them natively via Node rather than through Vite's
-                  // ESM module evaluator (which can't handle native addons).
-                  // Note: Do NOT externalize react/react-dom here — they must
-                  // be bundled with the "react-server" condition for RSC.
-                  // Skip when targeting Cloudflare Workers.
-                  external: [
-                    "satori",
-                    "@resvg/resvg-js",
-                    "yoga-wasm-web",
-                  ],
-                },
-              }),
+              ...(hasCloudflarePlugin
+                ? {}
+                : {
+                    resolve: {
+                      // Externalize native/heavy packages so the RSC environment
+                      // loads them natively via Node rather than through Vite's
+                      // ESM module evaluator (which can't handle native addons).
+                      // Note: Do NOT externalize react/react-dom here — they must
+                      // be bundled with the "react-server" condition for RSC.
+                      // Skip when targeting Cloudflare Workers.
+                      external: ["satori", "@resvg/resvg-js", "yoga-wasm-web"],
+                    },
+                  }),
               optimizeDeps: {
                 exclude: ["vinext"],
                 entries: appEntries,
@@ -2093,16 +2158,14 @@ hydrate();
         if (rscPluginPromise) {
           // Count top-level RSC plugins (name === "rsc") — each call to
           // the rsc() factory produces exactly one plugin with this name.
-          const rscRootPlugins = config.plugins.filter(
-            (p: any) => p && p.name === "rsc",
-          );
+          const rscRootPlugins = config.plugins.filter((p: any) => p && p.name === "rsc");
           if (rscRootPlugins.length > 1) {
             throw new Error(
               "[vinext] Duplicate @vitejs/plugin-rsc detected.\n" +
-              "         vinext auto-registers @vitejs/plugin-rsc when app/ is detected.\n" +
-              "         Your config also registers it manually, which doubles build time.\n\n" +
-              "         Fix: remove the explicit rsc() call from your plugins array.\n" +
-              "         Or: pass rsc: false to vinext() if you want to configure rsc() yourself.",
+                "         vinext auto-registers @vitejs/plugin-rsc when app/ is detected.\n" +
+                "         Your config also registers it manually, which doubles build time.\n\n" +
+                "         Fix: remove the explicit rsc() call from your plugins array.\n" +
+                "         Or: pass rsc: false to vinext() if you want to configure rsc() yourself.",
             );
           }
         }
@@ -2138,23 +2201,38 @@ hydrate();
           // Pages Router virtual modules
           if (cleanId === VIRTUAL_SERVER_ENTRY) return RESOLVED_SERVER_ENTRY;
           if (cleanId === VIRTUAL_CLIENT_ENTRY) return RESOLVED_CLIENT_ENTRY;
-          if (cleanId.endsWith("/" + VIRTUAL_SERVER_ENTRY) || cleanId.endsWith("\\" + VIRTUAL_SERVER_ENTRY)) {
+          if (
+            cleanId.endsWith("/" + VIRTUAL_SERVER_ENTRY) ||
+            cleanId.endsWith("\\" + VIRTUAL_SERVER_ENTRY)
+          ) {
             return RESOLVED_SERVER_ENTRY;
           }
-          if (cleanId.endsWith("/" + VIRTUAL_CLIENT_ENTRY) || cleanId.endsWith("\\" + VIRTUAL_CLIENT_ENTRY)) {
+          if (
+            cleanId.endsWith("/" + VIRTUAL_CLIENT_ENTRY) ||
+            cleanId.endsWith("\\" + VIRTUAL_CLIENT_ENTRY)
+          ) {
             return RESOLVED_CLIENT_ENTRY;
           }
           // App Router virtual modules
           if (cleanId === VIRTUAL_RSC_ENTRY) return RESOLVED_RSC_ENTRY;
           if (cleanId === VIRTUAL_APP_SSR_ENTRY) return RESOLVED_APP_SSR_ENTRY;
           if (cleanId === VIRTUAL_APP_BROWSER_ENTRY) return RESOLVED_APP_BROWSER_ENTRY;
-          if (cleanId.endsWith("/" + VIRTUAL_RSC_ENTRY) || cleanId.endsWith("\\" + VIRTUAL_RSC_ENTRY)) {
+          if (
+            cleanId.endsWith("/" + VIRTUAL_RSC_ENTRY) ||
+            cleanId.endsWith("\\" + VIRTUAL_RSC_ENTRY)
+          ) {
             return RESOLVED_RSC_ENTRY;
           }
-          if (cleanId.endsWith("/" + VIRTUAL_APP_SSR_ENTRY) || cleanId.endsWith("\\" + VIRTUAL_APP_SSR_ENTRY)) {
+          if (
+            cleanId.endsWith("/" + VIRTUAL_APP_SSR_ENTRY) ||
+            cleanId.endsWith("\\" + VIRTUAL_APP_SSR_ENTRY)
+          ) {
             return RESOLVED_APP_SSR_ENTRY;
           }
-          if (cleanId.endsWith("/" + VIRTUAL_APP_BROWSER_ENTRY) || cleanId.endsWith("\\" + VIRTUAL_APP_BROWSER_ENTRY)) {
+          if (
+            cleanId.endsWith("/" + VIRTUAL_APP_BROWSER_ENTRY) ||
+            cleanId.endsWith("\\" + VIRTUAL_APP_BROWSER_ENTRY)
+          ) {
             return RESOLVED_APP_BROWSER_ENTRY;
           }
         },
@@ -2174,13 +2252,22 @@ hydrate();
           const metaRoutes = scanMetadataFiles(appDir);
           // Check for global-error.tsx at app root
           const globalErrorPath = findFileWithExts(appDir, "global-error");
-          return generateRscEntry(appDir, routes, middlewarePath, metaRoutes, globalErrorPath, nextConfig?.basePath, nextConfig?.trailingSlash, {
-            redirects: nextConfig?.redirects,
-            rewrites: nextConfig?.rewrites,
-            headers: nextConfig?.headers,
-            allowedOrigins: nextConfig?.serverActionsAllowedOrigins,
-            allowedDevOrigins: nextConfig?.serverActionsAllowedOrigins,
-          });
+          return generateRscEntry(
+            appDir,
+            routes,
+            middlewarePath,
+            metaRoutes,
+            globalErrorPath,
+            nextConfig?.basePath,
+            nextConfig?.trailingSlash,
+            {
+              redirects: nextConfig?.redirects,
+              rewrites: nextConfig?.rewrites,
+              headers: nextConfig?.headers,
+              allowedOrigins: nextConfig?.serverActionsAllowedOrigins,
+              allowedDevOrigins: nextConfig?.serverActionsAllowedOrigins,
+            },
+          );
         }
         if (id === RESOLVED_APP_SSR_ENTRY && hasAppDir) {
           return generateSsrEntry();
@@ -2229,16 +2316,14 @@ hydrate();
         }
 
         // Only rewrite if the import actually destructures a canary API
-        const canaryImportRegex = /import\s*\{[^}]*(ViewTransition|addTransitionType)[^}]*\}\s*from\s*['"]react['"]/;
+        const canaryImportRegex =
+          /import\s*\{[^}]*(ViewTransition|addTransitionType)[^}]*\}\s*from\s*['"]react['"]/;
         if (!canaryImportRegex.test(code)) return null;
 
         // Rewrite all `from "react"` / `from 'react'` to use the canary shim.
         // This is safe because the virtual module re-exports everything from
         // react, so non-canary imports continue to work.
-        const result = code.replace(
-          /from\s*['"]react['"]/g,
-          'from "virtual:vinext-react-canary"',
-        );
+        const result = code.replace(/from\s*['"]react['"]/g, 'from "virtual:vinext-react-canary"');
         if (result !== code) {
           return { code: result, map: null };
         }
@@ -2442,9 +2527,13 @@ hydrate();
               // Run middleware.ts if present
               if (middlewarePath) {
                 // Only trust X-Forwarded-Proto when behind a trusted proxy
-                const devTrustProxy = process.env.VINEXT_TRUST_PROXY === "1" || (process.env.VINEXT_TRUSTED_HOSTS ?? "").split(",").some(h => h.trim());
+                const devTrustProxy =
+                  process.env.VINEXT_TRUST_PROXY === "1" ||
+                  (process.env.VINEXT_TRUSTED_HOSTS ?? "").split(",").some((h) => h.trim());
                 const rawProto = devTrustProxy
-                  ? String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim()
+                  ? String(req.headers["x-forwarded-proto"] || "")
+                      .split(",")[0]
+                      .trim()
                   : "";
                 const mwProto = rawProto === "https" || rawProto === "http" ? rawProto : "http";
                 const origin = `${mwProto}://${req.headers.host || "localhost"}`;
@@ -2453,7 +2542,7 @@ hydrate();
                   headers: Object.fromEntries(
                     Object.entries(req.headers)
                       .filter(([, v]) => v !== undefined)
-                      .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)])
+                      .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)]),
                   ),
                 });
                 const result = await runMiddleware(server, middlewarePath, middlewareRequest);
@@ -2500,7 +2589,7 @@ hydrate();
                 Object.fromEntries(
                   Object.entries(req.headers)
                     .filter(([, v]) => v !== undefined)
-                    .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)])
+                    .map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v)]),
                 ),
               );
               const reqCtx: RequestContext = {
@@ -2517,12 +2606,7 @@ hydrate();
 
               // Apply redirects from next.config.js
               if (nextConfig?.redirects.length) {
-                const redirected = applyRedirects(
-                  pathname,
-                  res,
-                  nextConfig.redirects,
-                  reqCtx,
-                );
+                const redirected = applyRedirects(pathname, res, nextConfig.redirects, reqCtx);
                 if (redirected) return;
               }
 
@@ -2530,8 +2614,7 @@ hydrate();
               let resolvedUrl = url;
               if (nextConfig?.rewrites.beforeFiles.length) {
                 resolvedUrl =
-                  applyRewrites(pathname, nextConfig.rewrites.beforeFiles, reqCtx) ??
-                  url;
+                  applyRewrites(pathname, nextConfig.rewrites.beforeFiles, reqCtx) ?? url;
               }
 
               // External rewrite from beforeFiles — proxy to external URL
@@ -2542,18 +2625,9 @@ hydrate();
 
               // Handle API routes first (pages/api/*)
               const resolvedPathname = resolvedUrl.split("?")[0];
-              if (
-                resolvedPathname.startsWith("/api/") ||
-                resolvedPathname === "/api"
-              ) {
+              if (resolvedPathname.startsWith("/api/") || resolvedPathname === "/api") {
                 const apiRoutes = await apiRouter(pagesDir);
-                const handled = await handleApiRoute(
-                  server,
-                  req,
-                  res,
-                  resolvedUrl,
-                  apiRoutes,
-                );
+                const handled = await handleApiRoute(server, req, res, resolvedUrl, apiRoutes);
                 if (handled) return;
                 // No API route matched — fall through to 404
                 res.statusCode = 404;
@@ -2683,7 +2757,10 @@ hydrate();
           if (id.startsWith("\0")) return null;
           if (!id.match(/\.(tsx?|jsx?|mjs)$/)) return null;
 
-          const imageImportRe = new RegExp(`import\\s+(\\w+)\\s+from\\s+['"]([^'"]+\\.(${IMAGE_EXTS}))['"];?`, "g");
+          const imageImportRe = new RegExp(
+            `import\\s+(\\w+)\\s+from\\s+['"]([^'"]+\\.(${IMAGE_EXTS}))['"];?`,
+            "g",
+          );
           if (!imageImportRe.test(code)) return null;
 
           imageImportRe.lastIndex = 0;
@@ -2776,7 +2853,10 @@ hydrate();
           if (!importMatch) return null;
 
           const importedNames = new Set(
-            importMatch[1].split(",").map((s) => s.trim()).filter(Boolean),
+            importMatch[1]
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
           );
 
           const s = new MagicString(code);
@@ -2806,10 +2886,14 @@ hydrate();
 
             // Build the Google Fonts CSS URL
             const weights = options.weight
-              ? Array.isArray(options.weight) ? options.weight : [options.weight]
+              ? Array.isArray(options.weight)
+                ? options.weight
+                : [options.weight]
               : [];
             const styles = options.style
-              ? Array.isArray(options.style) ? options.style : [options.style]
+              ? Array.isArray(options.style)
+                ? options.style
+                : [options.style]
               : [];
             const display = options.display ?? "swap";
 
@@ -2818,7 +2902,10 @@ hydrate();
               const hasItalic = styles.includes("italic");
               if (hasItalic) {
                 const pairs: string[] = [];
-                for (const w of weights) { pairs.push(`0,${w}`); pairs.push(`1,${w}`); }
+                for (const w of weights) {
+                  pairs.push(`0,${w}`);
+                  pairs.push(`1,${w}`);
+                }
                 spec += `:ital,wght@${pairs.join(";")}`;
               } else {
                 spec += `:wght@${weights.join(";")}`;
@@ -2850,7 +2937,8 @@ hydrate();
             const matchEnd = matchStart + fullMatch.length;
             const escapedCSS = JSON.stringify(localCSS);
             const closingBrace = optionsStr.lastIndexOf("}");
-            const optionsWithCSS = optionsStr.slice(0, closingBrace) +
+            const optionsWithCSS =
+              optionsStr.slice(0, closingBrace) +
               (optionsStr.slice(0, closingBrace).trim().endsWith("{") ? "" : ", ") +
               `_selfHostedCSS: ${escapedCSS}` +
               optionsStr.slice(closingBrace);
@@ -2965,10 +3053,12 @@ hydrate();
           if (!resolvedRscTransformsPath) {
             throw new Error(
               "vinext: 'use cache' requires @vitejs/plugin-rsc to be installed.\n" +
-              "Run: npm install -D @vitejs/plugin-rsc",
+                "Run: npm install -D @vitejs/plugin-rsc",
             );
           }
-          const { transformWrapExport, transformHoistInlineDirective } = await import(pathToFileURL(resolvedRscTransformsPath).href);
+          const { transformWrapExport, transformHoistInlineDirective } = await import(
+            pathToFileURL(resolvedRscTransformsPath).href
+          );
           const ast = parseAst(code);
 
           // Check for file-level "use cache" directive
@@ -2986,7 +3076,10 @@ hydrate();
             // (they're leaf components). Layout/template defaults are excluded
             // because they receive {children} from the framework.
             const directiveValue: string = cacheDirective.expression.value;
-            const variant = directiveValue === "use cache" ? "" : directiveValue.replace("use cache:", "").replace("use cache: ", "").trim();
+            const variant =
+              directiveValue === "use cache"
+                ? ""
+                : directiveValue.replace("use cache:", "").replace("use cache: ", "").trim();
 
             // Only skip default export wrapping for layouts and templates —
             // they receive {children} from the framework which requires
@@ -3015,7 +3108,11 @@ hydrate();
             if (result.exportNames.length > 0) {
               // Remove the directive itself so it doesn't cause runtime errors
               const output = result.output;
-              output.overwrite(cacheDirective.start, cacheDirective.end, `/* "use cache" — wrapped by vinext */`);
+              output.overwrite(
+                cacheDirective.start,
+                cacheDirective.end,
+                `/* "use cache" — wrapped by vinext */`,
+              );
               return {
                 code: output.toString(),
                 map: output.generateMap({ hires: "boundary" }),
@@ -3025,7 +3122,11 @@ hydrate();
             // Even if no exports were wrapped, still strip the directive
             // (e.g., layout/template file with only a default export)
             const output = new MagicString(code);
-            output.overwrite(cacheDirective.start, cacheDirective.end, `/* "use cache" — handled by vinext */`);
+            output.overwrite(
+              cacheDirective.start,
+              cacheDirective.end,
+              `/* "use cache" — handled by vinext */`,
+            );
             return {
               code: output.toString(),
               map: output.generateMap({ hires: "boundary" }),
@@ -3043,7 +3144,10 @@ hydrate();
                 directive: /^use cache(:\s*\w+)?$/,
                 runtime: (value: any, name: any, meta: any) => {
                   const directiveMatch = meta.directiveMatch[0];
-                  const variant = directiveMatch === "use cache" ? "" : directiveMatch.replace("use cache:", "").replace("use cache: ", "").trim();
+                  const variant =
+                    directiveMatch === "use cache"
+                      ? ""
+                      : directiveMatch.replace("use cache:", "").replace("use cache: ", "").trim();
                   return `(await import(${JSON.stringify(runtimeModuleUrl2)})).registerCachedFunction(${value}, ${JSON.stringify(id + ":" + name)}, ${JSON.stringify(variant)})`;
                 },
                 rejectNonAsyncFunction: false,
@@ -3088,13 +3192,10 @@ hydrate();
           if (!fs.existsSync(indexPath)) return;
 
           const content = fs.readFileSync(indexPath, "utf-8");
-          const ogAssets = [
-            "noto-sans-v27-latin-regular.ttf",
-            "resvg.wasm",
-          ];
+          const ogAssets = ["noto-sans-v27-latin-regular.ttf", "resvg.wasm"];
 
           // Only copy if the bundle actually references these files
-          const referencedAssets = ogAssets.filter(asset => content.includes(asset));
+          const referencedAssets = ogAssets.filter((asset) => content.includes(asset));
           if (referencedAssets.length === 0) return;
 
           // Find @vercel/og in node_modules
@@ -3134,7 +3235,7 @@ hydrate();
         sequential: true,
         order: "post",
         async handler() {
-          const envName = this.environment?.name
+          const envName = this.environment?.name;
           if (!envName || !hasCloudflarePlugin) return;
           if (envName !== "client") return;
 
@@ -3164,7 +3265,9 @@ hydrate();
               }
               const lazy = computeLazyChunks(buildManifest);
               if (lazy.length > 0) lazyChunksData = lazy;
-            } catch { /* ignore parse errors */ }
+            } catch {
+              /* ignore parse errors */
+            }
           }
 
           // Read SSR manifest for per-page CSS/JS injection
@@ -3173,7 +3276,9 @@ hydrate();
           if (fs.existsSync(ssrManifestPath)) {
             try {
               ssrManifestData = JSON.parse(fs.readFileSync(ssrManifestPath, "utf-8"));
-            } catch { /* ignore parse errors */ }
+            } catch {
+              /* ignore parse errors */
+            }
           }
 
           if (hasAppDir) {
@@ -3186,10 +3291,14 @@ hydrate();
               let code = fs.readFileSync(workerEntry, "utf-8");
               const globals: string[] = [];
               if (ssrManifestData) {
-                globals.push(`globalThis.__VINEXT_SSR_MANIFEST__ = ${JSON.stringify(ssrManifestData)};`);
+                globals.push(
+                  `globalThis.__VINEXT_SSR_MANIFEST__ = ${JSON.stringify(ssrManifestData)};`,
+                );
               }
               if (lazyChunksData) {
-                globals.push(`globalThis.__VINEXT_LAZY_CHUNKS__ = ${JSON.stringify(lazyChunksData)};`);
+                globals.push(
+                  `globalThis.__VINEXT_LAZY_CHUNKS__ = ${JSON.stringify(lazyChunksData)};`,
+                );
               }
               code = globals.join("\n") + "\n" + code;
               fs.writeFileSync(workerEntry, code);
@@ -3201,8 +3310,10 @@ hydrate();
             for (const entry of fs.readdirSync(distDir)) {
               const candidate = path.join(distDir, entry);
               if (entry === "client") continue;
-              if (fs.statSync(candidate).isDirectory() &&
-                  fs.existsSync(path.join(candidate, "wrangler.json"))) {
+              if (
+                fs.statSync(candidate).isDirectory() &&
+                fs.existsSync(path.join(candidate, "wrangler.json"))
+              ) {
                 workerOutDir = candidate;
                 break;
               }
@@ -3219,8 +3330,11 @@ hydrate();
               const assetsDir = path.join(clientDir, "assets");
               if (fs.existsSync(assetsDir)) {
                 const files = fs.readdirSync(assetsDir);
-                const entry = files.find((f: string) =>
-                  (f.includes("vinext-client-entry") || f.includes("vinext-app-browser-entry")) && f.endsWith(".js"));
+                const entry = files.find(
+                  (f: string) =>
+                    (f.includes("vinext-client-entry") || f.includes("vinext-app-browser-entry")) &&
+                    f.endsWith(".js"),
+                );
                 if (entry) clientEntryFile = "assets/" + entry;
               }
             }
@@ -3230,13 +3344,19 @@ hydrate();
               let code = fs.readFileSync(workerEntry, "utf-8");
               const globals: string[] = [];
               if (clientEntryFile) {
-                globals.push(`globalThis.__VINEXT_CLIENT_ENTRY__ = ${JSON.stringify(clientEntryFile)};`);
+                globals.push(
+                  `globalThis.__VINEXT_CLIENT_ENTRY__ = ${JSON.stringify(clientEntryFile)};`,
+                );
               }
               if (ssrManifestData) {
-                globals.push(`globalThis.__VINEXT_SSR_MANIFEST__ = ${JSON.stringify(ssrManifestData)};`);
+                globals.push(
+                  `globalThis.__VINEXT_SSR_MANIFEST__ = ${JSON.stringify(ssrManifestData)};`,
+                );
               }
               if (lazyChunksData) {
-                globals.push(`globalThis.__VINEXT_LAZY_CHUNKS__ = ${JSON.stringify(lazyChunksData)};`);
+                globals.push(
+                  `globalThis.__VINEXT_LAZY_CHUNKS__ = ${JSON.stringify(lazyChunksData)};`,
+                );
               }
               code = globals.join("\n") + "\n" + code;
               fs.writeFileSync(workerEntry, code);
@@ -3326,11 +3446,7 @@ export function matchConfigPattern(
   // followed by a literal suffix (e.g. "/:path*.md"). Without this, the suffix
   // pattern falls through to the simple segment matcher which incorrectly treats
   // the whole segment (":path*.md") as a named parameter and matches everything.
-  if (
-    pattern.includes("(") ||
-    pattern.includes("\\") ||
-    /:[\w-]+[*+][^/]/.test(pattern)
-  ) {
+  if (pattern.includes("(") || pattern.includes("\\") || /:[\w-]+[*+][^/]/.test(pattern)) {
     try {
       // Extract named params and their constraints from the pattern.
       // :param(constraint) -> use constraint as the regex group
@@ -3496,9 +3612,7 @@ async function proxyExternalRewriteNode(
     proxyResponse.headers.forEach((value, key) => {
       const existing = nodeHeaders[key];
       if (existing !== undefined) {
-        nodeHeaders[key] = Array.isArray(existing)
-          ? [...existing, value]
-          : [existing, value];
+        nodeHeaders[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
       } else {
         nodeHeaders[key] = value;
       }
@@ -3507,7 +3621,9 @@ async function proxyExternalRewriteNode(
 
     if (proxyResponse.body) {
       const { Readable: ReadableImport } = await import("node:stream");
-      const nodeStream = ReadableImport.fromWeb(proxyResponse.body as unknown as import("stream/web").ReadableStream);
+      const nodeStream = ReadableImport.fromWeb(
+        proxyResponse.body as unknown as import("stream/web").ReadableStream,
+      );
       nodeStream.pipe(res);
     } else {
       res.end();
@@ -3597,7 +3713,11 @@ function scanDirForMdx(dir: string): boolean {
 
 // Public exports for static export
 export { staticExportPages, staticExportApp } from "./build/static-export.js";
-export type { StaticExportResult, StaticExportOptions, AppStaticExportOptions } from "./build/static-export.js";
+export type {
+  StaticExportResult,
+  StaticExportOptions,
+  AppStaticExportOptions,
+} from "./build/static-export.js";
 
 // Exported for CLI and testing
 export { clientManualChunks, clientOutputConfig, clientTreeshakeConfig, computeLazyChunks };

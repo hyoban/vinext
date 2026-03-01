@@ -3,11 +3,7 @@ import Link from "next/link";
 
 export const revalidate = 3600; // ISR: revalidate every hour
 
-export default async function ProductPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: rawId } = await params;
   const id = parseInt(rawId, 10);
 
@@ -23,8 +19,8 @@ export default async function ProductPage({
   }
 
   const product = getProduct(id);
-  const stars = "\u2605".repeat(Math.round(product.rating)) +
-    "\u2606".repeat(5 - Math.round(product.rating));
+  const stars =
+    "\u2605".repeat(Math.round(product.rating)) + "\u2606".repeat(5 - Math.round(product.rating));
 
   return (
     <div className="product-page">
@@ -41,7 +37,9 @@ export default async function ProductPage({
       <div className="product-meta">
         <div className="product-meta-item">
           <div className="meta-label">Rating</div>
-          <div className="meta-value">{stars} {product.rating}</div>
+          <div className="meta-value">
+            {stars} {product.rating}
+          </div>
         </div>
         <div className="product-meta-item">
           <div className="meta-label">Reviews</div>

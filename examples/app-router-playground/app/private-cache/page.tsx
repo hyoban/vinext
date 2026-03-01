@@ -1,6 +1,6 @@
-import { Suspense } from 'react';
-import { ProductList, ProductListSkeleton } from './_components/product-list';
-import { Boundary } from '#/ui/boundary';
+import { Suspense } from "react";
+import { ProductList, ProductListSkeleton } from "./_components/product-list";
+import { Boundary } from "#/ui/boundary";
 
 export default function Page() {
   return (

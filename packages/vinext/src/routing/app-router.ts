@@ -163,10 +163,7 @@ export async function appRouter(appDir: string): Promise<AppRoute[]> {
  * - @audience slot → @audience/demographics/page.tsx (matched)
  * - other slots → their default.tsx (fallback)
  */
-function discoverSlotSubRoutes(
-  routes: AppRoute[],
-  _appDir: string,
-): AppRoute[] {
+function discoverSlotSubRoutes(routes: AppRoute[], _appDir: string): AppRoute[] {
   const syntheticRoutes: AppRoute[] = [];
   const existingPatterns = new Set(routes.map((r) => r.pattern));
 
@@ -236,9 +233,7 @@ function discoverSlotSubRoutes(
 
       const subUrlPath = urlParts.join("/");
       const pattern =
-        parentRoute.pattern === "/"
-          ? "/" + subUrlPath
-          : parentRoute.pattern + "/" + subUrlPath;
+        parentRoute.pattern === "/" ? "/" + subUrlPath : parentRoute.pattern + "/" + subUrlPath;
 
       // Skip if this pattern already exists as a regular route
       if (existingPatterns.has(pattern)) continue;
@@ -246,12 +241,10 @@ function discoverSlotSubRoutes(
 
       // Build parallel slots for this sub-route: matching slots get the sub-page,
       // non-matching slots get null pagePath (rendering falls back to defaultPath)
-      const subSlots: ParallelSlot[] = parentRoute.parallelSlots.map(
-        (slot) => ({
-          ...slot,
-          pagePath: slotPages.get(slot.name) || null,
-        }),
-      );
+      const subSlots: ParallelSlot[] = parentRoute.parallelSlots.map((slot) => ({
+        ...slot,
+        pagePath: slotPages.get(slot.name) || null,
+      }));
 
       syntheticRoutes.push({
         pattern,
@@ -283,9 +276,7 @@ function discoverSlotSubRoutes(
  * Skips the root page.tsx (already handled as the slot's main page)
  * and intercepting route directories.
  */
-function findSlotSubPages(
-  slotDir: string,
-): Array<{ relativePath: string; pagePath: string }> {
+function findSlotSubPages(slotDir: string): Array<{ relativePath: string; pagePath: string }> {
   const results: Array<{ relativePath: string; pagePath: string }> = [];
 
   function scan(dir: string): void {
@@ -316,11 +307,7 @@ function findSlotSubPages(
 /**
  * Convert a file path relative to app/ into an AppRoute.
  */
-function fileToAppRoute(
-  file: string,
-  appDir: string,
-  type: "page" | "route",
-): AppRoute | null {
+function fileToAppRoute(file: string, appDir: string, type: "page" | "route"): AppRoute | null {
   // Remove the filename (page.tsx or route.ts)
   const dir = path.dirname(file);
   const segments = dir === "." ? [] : dir.split(path.sep);
@@ -385,11 +372,7 @@ function fileToAppRoute(
   // Each layout corresponds to a directory level. We need to count how many
   // of the filesystem segments up to that layout's level contribute URL segments
   // (i.e., are not route groups or parallel slots).
-  const layoutSegmentDepths = computeLayoutSegmentDepths(
-    segments,
-    appDir,
-    layouts,
-  );
+  const layoutSegmentDepths = computeLayoutSegmentDepths(segments, appDir, layouts);
 
   // Discover per-layout error boundaries (aligned with layouts array).
   // In Next.js, each segment independently wraps its children with an ErrorBoundary.
@@ -404,11 +387,7 @@ function fileToAppRoute(
   // Discover not-found/forbidden/unauthorized: walk from route directory up to root (nearest wins).
   const notFoundPath = discoverBoundaryFile(segments, appDir, "not-found");
   const forbiddenPath = discoverBoundaryFile(segments, appDir, "forbidden");
-  const unauthorizedPath = discoverBoundaryFile(
-    segments,
-    appDir,
-    "unauthorized",
-  );
+  const unauthorizedPath = discoverBoundaryFile(segments, appDir, "unauthorized");
 
   // Discover per-layout not-found files (one per layout directory).
   // These are used for per-layout NotFoundBoundary to match Next.js behavior where
@@ -418,11 +397,7 @@ function fileToAppRoute(
   // Discover parallel slots (@team, @analytics, etc.).
   // Slots at the route's own directory use page.tsx; slots at ancestor directories
   // (inherited from parent layouts) use default.tsx as fallback.
-  const parallelSlots = discoverInheritedParallelSlots(
-    segments,
-    appDir,
-    routeDir,
-  );
+  const parallelSlots = discoverInheritedParallelSlots(segments, appDir, routeDir);
 
   return {
     pattern: pattern === "/" ? "/" : pattern,
@@ -540,10 +515,7 @@ function discoverTemplates(segments: string[], appDir: string): string[] {
  * rendering tree, matching Next.js behavior where each segment independently
  * wraps its children with an error boundary.
  */
-function discoverLayoutAlignedErrors(
-  segments: string[],
-  appDir: string,
-): (string | null)[] {
+function discoverLayoutAlignedErrors(segments: string[], appDir: string): (string | null)[] {
   const errors: (string | null)[] = [];
 
   // Root level (only if root has a layout — matching discoverLayouts logic)
@@ -570,11 +542,7 @@ function discoverLayoutAlignedErrors(
  * by walking from the route's directory up to the app root.
  * Returns the first (closest) file found, or null.
  */
-function discoverBoundaryFile(
-  segments: string[],
-  appDir: string,
-  fileName: string,
-): string | null {
+function discoverBoundaryFile(segments: string[], appDir: string, fileName: string): string | null {
   // Build all directory paths from leaf to root
   const dirs: string[] = [];
   let dir = appDir;
@@ -601,10 +569,7 @@ function discoverBoundaryFile(
  * has its own boundary that wraps the layout's children. When notFound() is thrown
  * from a layout, it propagates up to the parent layout's boundary.
  */
-function discoverBoundaryFilePerLayout(
-  layouts: string[],
-  fileName: string,
-): (string | null)[] {
+function discoverBoundaryFilePerLayout(layouts: string[], fileName: string): (string | null)[] {
   return layouts.map((layoutPath) => {
     const layoutDir = path.dirname(layoutPath);
     return findFile(layoutDir, fileName);
@@ -787,12 +752,7 @@ function scanForInterceptingPages(
       );
     } else {
       // Regular subdirectory — keep scanning for intercepting dirs
-      scanForInterceptingPages(
-        path.join(currentDir, entry.name),
-        routeDir,
-        appDir,
-        results,
-      );
+      scanForInterceptingPages(path.join(currentDir, entry.name), routeDir, appDir, results);
     }
   }
 }
@@ -800,9 +760,7 @@ function scanForInterceptingPages(
 /**
  * Match a directory name against interception convention prefixes.
  */
-function matchInterceptConvention(
-  name: string,
-): { prefix: string; convention: string } | null {
+function matchInterceptConvention(name: string): { prefix: string; convention: string } | null {
   for (const pattern of INTERCEPT_PATTERNS) {
     if (name.startsWith(pattern.prefix)) {
       return pattern;
@@ -898,16 +856,10 @@ function computeInterceptTarget(
   }
 
   // Build the target URL segments from baseDir relative to appDir
-  const baseParts = path
-    .relative(appDir, baseDir)
-    .split(path.sep)
-    .filter(Boolean);
+  const baseParts = path.relative(appDir, baseDir).split(path.sep).filter(Boolean);
 
   // Add the intercept segment and any nested path segments
-  const nestedParts = path
-    .relative(interceptRoot, currentDir)
-    .split(path.sep)
-    .filter(Boolean);
+  const nestedParts = path.relative(interceptRoot, currentDir).split(path.sep).filter(Boolean);
   const allSegments = [...baseParts, interceptSegment, ...nestedParts];
 
   // Convert segments to URL pattern
@@ -990,10 +942,7 @@ export function matchAppRoute(
   return null;
 }
 
-function matchPattern(
-  url: string,
-  pattern: string,
-): Record<string, string | string[]> | null {
+function matchPattern(url: string, pattern: string): Record<string, string | string[]> | null {
   const urlParts = url.split("/").filter(Boolean);
   const patternParts = pattern.split("/").filter(Boolean);
 

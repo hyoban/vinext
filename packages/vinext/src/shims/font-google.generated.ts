@@ -56,7 +56,9 @@ export const Almendra: FontLoader = createFontLoader("Almendra");
 export const Almendra_Display: FontLoader = createFontLoader("Almendra Display");
 export const Almendra_SC: FontLoader = createFontLoader("Almendra SC");
 export const Alumni_Sans: FontLoader = createFontLoader("Alumni Sans");
-export const Alumni_Sans_Collegiate_One: FontLoader = createFontLoader("Alumni Sans Collegiate One");
+export const Alumni_Sans_Collegiate_One: FontLoader = createFontLoader(
+  "Alumni Sans Collegiate One",
+);
 export const Alumni_Sans_Inline_One: FontLoader = createFontLoader("Alumni Sans Inline One");
 export const Alumni_Sans_Pinstripe: FontLoader = createFontLoader("Alumni Sans Pinstripe");
 export const Alumni_Sans_SC: FontLoader = createFontLoader("Alumni Sans SC");
@@ -130,8 +132,12 @@ export const Astloch: FontLoader = createFontLoader("Astloch");
 export const Asul: FontLoader = createFontLoader("Asul");
 export const Athiti: FontLoader = createFontLoader("Athiti");
 export const Atkinson_Hyperlegible: FontLoader = createFontLoader("Atkinson Hyperlegible");
-export const Atkinson_Hyperlegible_Mono: FontLoader = createFontLoader("Atkinson Hyperlegible Mono");
-export const Atkinson_Hyperlegible_Next: FontLoader = createFontLoader("Atkinson Hyperlegible Next");
+export const Atkinson_Hyperlegible_Mono: FontLoader = createFontLoader(
+  "Atkinson Hyperlegible Mono",
+);
+export const Atkinson_Hyperlegible_Next: FontLoader = createFontLoader(
+  "Atkinson Hyperlegible Next",
+);
 export const Atma: FontLoader = createFontLoader("Atma");
 export const Atomic_Age: FontLoader = createFontLoader("Atomic Age");
 export const Aubrey: FontLoader = createFontLoader("Aubrey");
@@ -468,7 +474,9 @@ export const Encode_Sans: FontLoader = createFontLoader("Encode Sans");
 export const Encode_Sans_Condensed: FontLoader = createFontLoader("Encode Sans Condensed");
 export const Encode_Sans_Expanded: FontLoader = createFontLoader("Encode Sans Expanded");
 export const Encode_Sans_SC: FontLoader = createFontLoader("Encode Sans SC");
-export const Encode_Sans_Semi_Condensed: FontLoader = createFontLoader("Encode Sans Semi Condensed");
+export const Encode_Sans_Semi_Condensed: FontLoader = createFontLoader(
+  "Encode Sans Semi Condensed",
+);
 export const Encode_Sans_Semi_Expanded: FontLoader = createFontLoader("Encode Sans Semi Expanded");
 export const Engagement: FontLoader = createFontLoader("Engagement");
 export const Englebert: FontLoader = createFontLoader("Englebert");
@@ -708,7 +716,9 @@ export const Jacquard_12_Charted: FontLoader = createFontLoader("Jacquard 12 Cha
 export const Jacquard_24: FontLoader = createFontLoader("Jacquard 24");
 export const Jacquard_24_Charted: FontLoader = createFontLoader("Jacquard 24 Charted");
 export const Jacquarda_Bastarda_9: FontLoader = createFontLoader("Jacquarda Bastarda 9");
-export const Jacquarda_Bastarda_9_Charted: FontLoader = createFontLoader("Jacquarda Bastarda 9 Charted");
+export const Jacquarda_Bastarda_9_Charted: FontLoader = createFontLoader(
+  "Jacquarda Bastarda 9 Charted",
+);
 export const Jacques_Francois: FontLoader = createFontLoader("Jacques Francois");
 export const Jacques_Francois_Shadow: FontLoader = createFontLoader("Jacques Francois Shadow");
 export const Jaini: FontLoader = createFontLoader("Jaini");
@@ -839,7 +849,9 @@ export const Libre_Barcode_128: FontLoader = createFontLoader("Libre Barcode 128
 export const Libre_Barcode_128_Text: FontLoader = createFontLoader("Libre Barcode 128 Text");
 export const Libre_Barcode_39: FontLoader = createFontLoader("Libre Barcode 39");
 export const Libre_Barcode_39_Extended: FontLoader = createFontLoader("Libre Barcode 39 Extended");
-export const Libre_Barcode_39_Extended_Text: FontLoader = createFontLoader("Libre Barcode 39 Extended Text");
+export const Libre_Barcode_39_Extended_Text: FontLoader = createFontLoader(
+  "Libre Barcode 39 Extended Text",
+);
 export const Libre_Barcode_39_Text: FontLoader = createFontLoader("Libre Barcode 39 Text");
 export const Libre_Barcode_EAN13_Text: FontLoader = createFontLoader("Libre Barcode EAN13 Text");
 export const Libre_Baskerville: FontLoader = createFontLoader("Libre Baskerville");
@@ -1047,7 +1059,9 @@ export const Noto_Rashi_Hebrew: FontLoader = createFontLoader("Noto Rashi Hebrew
 export const Noto_Sans: FontLoader = createFontLoader("Noto Sans");
 export const Noto_Sans_Adlam: FontLoader = createFontLoader("Noto Sans Adlam");
 export const Noto_Sans_Adlam_Unjoined: FontLoader = createFontLoader("Noto Sans Adlam Unjoined");
-export const Noto_Sans_Anatolian_Hieroglyphs: FontLoader = createFontLoader("Noto Sans Anatolian Hieroglyphs");
+export const Noto_Sans_Anatolian_Hieroglyphs: FontLoader = createFontLoader(
+  "Noto Sans Anatolian Hieroglyphs",
+);
 export const Noto_Sans_Arabic: FontLoader = createFontLoader("Noto Sans Arabic");
 export const Noto_Sans_Armenian: FontLoader = createFontLoader("Noto Sans Armenian");
 export const Noto_Sans_Avestan: FontLoader = createFontLoader("Noto Sans Avestan");
@@ -1060,9 +1074,13 @@ export const Noto_Sans_Bhaiksuki: FontLoader = createFontLoader("Noto Sans Bhaik
 export const Noto_Sans_Brahmi: FontLoader = createFontLoader("Noto Sans Brahmi");
 export const Noto_Sans_Buginese: FontLoader = createFontLoader("Noto Sans Buginese");
 export const Noto_Sans_Buhid: FontLoader = createFontLoader("Noto Sans Buhid");
-export const Noto_Sans_Canadian_Aboriginal: FontLoader = createFontLoader("Noto Sans Canadian Aboriginal");
+export const Noto_Sans_Canadian_Aboriginal: FontLoader = createFontLoader(
+  "Noto Sans Canadian Aboriginal",
+);
 export const Noto_Sans_Carian: FontLoader = createFontLoader("Noto Sans Carian");
-export const Noto_Sans_Caucasian_Albanian: FontLoader = createFontLoader("Noto Sans Caucasian Albanian");
+export const Noto_Sans_Caucasian_Albanian: FontLoader = createFontLoader(
+  "Noto Sans Caucasian Albanian",
+);
 export const Noto_Sans_Chakma: FontLoader = createFontLoader("Noto Sans Chakma");
 export const Noto_Sans_Cham: FontLoader = createFontLoader("Noto Sans Cham");
 export const Noto_Sans_Cherokee: FontLoader = createFontLoader("Noto Sans Cherokee");
@@ -1075,7 +1093,9 @@ export const Noto_Sans_Deseret: FontLoader = createFontLoader("Noto Sans Deseret
 export const Noto_Sans_Devanagari: FontLoader = createFontLoader("Noto Sans Devanagari");
 export const Noto_Sans_Display: FontLoader = createFontLoader("Noto Sans Display");
 export const Noto_Sans_Duployan: FontLoader = createFontLoader("Noto Sans Duployan");
-export const Noto_Sans_Egyptian_Hieroglyphs: FontLoader = createFontLoader("Noto Sans Egyptian Hieroglyphs");
+export const Noto_Sans_Egyptian_Hieroglyphs: FontLoader = createFontLoader(
+  "Noto Sans Egyptian Hieroglyphs",
+);
 export const Noto_Sans_Elbasan: FontLoader = createFontLoader("Noto Sans Elbasan");
 export const Noto_Sans_Elymaic: FontLoader = createFontLoader("Noto Sans Elymaic");
 export const Noto_Sans_Ethiopic: FontLoader = createFontLoader("Noto Sans Ethiopic");
@@ -1091,10 +1111,18 @@ export const Noto_Sans_Hanunoo: FontLoader = createFontLoader("Noto Sans Hanunoo
 export const Noto_Sans_Hatran: FontLoader = createFontLoader("Noto Sans Hatran");
 export const Noto_Sans_Hebrew: FontLoader = createFontLoader("Noto Sans Hebrew");
 export const Noto_Sans_HK: FontLoader = createFontLoader("Noto Sans HK");
-export const Noto_Sans_Imperial_Aramaic: FontLoader = createFontLoader("Noto Sans Imperial Aramaic");
-export const Noto_Sans_Indic_Siyaq_Numbers: FontLoader = createFontLoader("Noto Sans Indic Siyaq Numbers");
-export const Noto_Sans_Inscriptional_Pahlavi: FontLoader = createFontLoader("Noto Sans Inscriptional Pahlavi");
-export const Noto_Sans_Inscriptional_Parthian: FontLoader = createFontLoader("Noto Sans Inscriptional Parthian");
+export const Noto_Sans_Imperial_Aramaic: FontLoader = createFontLoader(
+  "Noto Sans Imperial Aramaic",
+);
+export const Noto_Sans_Indic_Siyaq_Numbers: FontLoader = createFontLoader(
+  "Noto Sans Indic Siyaq Numbers",
+);
+export const Noto_Sans_Inscriptional_Pahlavi: FontLoader = createFontLoader(
+  "Noto Sans Inscriptional Pahlavi",
+);
+export const Noto_Sans_Inscriptional_Parthian: FontLoader = createFontLoader(
+  "Noto Sans Inscriptional Parthian",
+);
 export const Noto_Sans_Javanese: FontLoader = createFontLoader("Noto Sans Javanese");
 export const Noto_Sans_JP: FontLoader = createFontLoader("Noto Sans JP");
 export const Noto_Sans_Kaithi: FontLoader = createFontLoader("Noto Sans Kaithi");
@@ -1146,11 +1174,15 @@ export const Noto_Sans_Ogham: FontLoader = createFontLoader("Noto Sans Ogham");
 export const Noto_Sans_Ol_Chiki: FontLoader = createFontLoader("Noto Sans Ol Chiki");
 export const Noto_Sans_Old_Hungarian: FontLoader = createFontLoader("Noto Sans Old Hungarian");
 export const Noto_Sans_Old_Italic: FontLoader = createFontLoader("Noto Sans Old Italic");
-export const Noto_Sans_Old_North_Arabian: FontLoader = createFontLoader("Noto Sans Old North Arabian");
+export const Noto_Sans_Old_North_Arabian: FontLoader = createFontLoader(
+  "Noto Sans Old North Arabian",
+);
 export const Noto_Sans_Old_Permic: FontLoader = createFontLoader("Noto Sans Old Permic");
 export const Noto_Sans_Old_Persian: FontLoader = createFontLoader("Noto Sans Old Persian");
 export const Noto_Sans_Old_Sogdian: FontLoader = createFontLoader("Noto Sans Old Sogdian");
-export const Noto_Sans_Old_South_Arabian: FontLoader = createFontLoader("Noto Sans Old South Arabian");
+export const Noto_Sans_Old_South_Arabian: FontLoader = createFontLoader(
+  "Noto Sans Old South Arabian",
+);
 export const Noto_Sans_Old_Turkic: FontLoader = createFontLoader("Noto Sans Old Turkic");
 export const Noto_Sans_Oriya: FontLoader = createFontLoader("Noto Sans Oriya");
 export const Noto_Sans_Osage: FontLoader = createFontLoader("Noto Sans Osage");
@@ -1189,7 +1221,9 @@ export const Noto_Sans_Tai_Tham: FontLoader = createFontLoader("Noto Sans Tai Th
 export const Noto_Sans_Tai_Viet: FontLoader = createFontLoader("Noto Sans Tai Viet");
 export const Noto_Sans_Takri: FontLoader = createFontLoader("Noto Sans Takri");
 export const Noto_Sans_Tamil: FontLoader = createFontLoader("Noto Sans Tamil");
-export const Noto_Sans_Tamil_Supplement: FontLoader = createFontLoader("Noto Sans Tamil Supplement");
+export const Noto_Sans_Tamil_Supplement: FontLoader = createFontLoader(
+  "Noto Sans Tamil Supplement",
+);
 export const Noto_Sans_Tangsa: FontLoader = createFontLoader("Noto Sans Tangsa");
 export const Noto_Sans_TC: FontLoader = createFontLoader("Noto Sans TC");
 export const Noto_Sans_Telugu: FontLoader = createFontLoader("Noto Sans Telugu");
@@ -1204,7 +1238,9 @@ export const Noto_Sans_Vithkuqi: FontLoader = createFontLoader("Noto Sans Vithku
 export const Noto_Sans_Wancho: FontLoader = createFontLoader("Noto Sans Wancho");
 export const Noto_Sans_Warang_Citi: FontLoader = createFontLoader("Noto Sans Warang Citi");
 export const Noto_Sans_Yi: FontLoader = createFontLoader("Noto Sans Yi");
-export const Noto_Sans_Zanabazar_Square: FontLoader = createFontLoader("Noto Sans Zanabazar Square");
+export const Noto_Sans_Zanabazar_Square: FontLoader = createFontLoader(
+  "Noto Sans Zanabazar Square",
+);
 export const Noto_Serif: FontLoader = createFontLoader("Noto Serif");
 export const Noto_Serif_Ahom: FontLoader = createFontLoader("Noto Serif Ahom");
 export const Noto_Serif_Armenian: FontLoader = createFontLoader("Noto Serif Armenian");
@@ -1224,7 +1260,9 @@ export const Noto_Serif_Hentaigana: FontLoader = createFontLoader("Noto Serif He
 export const Noto_Serif_HK: FontLoader = createFontLoader("Noto Serif HK");
 export const Noto_Serif_JP: FontLoader = createFontLoader("Noto Serif JP");
 export const Noto_Serif_Kannada: FontLoader = createFontLoader("Noto Serif Kannada");
-export const Noto_Serif_Khitan_Small_Script: FontLoader = createFontLoader("Noto Serif Khitan Small Script");
+export const Noto_Serif_Khitan_Small_Script: FontLoader = createFontLoader(
+  "Noto Serif Khitan Small Script",
+);
 export const Noto_Serif_Khmer: FontLoader = createFontLoader("Noto Serif Khmer");
 export const Noto_Serif_Khojki: FontLoader = createFontLoader("Noto Serif Khojki");
 export const Noto_Serif_KR: FontLoader = createFontLoader("Noto Serif KR");
@@ -1249,7 +1287,9 @@ export const Noto_Serif_Toto: FontLoader = createFontLoader("Noto Serif Toto");
 export const Noto_Serif_Vithkuqi: FontLoader = createFontLoader("Noto Serif Vithkuqi");
 export const Noto_Serif_Yezidi: FontLoader = createFontLoader("Noto Serif Yezidi");
 export const Noto_Traditional_Nushu: FontLoader = createFontLoader("Noto Traditional Nushu");
-export const Noto_Znamenny_Musical_Notation: FontLoader = createFontLoader("Noto Znamenny Musical Notation");
+export const Noto_Znamenny_Musical_Notation: FontLoader = createFontLoader(
+  "Noto Znamenny Musical Notation",
+);
 export const Nova_Cut: FontLoader = createFontLoader("Nova Cut");
 export const Nova_Flat: FontLoader = createFontLoader("Nova Flat");
 export const Nova_Mono: FontLoader = createFontLoader("Nova Mono");
@@ -1381,15 +1421,21 @@ export const Playwrite_DE_SAS_Guides: FontLoader = createFontLoader("Playwrite D
 export const Playwrite_DE_VA: FontLoader = createFontLoader("Playwrite DE VA");
 export const Playwrite_DE_VA_Guides: FontLoader = createFontLoader("Playwrite DE VA Guides");
 export const Playwrite_DK_Loopet: FontLoader = createFontLoader("Playwrite DK Loopet");
-export const Playwrite_DK_Loopet_Guides: FontLoader = createFontLoader("Playwrite DK Loopet Guides");
+export const Playwrite_DK_Loopet_Guides: FontLoader = createFontLoader(
+  "Playwrite DK Loopet Guides",
+);
 export const Playwrite_DK_Uloopet: FontLoader = createFontLoader("Playwrite DK Uloopet");
-export const Playwrite_DK_Uloopet_Guides: FontLoader = createFontLoader("Playwrite DK Uloopet Guides");
+export const Playwrite_DK_Uloopet_Guides: FontLoader = createFontLoader(
+  "Playwrite DK Uloopet Guides",
+);
 export const Playwrite_ES: FontLoader = createFontLoader("Playwrite ES");
 export const Playwrite_ES_Deco: FontLoader = createFontLoader("Playwrite ES Deco");
 export const Playwrite_ES_Deco_Guides: FontLoader = createFontLoader("Playwrite ES Deco Guides");
 export const Playwrite_ES_Guides: FontLoader = createFontLoader("Playwrite ES Guides");
 export const Playwrite_FR_Moderne: FontLoader = createFontLoader("Playwrite FR Moderne");
-export const Playwrite_FR_Moderne_Guides: FontLoader = createFontLoader("Playwrite FR Moderne Guides");
+export const Playwrite_FR_Moderne_Guides: FontLoader = createFontLoader(
+  "Playwrite FR Moderne Guides",
+);
 export const Playwrite_FR_Trad: FontLoader = createFontLoader("Playwrite FR Trad");
 export const Playwrite_FR_Trad_Guides: FontLoader = createFontLoader("Playwrite FR Trad Guides");
 export const Playwrite_GB_J: FontLoader = createFontLoader("Playwrite GB J");
@@ -1399,7 +1445,9 @@ export const Playwrite_GB_S_Guides: FontLoader = createFontLoader("Playwrite GB 
 export const Playwrite_HR: FontLoader = createFontLoader("Playwrite HR");
 export const Playwrite_HR_Guides: FontLoader = createFontLoader("Playwrite HR Guides");
 export const Playwrite_HR_Lijeva: FontLoader = createFontLoader("Playwrite HR Lijeva");
-export const Playwrite_HR_Lijeva_Guides: FontLoader = createFontLoader("Playwrite HR Lijeva Guides");
+export const Playwrite_HR_Lijeva_Guides: FontLoader = createFontLoader(
+  "Playwrite HR Lijeva Guides",
+);
 export const Playwrite_HU: FontLoader = createFontLoader("Playwrite HU");
 export const Playwrite_HU_Guides: FontLoader = createFontLoader("Playwrite HU Guides");
 export const Playwrite_ID: FontLoader = createFontLoader("Playwrite ID");
@@ -1411,13 +1459,17 @@ export const Playwrite_IN_Guides: FontLoader = createFontLoader("Playwrite IN Gu
 export const Playwrite_IS: FontLoader = createFontLoader("Playwrite IS");
 export const Playwrite_IS_Guides: FontLoader = createFontLoader("Playwrite IS Guides");
 export const Playwrite_IT_Moderna: FontLoader = createFontLoader("Playwrite IT Moderna");
-export const Playwrite_IT_Moderna_Guides: FontLoader = createFontLoader("Playwrite IT Moderna Guides");
+export const Playwrite_IT_Moderna_Guides: FontLoader = createFontLoader(
+  "Playwrite IT Moderna Guides",
+);
 export const Playwrite_IT_Trad: FontLoader = createFontLoader("Playwrite IT Trad");
 export const Playwrite_IT_Trad_Guides: FontLoader = createFontLoader("Playwrite IT Trad Guides");
 export const Playwrite_MX: FontLoader = createFontLoader("Playwrite MX");
 export const Playwrite_MX_Guides: FontLoader = createFontLoader("Playwrite MX Guides");
 export const Playwrite_NG_Modern: FontLoader = createFontLoader("Playwrite NG Modern");
-export const Playwrite_NG_Modern_Guides: FontLoader = createFontLoader("Playwrite NG Modern Guides");
+export const Playwrite_NG_Modern_Guides: FontLoader = createFontLoader(
+  "Playwrite NG Modern Guides",
+);
 export const Playwrite_NL: FontLoader = createFontLoader("Playwrite NL");
 export const Playwrite_NL_Guides: FontLoader = createFontLoader("Playwrite NL Guides");
 export const Playwrite_NO: FontLoader = createFontLoader("Playwrite NO");
@@ -1439,7 +1491,9 @@ export const Playwrite_SK_Guides: FontLoader = createFontLoader("Playwrite SK Gu
 export const Playwrite_TZ: FontLoader = createFontLoader("Playwrite TZ");
 export const Playwrite_TZ_Guides: FontLoader = createFontLoader("Playwrite TZ Guides");
 export const Playwrite_US_Modern: FontLoader = createFontLoader("Playwrite US Modern");
-export const Playwrite_US_Modern_Guides: FontLoader = createFontLoader("Playwrite US Modern Guides");
+export const Playwrite_US_Modern_Guides: FontLoader = createFontLoader(
+  "Playwrite US Modern Guides",
+);
 export const Playwrite_US_Trad: FontLoader = createFontLoader("Playwrite US Trad");
 export const Playwrite_US_Trad_Guides: FontLoader = createFontLoader("Playwrite US Trad Guides");
 export const Playwrite_VN: FontLoader = createFontLoader("Playwrite VN");
@@ -1689,7 +1743,9 @@ export const Sofadi_One: FontLoader = createFontLoader("Sofadi One");
 export const Sofia: FontLoader = createFontLoader("Sofia");
 export const Sofia_Sans: FontLoader = createFontLoader("Sofia Sans");
 export const Sofia_Sans_Condensed: FontLoader = createFontLoader("Sofia Sans Condensed");
-export const Sofia_Sans_Extra_Condensed: FontLoader = createFontLoader("Sofia Sans Extra Condensed");
+export const Sofia_Sans_Extra_Condensed: FontLoader = createFontLoader(
+  "Sofia Sans Extra Condensed",
+);
 export const Sofia_Sans_Semi_Condensed: FontLoader = createFontLoader("Sofia Sans Semi Condensed");
 export const Solitreo: FontLoader = createFontLoader("Solitreo");
 export const Solway: FontLoader = createFontLoader("Solway");
@@ -1707,8 +1763,12 @@ export const Space_Grotesk: FontLoader = createFontLoader("Space Grotesk");
 export const Space_Mono: FontLoader = createFontLoader("Space Mono");
 export const Special_Elite: FontLoader = createFontLoader("Special Elite");
 export const Special_Gothic: FontLoader = createFontLoader("Special Gothic");
-export const Special_Gothic_Condensed_One: FontLoader = createFontLoader("Special Gothic Condensed One");
-export const Special_Gothic_Expanded_One: FontLoader = createFontLoader("Special Gothic Expanded One");
+export const Special_Gothic_Condensed_One: FontLoader = createFontLoader(
+  "Special Gothic Condensed One",
+);
+export const Special_Gothic_Expanded_One: FontLoader = createFontLoader(
+  "Special Gothic Expanded One",
+);
 export const Spectral: FontLoader = createFontLoader("Spectral");
 export const Spectral_SC: FontLoader = createFontLoader("Spectral SC");
 export const Spicy_Rice: FontLoader = createFontLoader("Spicy Rice");

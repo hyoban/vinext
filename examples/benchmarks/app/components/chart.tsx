@@ -39,9 +39,7 @@ export function TrendChart({
   } | null>(null);
 
   // Collect all non-null values to determine y-axis bounds
-  const allValues = series.flatMap((s) =>
-    s.values.filter((v): v is number => v !== null),
-  );
+  const allValues = series.flatMap((s) => s.values.filter((v): v is number => v !== null));
   if (allValues.length === 0) {
     return (
       <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
@@ -96,13 +94,7 @@ export function TrendChart({
               stroke="#e5e7eb"
               strokeDasharray="4 4"
             />
-            <text
-              x={PADDING.left - 8}
-              y={tick.y + 4}
-              textAnchor="end"
-              fontSize="11"
-              fill="#9ca3af"
-            >
+            <text x={PADDING.left - 8} y={tick.y + 4} textAnchor="end" fontSize="11" fill="#9ca3af">
               {formatY(tick.value)}
             </text>
           </g>

@@ -1,16 +1,16 @@
-import { Boundary } from '#/ui/boundary';
-import { ExternalLink } from '#/ui/external-link';
-import { Suspense } from 'react';
-import ActiveLink from './active-link';
-import Client from './client';
+import { Boundary } from "#/ui/boundary";
+import { ExternalLink } from "#/ui/external-link";
+import { Suspense } from "react";
+import ActiveLink from "./active-link";
+import Client from "./client";
 
 const options = [
-  { name: 'Sort', value: 'sort', items: ['asc', 'desc'] },
-  { name: 'Page', value: 'page', items: ['1', '2', '3'] },
-  { name: 'Items Per Page', value: 'perPage', items: ['10', '25', '100'] },
+  { name: "Sort", value: "sort", items: ["asc", "desc"] },
+  { name: "Page", value: "page", items: ["1", "2", "3"] },
+  { name: "Items Per Page", value: "perPage", items: ["10", "25", "100"] },
 ];
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default async function Page(props: { searchParams: Promise<any> }) {
   const searchParams = await props.searchParams;
@@ -20,16 +20,15 @@ export default async function Page(props: { searchParams: Promise<any> }) {
         Updating <code>searchParams</code>
       </h1>
       <p>
-        The <code>useSearchParams</code> hook returns a read only version of{' '}
-        <code>URLSearchParams</code>. You can use{' '}
-        <code>useRouter&#40;&#41;</code> or <code>&lt;Link&gt;</code> to set new{' '}
-        <code>searchParams</code>. After a navigation is performed, the current{' '}
-        <code>page.js</code> will receive an updated <code>searchParams</code>{' '}
-        prop.
+        The <code>useSearchParams</code> hook returns a read only version of{" "}
+        <code>URLSearchParams</code>. You can use <code>useRouter&#40;&#41;</code> or{" "}
+        <code>&lt;Link&gt;</code> to set new <code>searchParams</code>. After a navigation is
+        performed, the current <code>page.js</code> will receive an updated{" "}
+        <code>searchParams</code> prop.
       </p>
       <div className="mt-12 space-y-12">
         <div className="space-y-4">
-          <Boundary color="blue" label={['From the Client']}>
+          <Boundary color="blue" label={["From the Client"]}>
             <h3 className="mt-0">
               Using <code>useRouter&#40;&#41;</code>
             </h3>
@@ -45,7 +44,7 @@ export default async function Page(props: { searchParams: Promise<any> }) {
         </div>
 
         <div className="space-y-4">
-          <Boundary label={['From the Server']}>
+          <Boundary label={["From the Server"]}>
             <h3 className="mt-0">
               Using <code>&lt;Link&gt;</code>
             </h3>

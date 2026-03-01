@@ -1,11 +1,11 @@
-import clsx from 'clsx';
+import clsx from "clsx";
 
 export function SkeletonText({
   count = 10,
   minLength = 2,
   maxLength = 12,
-  className = '',
-  seed: _seed = '',
+  className = "",
+  seed: _seed = "",
 }: {
   count?: number;
   minLength?: number;
@@ -20,9 +20,7 @@ export function SkeletonText({
   });
 
   return (
-    <div
-      className={clsx('flex flex-wrap gap-x-[1ch] gap-y-[0.65em]', className)}
-    >
+    <div className={clsx("flex flex-wrap gap-x-[1ch] gap-y-[0.65em]", className)}>
       {words.map((width, i) => (
         <div
           key={i}
@@ -59,13 +57,13 @@ function hashCode(str: string) {
 type RandomSeed = number | string;
 
 export const random = (seed: RandomSeed) => {
-  if (typeof seed === 'string') {
+  if (typeof seed === "string") {
     return mulberry32(hashCode(seed));
   }
 
-  if (typeof seed === 'number') {
+  if (typeof seed === "number") {
     return mulberry32(seed * 10000000000);
   }
 
-  throw new Error('random() argument must be a number or a string');
+  throw new Error("random() argument must be a number or a string");
 };

@@ -6,6 +6,6 @@
   "main": "vinext/server/app-router-entry",
   "preview_urls": true,
   "assets": {
-    "not_found_handling": "none"
-  }
+    "not_found_handling": "none",
+  },
 }

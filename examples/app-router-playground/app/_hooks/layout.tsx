@@ -1,8 +1,8 @@
-import { LayoutHooks } from '#/app/_hooks/_components/router-context-layout';
-import db from '#/lib/db';
-import { ClickCounter } from '#/ui/click-counter';
-import { Tabs } from '#/ui/tabs';
-import React from 'react';
+import { LayoutHooks } from "#/app/_hooks/_components/router-context-layout";
+import db from "#/lib/db";
+import { ClickCounter } from "#/ui/click-counter";
+import { Tabs } from "#/ui/tabs";
+import React from "react";
 
 // export function generateMetadata() {
 //   const demo = db.demo.find({ where: { slug: 'hooks' } });
@@ -16,11 +16,7 @@ import React from 'react';
 //   };
 // }
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function Layout({ children }: { children: React.ReactNode }) {
   const sections = db.section.findMany();
 
   return (
@@ -28,10 +24,7 @@ export default async function Layout({
       <div className="flex justify-between">
         <Tabs
           basePath="/hooks"
-          items={[
-            { text: 'Home' },
-            ...sections.map((x) => ({ text: x.name, slug: x.slug })),
-          ]}
+          items={[{ text: "Home" }, ...sections.map((x) => ({ text: x.name, slug: x.slug }))]}
         />
 
         <div className="self-start">

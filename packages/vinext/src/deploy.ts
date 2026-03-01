@@ -58,16 +58,16 @@ export interface DeployOptions {
 
 /** Deploy command flag definitions for util.parseArgs. */
 const deployArgOptions = {
-  help:               { type: "boolean", short: "h", default: false },
-  preview:            { type: "boolean", default: false },
-  env:                { type: "string" },
-  name:               { type: "string" },
-  "skip-build":       { type: "boolean", default: false },
-  "dry-run":          { type: "boolean", default: false },
+  help: { type: "boolean", short: "h", default: false },
+  preview: { type: "boolean", default: false },
+  env: { type: "string" },
+  name: { type: "string" },
+  "skip-build": { type: "boolean", default: false },
+  "dry-run": { type: "boolean", default: false },
   "experimental-tpr": { type: "boolean", default: false },
-  "tpr-coverage":     { type: "string" },
-  "tpr-limit":        { type: "string" },
-  "tpr-window":       { type: "string" },
+  "tpr-coverage": { type: "string" },
+  "tpr-limit": { type: "string" },
+  "tpr-window": { type: "string" },
 } as const;
 
 export function parseDeployArgs(args: string[]) {
@@ -115,11 +115,9 @@ interface ProjectInfo {
 
 export function detectProject(root: string): ProjectInfo {
   const hasApp =
-    fs.existsSync(path.join(root, "app")) ||
-    fs.existsSync(path.join(root, "src", "app"));
+    fs.existsSync(path.join(root, "app")) || fs.existsSync(path.join(root, "src", "app"));
   const hasPages =
-    fs.existsSync(path.join(root, "pages")) ||
-    fs.existsSync(path.join(root, "src", "pages"));
+    fs.existsSync(path.join(root, "pages")) || fs.existsSync(path.join(root, "src", "pages"));
 
   // Prefer App Router if both exist
   const isAppRouter = hasApp;
@@ -143,12 +141,8 @@ export function detectProject(root: string): ProjectInfo {
   const hasCloudflarePlugin = fs.existsSync(
     path.join(root, "node_modules", "@cloudflare", "vite-plugin"),
   );
-  const hasRscPlugin = fs.existsSync(
-    path.join(root, "node_modules", "@vitejs", "plugin-rsc"),
-  );
-  const hasWrangler = fs.existsSync(
-    path.join(root, "node_modules", ".bin", "wrangler"),
-  );
+  const hasRscPlugin = fs.existsSync(path.join(root, "node_modules", "@vitejs", "plugin-rsc"));
+  const hasWrangler = fs.existsSync(path.join(root, "node_modules", ".bin", "wrangler"));
 
   // Derive project name from package.json or directory name
   let projectName = path.basename(root);
@@ -838,9 +832,7 @@ export function getMissingDeps(
   }
   if (info.hasMDX) {
     // Check if @mdx-js/rollup is already installed
-    const hasMdxRollup = fs.existsSync(
-      path.join(info.root, "node_modules", "@mdx-js", "rollup"),
-    );
+    const hasMdxRollup = fs.existsSync(path.join(info.root, "node_modules", "@mdx-js", "rollup"));
     if (!hasMdxRollup) {
       missing.push({ name: "@mdx-js/rollup", version: "latest" });
     }
@@ -947,7 +939,9 @@ export interface WranglerDeployArgs {
   env: string | undefined;
 }
 
-export function buildWranglerDeployArgs(options: Pick<DeployOptions, "preview" | "env">): WranglerDeployArgs {
+export function buildWranglerDeployArgs(
+  options: Pick<DeployOptions, "preview" | "env">,
+): WranglerDeployArgs {
   const args = ["deploy"];
   const env = options.env || (options.preview ? "preview" : undefined);
   if (env) {
@@ -1025,7 +1019,9 @@ export async function deploy(options: DeployOptions): Promise<void> {
     if (reactUpgrade.length > 0) {
       const installCmd = detectPackageManager(root).replace(/ -D$/, "");
       const [pm, ...pmArgs] = installCmd.split(" ");
-      console.log(`  Upgrading ${reactUpgrade.map(d => d.replace(/@latest$/, "")).join(", ")}...`);
+      console.log(
+        `  Upgrading ${reactUpgrade.map((d) => d.replace(/@latest$/, "")).join(", ")}...`,
+      );
       execFileSync(pm, [...pmArgs, ...reactUpgrade], { cwd: root, stdio: "inherit" });
     }
   }

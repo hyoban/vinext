@@ -160,7 +160,7 @@ export interface ImageHandlers {
   /** Optional: Transform the image (resize, format, quality). */
   transformImage?: (
     body: ReadableStream,
-    options: { width: number; format: string; quality: number }
+    options: { width: number; format: string; quality: number },
   ) => Promise<Response>;
 }
 

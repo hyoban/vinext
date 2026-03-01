@@ -3,11 +3,11 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/',
-        destination: '/news/1'
-      }
-    ]
-  }
-}
+        source: "/",
+        destination: "/news/1",
+      },
+    ];
+  },
+};
 
-export default nextConfig
+export default nextConfig;

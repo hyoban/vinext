@@ -1,17 +1,14 @@
-'use client';
+"use client";
 
-import { Boundary } from '#/ui/boundary';
-import {
-  useSelectedLayoutSegment,
-  useSelectedLayoutSegments,
-} from 'next/navigation';
+import { Boundary } from "#/ui/boundary";
+import { useSelectedLayoutSegment, useSelectedLayoutSegments } from "next/navigation";
 
 export function LayoutHooks() {
   const selectedLayoutSegment = useSelectedLayoutSegment();
   const selectedLayoutSegments = useSelectedLayoutSegments();
 
   return selectedLayoutSegment ? (
-    <Boundary label={['Client Component Hooks']} size="small">
+    <Boundary label={["Client Component Hooks"]} size="small">
       <div className="overflow-x-auto text-sm text-white [color-scheme:dark]">
         <pre>
           {JSON.stringify(

@@ -1,12 +1,12 @@
-import React from 'react';
-import { type Metadata } from 'next';
-import db from '#/lib/db';
-import { Boundary } from '#/ui/boundary';
-import Readme from './readme.mdx';
-import { Mdx } from '#/ui/codehike';
+import React from "react";
+import { type Metadata } from "next";
+import db from "#/lib/db";
+import { Boundary } from "#/ui/boundary";
+import Readme from "./readme.mdx";
+import { Mdx } from "#/ui/codehike";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const demo = db.demo.find({ where: { slug: 'route-groups' } });
+  const demo = db.demo.find({ where: { slug: "route-groups" } });
 
   return {
     title: demo.name,

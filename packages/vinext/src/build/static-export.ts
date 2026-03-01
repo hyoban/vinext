@@ -75,9 +75,7 @@ export interface StaticExportResult {
  *
  * Creates a directory of static HTML files by rendering each route at build time.
  */
-export async function staticExportPages(
-  options: StaticExportOptions,
-): Promise<StaticExportResult> {
+export async function staticExportPages(options: StaticExportOptions): Promise<StaticExportResult> {
   const { server, routes, apiRoutes, pagesDir, outDir, config } = options;
   const result: StaticExportResult = {
     pageCount: 0,
@@ -143,8 +141,7 @@ export async function staticExportPages(
         continue;
       }
 
-      const paths: Array<{ params: Record<string, string | string[]> }> =
-        pathsResult?.paths ?? [];
+      const paths: Array<{ params: Record<string, string | string[]> }> = pathsResult?.paths ?? [];
 
       for (const { params } of paths) {
         // Build the URL path from the route pattern and params
@@ -335,9 +332,7 @@ async function renderStaticPage(options: RenderStaticPageOptions): Promise<strin
 
   // Collect head tags
   const ssrHeadHTML =
-    typeof headShim.getSSRHeadHTML === "function"
-      ? headShim.getSSRHeadHTML()
-      : "";
+    typeof headShim.getSSRHeadHTML === "function" ? headShim.getSSRHeadHTML() : "";
 
   // __NEXT_DATA__ for client hydration
   const nextDataScript = `<script>window.__NEXT_DATA__ = ${safeJsonStringify({
@@ -398,18 +393,11 @@ interface RenderErrorPageOptions {
   headShim: any;
 }
 
-async function renderErrorPage(
-  options: RenderErrorPageOptions,
-): Promise<string | null> {
-  const { server, pagesDir, statusCode, AppComponent, DocumentComponent, headShim } =
-    options;
+async function renderErrorPage(options: RenderErrorPageOptions): Promise<string | null> {
+  const { server, pagesDir, statusCode, AppComponent, DocumentComponent, headShim } = options;
 
   const candidates =
-    statusCode === 404
-      ? ["404", "_error"]
-      : statusCode === 500
-        ? ["500", "_error"]
-        : ["_error"];
+    statusCode === 404 ? ["404", "_error"] : statusCode === 500 ? ["500", "_error"] : ["_error"];
 
   for (const candidate of candidates) {
     const candidatePath = path.join(pagesDir, candidate);
@@ -469,10 +457,7 @@ async function renderErrorPage(
  * E.g., "/posts/:id" + { id: "42" } → "/posts/42"
  * E.g., "/docs/:slug+" + { slug: ["a", "b"] } → "/docs/a/b"
  */
-function buildUrlFromParams(
-  pattern: string,
-  params: Record<string, string | string[]>,
-): string {
+function buildUrlFromParams(pattern: string, params: Record<string, string | string[]>): string {
   const parts = pattern.split("/").filter(Boolean);
   const result: string[] = [];
 
@@ -546,7 +531,9 @@ async function resolveParentParams(
   // at each level of the path hierarchy.
   type ParentSegment = {
     params: string[];
-    generateStaticParams: (opts: { params: Record<string, string | string[]> }) => Promise<Record<string, string | string[]>[]>;
+    generateStaticParams: (opts: {
+      params: Record<string, string | string[]>;
+    }) => Promise<Record<string, string | string[]>[]>;
   };
 
   const parentSegments: ParentSegment[] = [];

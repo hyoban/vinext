@@ -1,4 +1,4 @@
-const title = 'Snippets';
+const title = "Snippets";
 
 export const metadata = {
   title,

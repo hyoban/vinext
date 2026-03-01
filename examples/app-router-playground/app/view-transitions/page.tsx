@@ -1,13 +1,13 @@
-'use cache';
+"use cache";
 
-import db from '#/lib/db';
+import db from "#/lib/db";
 import {
   TransitionLink,
   HorizontalTransition,
   SharedTransition,
-} from '#/app/view-transitions/_ui/transitions';
-import { Boundary } from '#/ui/boundary';
-import Image from 'next/image';
+} from "#/app/view-transitions/_ui/transitions";
+import { Boundary } from "#/ui/boundary";
+import Image from "next/image";
 
 export default async function Page() {
   const products = db.product.findMany();
@@ -15,14 +15,14 @@ export default async function Page() {
   return (
     <HorizontalTransition
       enter={{
-        default: 'none',
-        'transition-to-list': 'animate-slide-from-left',
-        'transition-to-detail': 'animate-slide-from-right',
+        default: "none",
+        "transition-to-list": "animate-slide-from-left",
+        "transition-to-detail": "animate-slide-from-right",
       }}
       exit={{
-        default: 'none',
-        'transition-to-list': 'animate-slide-to-right',
-        'transition-to-detail': 'animate-slide-to-left',
+        default: "none",
+        "transition-to-list": "animate-slide-to-right",
+        "transition-to-detail": "animate-slide-to-left",
       }}
     >
       <Boundary label="page.tsx" animateRerendering={true}>
@@ -31,9 +31,7 @@ export default async function Page() {
             <SharedTransition name="navigation-title" share="animate-morph">
               <h1>Shop</h1>
             </SharedTransition>
-            <span className="font-mono tracking-tighter text-gray-600">
-              ({products.length})
-            </span>
+            <span className="font-mono tracking-tighter text-gray-600">({products.length})</span>
           </div>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             {products.map((product) => (
@@ -46,9 +44,9 @@ export default async function Page() {
                 <SharedTransition
                   name={`product-${product.id}`}
                   share={{
-                    default: 'auto',
-                    'transition-to-list': 'animate-morph',
-                    'transition-to-detail': 'animate-morph',
+                    default: "auto",
+                    "transition-to-list": "animate-morph",
+                    "transition-to-detail": "animate-morph",
                   }}
                 >
                   <div className="overflow-hidden rounded-md bg-gray-900/50 p-8 group-hover:bg-gray-900">

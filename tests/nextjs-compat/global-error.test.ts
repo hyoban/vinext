@@ -98,10 +98,7 @@ describe("Next.js compat: global-error", () => {
   // generateMetadata() throws, but a local error.tsx exists to catch it.
 
   it("generateMetadata() error caught by local error.tsx boundary", async () => {
-    const { res, html } = await fetchHtml(
-      baseUrl,
-      "/nextjs-compat/metadata-error-with-boundary",
-    );
+    const { res, html } = await fetchHtml(baseUrl, "/nextjs-compat/metadata-error-with-boundary");
     expect(res.status).toBeLessThan(600);
     expect(html).toContain("Local error boundary");
   });
@@ -113,9 +110,7 @@ describe("Next.js compat: global-error", () => {
   // generateMetadata() throws, no local error.tsx — falls to global-error.
 
   it("generateMetadata() error without local boundary returns a response", async () => {
-    const res = await fetch(
-      `${baseUrl}/nextjs-compat/metadata-error-without-boundary`,
-    );
+    const res = await fetch(`${baseUrl}/nextjs-compat/metadata-error-without-boundary`);
     expect(res.status).toBeLessThan(600);
     const html = await res.text();
     expect(html.length).toBeGreaterThan(0);

@@ -30,11 +30,7 @@ function Sidebar() {
               {item.title}
             </Link>
             {item.children?.map((child) => (
-              <Link
-                key={child.href}
-                href={child.href}
-                className="sidebar-link nested"
-              >
+              <Link key={child.href} href={child.href} className="sidebar-link nested">
                 {child.title}
               </Link>
             ))}
@@ -68,11 +64,7 @@ function Navbar() {
   );
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>

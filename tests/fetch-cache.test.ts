@@ -17,7 +17,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 let requestCount = 0;
 const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
   requestCount++;
-  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+  const url =
+    typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   return new Response(JSON.stringify({ url, count: requestCount }), {
     status: 200,
     headers: { "content-type": "application/json" },
@@ -28,8 +29,10 @@ const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestIni
 vi.stubGlobal("fetch", fetchMock);
 
 // Now import — these will capture fetchMock as "originalFetch"
-const { withFetchCache, runWithFetchCache, getCollectedFetchTags, getOriginalFetch } = await import("../packages/vinext/src/shims/fetch-cache.js");
-const { getCacheHandler, revalidateTag, MemoryCacheHandler, setCacheHandler } = await import("../packages/vinext/src/shims/cache.js");
+const { withFetchCache, runWithFetchCache, getCollectedFetchTags, getOriginalFetch } =
+  await import("../packages/vinext/src/shims/fetch-cache.js");
+const { getCacheHandler, revalidateTag, MemoryCacheHandler, setCacheHandler } =
+  await import("../packages/vinext/src/shims/cache.js");
 
 describe("fetch cache shim", () => {
   let cleanup: (() => void) | null = null;
@@ -324,7 +327,7 @@ describe("fetch cache shim", () => {
     });
 
     const tags = getCollectedFetchTags();
-    expect(tags.filter(t => t === "data")).toHaveLength(1);
+    expect(tags.filter((t) => t === "data")).toHaveLength(1);
   });
 
   // ── Only caches successful responses ────────────────────────────────
@@ -1073,12 +1076,13 @@ describe("fetch cache shim", () => {
     });
 
     it("oversized ReadableStream body bypasses cache and preserves stream body", async () => {
-      const makeLargeStream = () => new ReadableStream({
-        start(controller) {
-          controller.enqueue(new Uint8Array(1024 * 1024 + 1));
-          controller.close();
-        },
-      });
+      const makeLargeStream = () =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(1024 * 1024 + 1));
+            controller.close();
+          },
+        });
 
       await fetch("https://api.example.com/large-stream", {
         method: "POST",
@@ -1143,14 +1147,15 @@ describe("fetch cache shim", () => {
       const chunkSize = 64 * 1024; // 64 KiB per chunk
       const numChunks = 17; // 17 * 64 KiB = 1088 KiB > 1 MiB
 
-      const makeLargeMultiChunkStream = () => new ReadableStream({
-        start(controller) {
-          for (let i = 0; i < numChunks; i++) {
-            controller.enqueue(new Uint8Array(chunkSize));
-          }
-          controller.close();
-        },
-      });
+      const makeLargeMultiChunkStream = () =>
+        new ReadableStream({
+          start(controller) {
+            for (let i = 0; i < numChunks; i++) {
+              controller.enqueue(new Uint8Array(chunkSize));
+            }
+            controller.close();
+          },
+        });
 
       const res1 = await fetch("https://api.example.com/large-multi-chunk", {
         method: "POST",
@@ -1194,7 +1199,6 @@ describe("fetch cache shim", () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
-
 
   // ── URLSearchParams body ──────────────────────────────────────────
 

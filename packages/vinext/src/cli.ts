@@ -78,9 +78,8 @@ function getViteVersion(): string {
   return _viteModule?.version ?? "unknown";
 }
 
-const VERSION = JSON.parse(
-  fs.readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
-).version as string;
+const VERSION = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf-8"))
+  .version as string;
 
 // ─── CLI Argument Parsing ──────────────────────────────────────────────────────
 
@@ -165,12 +164,7 @@ function buildViteConfig(overrides: Record<string, unknown> = {}) {
     // when vinext is symlinked (bun link / npm link) and both vinext's
     // and the project's node_modules contain React.
     resolve: {
-      dedupe: [
-        "react",
-        "react-dom",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-      ],
+      dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
     },
     ...overrides,
   };
@@ -243,31 +237,35 @@ async function buildApp() {
     // Use buildViteConfig() so that when a vite.config exists we don't
     // duplicate the vinext() plugin.
     console.log("  Building client...");
-    await vite.build(buildViteConfig({
-      build: {
-        outDir: "dist/client",
-        manifest: true,
-        ssrManifest: true,
-        rollupOptions: {
-          input: "virtual:vinext-client-entry",
-          output: clientOutputConfig,
-          treeshake: clientTreeshakeConfig,
-        },
-      },
-    }));
-
-    console.log("  Building server...");
-    await vite.build(buildViteConfig({
-      build: {
-        outDir: "dist/server",
-        ssr: "virtual:vinext-server-entry",
-        rollupOptions: {
-          output: {
-            entryFileNames: "entry.js",
+    await vite.build(
+      buildViteConfig({
+        build: {
+          outDir: "dist/client",
+          manifest: true,
+          ssrManifest: true,
+          rollupOptions: {
+            input: "virtual:vinext-client-entry",
+            output: clientOutputConfig,
+            treeshake: clientTreeshakeConfig,
           },
         },
-      },
-    }));
+      }),
+    );
+
+    console.log("  Building server...");
+    await vite.build(
+      buildViteConfig({
+        build: {
+          outDir: "dist/server",
+          ssr: "virtual:vinext-server-entry",
+          rollupOptions: {
+            output: {
+              entryFileNames: "entry.js",
+            },
+          },
+        },
+      }),
+    );
   }
 
   console.log("\n  Build complete. Run `vinext start` to start the production server.\n");
@@ -287,14 +285,8 @@ async function start() {
 
   console.log(`\n  vinext start  (port ${port})\n`);
 
-  const { startProdServer } = (await import(
-    /* @vite-ignore */ "./server/prod-server.js"
-  )) as {
-    startProdServer: (opts: {
-      port: number;
-      host: string;
-      outDir: string;
-    }) => Promise<unknown>;
+  const { startProdServer } = (await import(/* @vite-ignore */ "./server/prod-server.js")) as {
+    startProdServer: (opts: { port: number; host: string; outDir: string }) => Promise<unknown>;
   };
 
   await startProdServer({
