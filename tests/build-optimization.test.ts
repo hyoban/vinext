@@ -12,6 +12,9 @@ import {
   computeLazyChunks,
 } from "../packages/vinext/src/index.js";
 
+// The vinext config hook mutates process.env.NODE_ENV as a side effect (matching
+// Next.js behavior). Save/restore globally so tests that call config() don't
+// pollute each other — this affects optimizeDeps, treeshake, and NODE_ENV tests.
 let originalNodeEnv: string | undefined;
 
 beforeEach(() => {
@@ -171,10 +174,10 @@ describe("optimizeDeps.exclude for vinext", () => {
 describe("process.env.NODE_ENV define", () => {
   // Ported from Next.js: test/production/pages-dir/production/test/process-env.ts
   // https://github.com/vercel/next.js/blob/canary/test/production/pages-dir/production/test/process-env.ts
-  it("is injected as production for build", async () => {
+  // Helper: create a temp Pages Router project and return the vinext:config plugin
+  async function setupTmpProject() {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
     const plugins = vinext();
-
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",
     );
@@ -198,14 +201,73 @@ describe("process.env.NODE_ENV define", () => {
       `export default {};`,
     );
 
+    return { mainPlugin: mainPlugin as any, tmpDir, fsp };
+  }
+
+  it("is injected as production for build", async () => {
+    const { mainPlugin, tmpDir, fsp } = await setupTmpProject();
     try {
       const mockConfig = { root: tmpDir, build: {}, plugins: [] };
-      const result = await (mainPlugin as any).config(
+      const result = await mainPlugin.config(
         mockConfig,
         { command: "build", mode: "production" },
       );
 
       expect(result.define?.["process.env.NODE_ENV"]).toBe(JSON.stringify("production"));
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 15000);
+
+  it("is injected as production for build without explicit mode", async () => {
+    // Other tests in this file pass { command: "build" } with no mode.
+    // The mode defaults to "development" via env?.mode ?? "development",
+    // but command is "build" so resolvedNodeEnv should still be "production".
+    const { mainPlugin, tmpDir, fsp } = await setupTmpProject();
+    try {
+      const mockConfig = { root: tmpDir, build: {}, plugins: [] };
+      const result = await mainPlugin.config(
+        mockConfig,
+        { command: "build" },
+      );
+
+      expect(result.define?.["process.env.NODE_ENV"]).toBe(JSON.stringify("production"));
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 15000);
+
+  it("is injected as development for serve", async () => {
+    const { mainPlugin, tmpDir, fsp } = await setupTmpProject();
+    try {
+      const mockConfig = { root: tmpDir, build: {}, plugins: [] };
+      const result = await mainPlugin.config(
+        mockConfig,
+        { command: "serve", mode: "development" },
+      );
+
+      expect(result.define?.["process.env.NODE_ENV"]).toBe(JSON.stringify("development"));
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 15000);
+
+  it("respects user-defined process.env.NODE_ENV in config.define", async () => {
+    const { mainPlugin, tmpDir, fsp } = await setupTmpProject();
+    try {
+      const mockConfig = {
+        root: tmpDir,
+        build: {},
+        plugins: [],
+        define: { "process.env.NODE_ENV": JSON.stringify("staging") },
+      };
+      const result = await mainPlugin.config(
+        mockConfig,
+        { command: "build", mode: "production" },
+      );
+
+      // Should NOT override the user's explicit define
+      expect(result.define?.["process.env.NODE_ENV"]).toBeUndefined();
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }

@@ -1698,11 +1698,15 @@ hydrate();
           }
         }
         // Align NODE_ENV with Next.js semantics: build -> production, serve -> development.
-        const resolvedNodeEnv = mode === "test"
-          ? "test"
-          : env?.command === "build"
-          ? "production"
-          : "development";
+        // Next.js unconditionally forces NODE_ENV during build/dev, so we do the same.
+        let resolvedNodeEnv: string;
+        if (mode === "test") {
+          resolvedNodeEnv = "test";
+        } else if (env?.command === "build") {
+          resolvedNodeEnv = "production";
+        } else {
+          resolvedNodeEnv = "development";
+        }
         if (process.env.NODE_ENV !== resolvedNodeEnv) {
           process.env.NODE_ENV = resolvedNodeEnv;
         }
@@ -1752,6 +1756,9 @@ hydrate();
           defines["process.env.NODE_ENV"] = JSON.stringify(resolvedNodeEnv);
         }
         for (const [key, value] of Object.entries(nextConfig.env)) {
+          // Skip NODE_ENV from next.config.js env — Next.js ignores it too,
+          // and it would silently override the value we just set above.
+          if (key === "NODE_ENV") continue;
           defines[`process.env.${key}`] = JSON.stringify(value);
         }
         // Expose basePath to client-side code
