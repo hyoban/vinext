@@ -1697,6 +1697,15 @@ hydrate();
             process.env[key] = value;
           }
         }
+        // Align NODE_ENV with Next.js semantics: build -> production, serve -> development.
+        const resolvedNodeEnv = mode === "test"
+          ? "test"
+          : env?.command === "build"
+          ? "production"
+          : "development";
+        if (process.env.NODE_ENV !== resolvedNodeEnv) {
+          process.env.NODE_ENV = resolvedNodeEnv;
+        }
 
         // Resolve the base directory for app/pages detection.
         // If appDir is provided, resolve it (supports both relative and absolute paths).
@@ -1735,6 +1744,13 @@ hydrate();
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars
         const defines = getNextPublicEnvDefines();
+        if (
+          !config.define ||
+          typeof config.define !== "object" ||
+          !("process.env.NODE_ENV" in config.define)
+        ) {
+          defines["process.env.NODE_ENV"] = JSON.stringify(resolvedNodeEnv);
+        }
         for (const [key, value] of Object.entries(nextConfig.env)) {
           defines[`process.env.${key}`] = JSON.stringify(value);
         }
