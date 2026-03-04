@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createBuilder, type ViteDevServer } from "vite";
 import path from "node:path";
 import fs from "node:fs";
@@ -2185,6 +2185,119 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
     expect(code).toContain("staging.example.com");
     expect(code).toContain("*.preview.dev");
     expect(code).toContain("__allowedDevOrigins");
+  });
+
+  describe("rscOnError: non-plain object dev hint", () => {
+    it("includes detection for the 'Only plain objects' RSC serialization error", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain(
+        "Only plain objects, and a few built-ins, can be passed to Client Components",
+      );
+    });
+
+    it("guards the dev hint behind a NODE_ENV !== production check", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      // The hint must be suppressed in production builds
+      expect(code).toContain('process.env.NODE_ENV !== "production"');
+    });
+
+    it("includes actionable guidance about module namespace objects in the hint", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain("import * as X");
+      expect(code).toContain("[vinext] RSC serialization error");
+    });
+
+    it("includes actionable guidance about class instances in the hint", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain("class instance");
+    });
+
+    it("does not affect the digest return path for navigation errors", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      // The existing digest path (redirect/notFound) must still be present
+      expect(code).toContain('"digest" in error');
+      expect(code).toContain("String(error.digest)");
+    });
+
+    // Runtime tests: extract the rscOnError function from the generated code
+    // and evaluate it. This catches syntax errors and logic bugs that the
+    // string-presence tests above would miss (e.g. unterminated strings,
+    // wrong return values, broken control flow).
+    describe("runtime behavior", () => {
+      let rscOnError: (error: unknown) => string | undefined;
+
+      beforeAll(() => {
+        const code = generateRscEntry(
+          "/tmp/test/app",
+          minimalRoutes,
+          null,
+          [],
+          null,
+          "",
+          false,
+        );
+
+        // Extract a top-level function from the generated code by matching
+        // balanced braces (simple regex can't handle nested braces).
+        function extractFunction(src: string, name: string): string {
+          const marker = `function ${name}(`;
+          const start = src.indexOf(marker);
+          if (start === -1) throw new Error(`Could not find ${name} in generated code`);
+          const braceStart = src.indexOf("{", start);
+          let depth = 0;
+          for (let i = braceStart; i < src.length; i++) {
+            if (src[i] === "{") depth++;
+            else if (src[i] === "}") depth--;
+            if (depth === 0) return src.slice(start, i + 1);
+          }
+          throw new Error(`Unbalanced braces in ${name}`);
+        }
+
+        const digestFn = extractFunction(code, "__errorDigest");
+        const onErrorFn = extractFunction(code, "rscOnError");
+
+        const body = `${digestFn}\n${onErrorFn}\nreturn rscOnError;`;
+        const factory = new Function("process", body);
+        rscOnError = factory({ env: { NODE_ENV: "development" } });
+      });
+
+      it("returns the digest string for navigation errors (redirect/notFound)", () => {
+        const error = Object.assign(new Error("NEXT_REDIRECT"), {
+          digest: "NEXT_REDIRECT;push;/dashboard;307",
+        });
+        expect(rscOnError(error)).toBe("NEXT_REDIRECT;push;/dashboard;307");
+      });
+
+      it("logs an actionable hint and returns undefined for RSC serialization errors", () => {
+        const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const error = new Error(
+            "Only plain objects, and a few built-ins, can be passed to Client Components from Server Components. " +
+              "Objects with toJSON methods are not supported. Module namespace objects are not supported.",
+          );
+          const result = rscOnError(error);
+          expect(result).toBeUndefined();
+          expect(spy).toHaveBeenCalledOnce();
+          expect(spy.mock.calls[0]![0]).toContain(
+            "[vinext] RSC serialization error",
+          );
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it("returns undefined for generic errors in dev (no digest, no serialization match)", () => {
+        const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const result = rscOnError(new Error("something went wrong"));
+          expect(result).toBeUndefined();
+          // Should NOT log the hint for unrelated errors
+          expect(spy).not.toHaveBeenCalled();
+        } finally {
+          spy.mockRestore();
+        }
+      });
+    });
   });
 });
 

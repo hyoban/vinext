@@ -311,6 +311,48 @@ function rscOnError(error) {
   if (error && typeof error === "object" && "digest" in error) {
     return String(error.digest);
   }
+
+  // In dev, detect the "Only plain objects" RSC serialization error and emit
+  // an actionable hint. This error occurs when a Server Component passes a
+  // class instance, ES module namespace object, or null-prototype object as a
+  // prop to a Client Component.
+  //
+  // Root cause: Vite bundles modules as true ESM (module namespace objects
+  // have a null-like internal slot), while Next.js's webpack build produces
+  // plain CJS-wrapped objects with __esModule:true. React's RSC serializer
+  // accepts the latter as plain objects but rejects the former — which means
+  // code that accidentally passes "import * as X" works in webpack/Next.js
+  // but correctly fails in vinext.
+  //
+  // Common triggers:
+  //   - "import * as utils from './utils'" passed as a prop
+  //   - class instances (new Foo()) passed as props
+  //   - Date / Map / Set instances passed as props
+  //   - Objects with Object.create(null) (null prototype)
+  if (
+    process.env.NODE_ENV !== "production" &&
+    error instanceof Error &&
+    error.message.includes("Only plain objects, and a few built-ins, can be passed to Client Components")
+  ) {
+    console.error(
+      "[vinext] RSC serialization error: a non-plain object was passed from a Server Component to a Client Component.\\n" +
+      "\\n" +
+      "Common causes:\\n" +
+      "  * Passing a module namespace (import * as X) directly as a prop.\\n" +
+      "    Unlike Next.js (webpack), Vite produces real ESM module namespace objects\\n" +
+      "    which are not serializable. Fix: pass individual values instead,\\n" +
+      "    e.g. <Comp value={module.value} />\\n" +
+      "  * Passing a class instance (new Foo()) as a prop.\\n" +
+      "    Fix: convert to a plain object, e.g. { id: foo.id, name: foo.name }\\n" +
+      "  * Passing a Date, Map, or Set. Use .toISOString(), [...map.entries()], etc.\\n" +
+      "  * Passing Object.create(null). Use { ...obj } to restore a prototype.\\n" +
+      "\\n" +
+      "Original error:",
+      error.message,
+    );
+    return undefined;
+  }
+
   // In production, generate a digest hash for non-navigation errors
   if (process.env.NODE_ENV === "production" && error) {
     const msg = error instanceof Error ? error.message : String(error);
