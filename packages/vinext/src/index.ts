@@ -1,4 +1,4 @@
-import type { Plugin, UserConfig, ViteDevServer } from "vite";
+import type { Plugin, PluginOption, UserConfig, ViteDevServer } from "vite";
 import { loadEnv, parseAst } from "vite";
 import { pagesRouter, apiRouter, invalidateRouteCache, matchRoute, patternToNextFormat as pagesPatternToNextFormat, type Route } from "./routing/pages-router.js";
 import { appRouter, invalidateAppRouteCache } from "./routing/app-router.js";
@@ -37,6 +37,7 @@ import { scanMetadataFiles } from "./server/metadata-routes.js";
 import { staticExportPages } from "./build/static-export.js";
 import { detectPackageManager } from "./utils/project.js";
 import tsconfigPaths from "vite-tsconfig-paths";
+import react, { Options as VitePluginReactOptions } from "@vitejs/plugin-react";
 import MagicString from "magic-string";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -572,9 +573,15 @@ export interface VinextOptions {
    * @default true
    */
   rsc?: boolean;
+  /**
+   * Options passed to @vitejs/plugin-react.
+   * Set to `false` to disable, `true` to enable with defaults.
+   * @default undefined
+   */
+  react?: VitePluginReactOptions | boolean;
 }
 
-export default function vinext(options: VinextOptions = {}): Plugin[] {
+export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let root: string;
   let pagesDir: string;
   let appDir: string;
@@ -1680,10 +1687,16 @@ hydrate();
   // files are detected and @mdx-js/rollup is installed.
   let mdxDelegate: Plugin | null = null;
 
-  const plugins: (Plugin | Promise<Plugin[]>)[] = [
+  const reactPlugin = options.react === false
+    ? false
+    : react(options.react === true ? undefined : options.react);
+
+  const plugins: PluginOption[] = [
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
     tsconfigPaths(),
+    // React Fast Refresh + JSX transform for client components.
+    reactPlugin,
     // Transform CJS require()/module.exports to ESM before other plugins
     // analyze imports (RSC directive scanning, shim resolution, etc.)
     commonjs(),
@@ -3425,7 +3438,7 @@ hydrate();
     plugins.push(rscPluginPromise);
   }
 
-  return plugins as Plugin[];
+  return plugins;
 }
 
 /**
