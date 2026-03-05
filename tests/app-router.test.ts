@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createBuilder, type ViteDevServer } from "vite";
 import path from "node:path";
 import fs from "node:fs";
@@ -588,6 +588,27 @@ describe("App Router integration", () => {
     expect(html).toMatch(/\$RX\("[^"]*","NEXT_HTTP_ERROR_FALLBACK/);
   });
 
+  it("async server throw in Suspense falls back to client rendering without dev decode crash (React 19 regression)", async () => {
+    // Regression for issue #50:
+    // React 19 dev-mode Flight decoding can crash in resolveErrorDev() with
+    // "Invalid hook call" / null dispatcher errors while SSR consumes an RSC
+    // stream that includes an error chunk.
+    const res = await fetch(`${baseUrl}/react19-dev-rsc-error`);
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    // In React 19 dev mode, this route switches to client rendering when the
+    // async server throw is encountered during Flight streaming. The key
+    // regression check is that decode no longer crashes with a null dispatcher.
+    // Note: "Switched to client rendering" is a React internal message that
+    // may change across React versions.
+    expect(html).toContain("Switched to client rendering");
+    expect(html).toContain("react19-dev-rsc-error");
+    expect(html).toContain('data-testid="react19-dev-rsc-loading"');
+    expect(html).not.toContain("Invalid hook call");
+    expect(html).not.toContain("Cannot read properties of null (reading 'useContext')");
+  });
+
   it("renders error boundary wrapper for routes with error.tsx", async () => {
     const res = await fetch(`${baseUrl}/error-test`);
     expect(res.status).toBe(200);
@@ -666,6 +687,39 @@ describe("App Router integration", () => {
     const html = await res.text();
     expect(html).toContain("x/y");
     expect(html).toMatch(/Segments:.*2/);
+  });
+
+  // --- Hyphenated param names (issue #71: [[...sign-in]] causes 404) ---
+
+  it("renders optional catch-all with hyphenated param name [[...sign-in]]", async () => {
+    const res = await fetch(`${baseUrl}/sign-in`);
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain("Sign In");
+    expect(html).toContain('data-testid="sign-in-page"');
+    expect(html).toMatch(/Segments:.*0/);
+    expect(html).toContain("(root)");
+  });
+
+  it("renders hyphenated optional catch-all with segments", async () => {
+    const res = await fetch(`${baseUrl}/sign-in/sso/callback`);
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain("Sign In");
+    expect(html).toMatch(/Segments:.*2/);
+    expect(html).toContain("sso/callback");
+  });
+
+  it("renders dynamic segment with hyphenated param name [auth-method]", async () => {
+    const res = await fetch(`${baseUrl}/auth/google`);
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain("Auth Method");
+    expect(html).toContain('data-testid="auth-method-page"');
+    expect(html).toContain("google");
   });
 
   it("renders static metadata (export const metadata) as head elements", async () => {
@@ -1827,6 +1881,29 @@ describe("App Router next.config.js features (dev server integration)", () => {
     expect(res.status).toBe(200);
     expect(res.redirected).toBe(false);
   });
+
+  // ── Percent-encoded paths should be decoded before config matching ──
+
+  it("percent-encoded redirect path is decoded before config matching", async () => {
+    // /%6Fld-%61bout decodes to /old-about → /about (permanent redirect)
+    const res = await fetch(`${baseUrl}/%6Fld-%61bout`, { redirect: "manual" });
+    expect(res.status).toBe(308);
+    expect(res.headers.get("location")).toContain("/about");
+  });
+
+  it("percent-encoded header path is decoded before config matching", async () => {
+    // /%61bout decodes to /about → X-Page-Header: about-page
+    const res = await fetch(`${baseUrl}/%61bout`);
+    expect(res.headers.get("x-page-header")).toBe("about-page");
+  });
+
+  it("percent-encoded rewrite path is decoded before config matching", async () => {
+    // /rewrite-%61bout decodes to /rewrite-about → /about (beforeFiles rewrite)
+    const res = await fetch(`${baseUrl}/rewrite-%61bout`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("About");
+  });
 });
 
 describe("App Router next.config.js features (generateRscEntry)", () => {
@@ -1952,6 +2029,14 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
     expect(code).toContain("__matchConfigPattern");
     // Should handle catch-all patterns
     expect(code).toContain(":path*");
+  });
+
+  it("validates proxy.ts exports in generated middleware dispatch (matching Next.js)", () => {
+    const code = generateRscEntry("/tmp/test/app", minimalRoutes, "/tmp/proxy.ts", [], null, "", false);
+    // For proxy.ts files, named proxy export is preferred over default
+    expect(code).toContain("middlewareModule.proxy ?? middlewareModule.default");
+    // Should throw if no valid export found
+    expect(code).toContain('must export a function named');
   });
 
   it("applies redirects before middleware in the handler", () => {
@@ -2107,7 +2192,7 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
     expect(code).toContain("__safeDevHosts");
     // Should call dev origin validation inside _handleRequest
     const callSite = code.indexOf("const __originBlock = __validateDevRequestOrigin(request)");
-    const handleRequestIdx = code.indexOf("async function _handleRequest(request)");
+    const handleRequestIdx = code.indexOf("async function _handleRequest(request, __reqCtx)");
     expect(callSite).toBeGreaterThan(-1);
     expect(handleRequestIdx).toBeGreaterThan(-1);
     // The call should be inside the function body (after the function declaration)
@@ -2121,6 +2206,119 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
     expect(code).toContain("staging.example.com");
     expect(code).toContain("*.preview.dev");
     expect(code).toContain("__allowedDevOrigins");
+  });
+
+  describe("rscOnError: non-plain object dev hint", () => {
+    it("includes detection for the 'Only plain objects' RSC serialization error", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain(
+        "Only plain objects, and a few built-ins, can be passed to Client Components",
+      );
+    });
+
+    it("guards the dev hint behind a NODE_ENV !== production check", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      // The hint must be suppressed in production builds
+      expect(code).toContain('process.env.NODE_ENV !== "production"');
+    });
+
+    it("includes actionable guidance about module namespace objects in the hint", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain("import * as X");
+      expect(code).toContain("[vinext] RSC serialization error");
+    });
+
+    it("includes actionable guidance about class instances in the hint", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain("class instance");
+    });
+
+    it("does not affect the digest return path for navigation errors", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      // The existing digest path (redirect/notFound) must still be present
+      expect(code).toContain('"digest" in error');
+      expect(code).toContain("String(error.digest)");
+    });
+
+    // Runtime tests: extract the rscOnError function from the generated code
+    // and evaluate it. This catches syntax errors and logic bugs that the
+    // string-presence tests above would miss (e.g. unterminated strings,
+    // wrong return values, broken control flow).
+    describe("runtime behavior", () => {
+      let rscOnError: (error: unknown) => string | undefined;
+
+      beforeAll(() => {
+        const code = generateRscEntry(
+          "/tmp/test/app",
+          minimalRoutes,
+          null,
+          [],
+          null,
+          "",
+          false,
+        );
+
+        // Extract a top-level function from the generated code by matching
+        // balanced braces (simple regex can't handle nested braces).
+        function extractFunction(src: string, name: string): string {
+          const marker = `function ${name}(`;
+          const start = src.indexOf(marker);
+          if (start === -1) throw new Error(`Could not find ${name} in generated code`);
+          const braceStart = src.indexOf("{", start);
+          let depth = 0;
+          for (let i = braceStart; i < src.length; i++) {
+            if (src[i] === "{") depth++;
+            else if (src[i] === "}") depth--;
+            if (depth === 0) return src.slice(start, i + 1);
+          }
+          throw new Error(`Unbalanced braces in ${name}`);
+        }
+
+        const digestFn = extractFunction(code, "__errorDigest");
+        const onErrorFn = extractFunction(code, "rscOnError");
+
+        const body = `${digestFn}\n${onErrorFn}\nreturn rscOnError;`;
+        const factory = new Function("process", body);
+        rscOnError = factory({ env: { NODE_ENV: "development" } });
+      });
+
+      it("returns the digest string for navigation errors (redirect/notFound)", () => {
+        const error = Object.assign(new Error("NEXT_REDIRECT"), {
+          digest: "NEXT_REDIRECT;push;/dashboard;307",
+        });
+        expect(rscOnError(error)).toBe("NEXT_REDIRECT;push;/dashboard;307");
+      });
+
+      it("logs an actionable hint and returns undefined for RSC serialization errors", () => {
+        const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const error = new Error(
+            "Only plain objects, and a few built-ins, can be passed to Client Components from Server Components. " +
+              "Objects with toJSON methods are not supported. Module namespace objects are not supported.",
+          );
+          const result = rscOnError(error);
+          expect(result).toBeUndefined();
+          expect(spy).toHaveBeenCalledOnce();
+          expect(spy.mock.calls[0]![0]).toContain(
+            "[vinext] RSC serialization error",
+          );
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      it("returns undefined for generic errors in dev (no digest, no serialization match)", () => {
+        const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+        try {
+          const result = rscOnError(new Error("something went wrong"));
+          expect(result).toBeUndefined();
+          // Should NOT log the hint for unrelated errors
+          expect(spy).not.toHaveBeenCalled();
+        } finally {
+          spy.mockRestore();
+        }
+      });
+    });
   });
 });
 
@@ -2189,6 +2387,32 @@ describe("App Router middleware with NextRequest", () => {
   it("middleware that throws returns 500 instead of bypassing", async () => {
     const res = await fetch(`${baseUrl}/middleware-throw`);
     expect(res.status).toBe(500);
+  });
+
+  it("does not leak x-middleware-next or x-middleware-rewrite headers to the client", async () => {
+    // NextResponse.next() sets x-middleware-next internally.
+    // The dev server must strip it (and all x-middleware-* headers) before
+    // sending the response to the client — they are internal routing signals.
+    const nextRes = await fetch(`${baseUrl}/about`);
+    expect(nextRes.status).toBe(200);
+    // Middleware ran (verified by the custom header it sets)
+    expect(nextRes.headers.get("x-mw-ran")).toBe("true");
+    // Internal headers must NOT be present
+    expect(nextRes.headers.get("x-middleware-next")).toBeNull();
+    expect(nextRes.headers.get("x-middleware-rewrite")).toBeNull();
+    // Check that no x-middleware-* header leaked at all
+    for (const [key] of nextRes.headers) {
+      expect(key.startsWith("x-middleware-")).toBe(false);
+    }
+
+    // NextResponse.rewrite() sets x-middleware-rewrite internally.
+    const rewriteRes = await fetch(`${baseUrl}/middleware-rewrite`);
+    expect(rewriteRes.status).toBe(200);
+    expect(rewriteRes.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(rewriteRes.headers.get("x-middleware-next")).toBeNull();
+    for (const [key] of rewriteRes.headers) {
+      expect(key.startsWith("x-middleware-")).toBe(false);
+    }
   });
 });
 
