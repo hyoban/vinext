@@ -574,9 +574,11 @@ export interface VinextOptions {
    */
   rsc?: boolean;
   /**
-   * Options passed to @vitejs/plugin-react.
-   * Set to `false` to disable, `true` to enable with defaults.
-   * @default undefined
+   * Options passed to @vitejs/plugin-react (React Fast Refresh + JSX transform).
+   * Enabled by default. Set to `false` to disable (e.g. if you already have
+   * @vitejs/plugin-react in your vite.config.ts), or pass an options object
+   * to customize the Babel transform.
+   * @default true
    */
   react?: VitePluginReactOptions | boolean;
 }
@@ -2346,12 +2348,11 @@ hydrate();
       name: "vinext:pages-router",
 
       // HMR: trigger full-reload for Pages Router page changes.
-      // Without @vitejs/plugin-react (React Fast Refresh), component edits
-      // can't be hot-updated. In theory Vite's default propagation should
-      // reach the root and trigger a full-reload, but the Pages Router
-      // injects hydration via inline <script type="module"> which may not
-      // be tracked in the module graph. Explicitly sending full-reload
-      // ensures changes are always reflected in the browser.
+      // Even with @vitejs/plugin-react providing React Fast Refresh,
+      // the Pages Router injects hydration via inline <script type="module">
+      // which may not be tracked in Vite's module graph. Explicitly
+      // sending full-reload ensures changes are always reflected in
+      // the browser.
       hotUpdate(options: { file: string; server: ViteDevServer; modules: any[] }) {
         if (!hasPagesDir || hasAppDir) return;
         const ext = /\.(tsx?|jsx?|mdx)$/;
