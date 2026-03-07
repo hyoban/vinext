@@ -17,8 +17,8 @@ import "next/router";
 import { isValidModulePath } from "./validate-module-path.js";
 
 // Read the SSR data injected by the server
-const nextData = (window as any).__NEXT_DATA__;
-const { pageProps } = nextData?.props ?? { pageProps: {} };
+const nextData = window.__NEXT_DATA__;
+const pageProps = (nextData?.props.pageProps ?? {}) as Record<string, unknown>;
 const pageModulePath = nextData?.__pageModule;
 const appModulePath = nextData?.__appModule;
 
@@ -73,7 +73,7 @@ async function hydrate() {
   // Expose root on window so the router shim (a separate module) can
   // re-render the tree during client-side navigation. import.meta.hot.data
   // is module-scoped and cannot be read across module boundaries.
-  (window as any).__VINEXT_ROOT__ = root;
+  window.__VINEXT_ROOT__ = root;
 }
 
 void hydrate();
