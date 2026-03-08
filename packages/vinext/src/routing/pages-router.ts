@@ -1,5 +1,10 @@
-import { glob } from "glob";
 import path from "node:path";
+import { compareRoutes } from "./utils.js";
+import {
+  createValidFileMatcher,
+  scanWithExtensions,
+  type ValidFileMatcher,
+} from "./file-matcher.js";
 
 export interface Route {
   /** URL pattern, e.g. "/" or "/about" or "/posts/:id" */
@@ -20,8 +25,11 @@ const routeCache = new Map<string, { routes: Route[]; promise: Promise<Route[]> 
  * Called by the file watcher when pages are added/removed.
  */
 export function invalidateRouteCache(pagesDir: string): void {
-  routeCache.delete(`pages:${pagesDir}`);
-  routeCache.delete(`api:${pagesDir}`);
+  for (const key of routeCache.keys()) {
+    if (key.startsWith(`pages:${pagesDir}:`) || key.startsWith(`api:${pagesDir}:`)) {
+      routeCache.delete(key);
+    }
+  }
 }
 
 /**
@@ -36,38 +44,42 @@ export function invalidateRouteCache(pagesDir: string): void {
  * - Ignores _app.tsx, _document.tsx, _error.tsx, files starting with _
  * - Ignores pages/api/ (handled separately later)
  */
-export async function pagesRouter(pagesDir: string): Promise<Route[]> {
-  const cacheKey = `pages:${pagesDir}`;
+export async function pagesRouter(
+  pagesDir: string,
+  pageExtensions?: readonly string[],
+  matcher?: ValidFileMatcher,
+): Promise<Route[]> {
+  matcher ??= createValidFileMatcher(pageExtensions);
+  const cacheKey = `pages:${pagesDir}:${JSON.stringify(matcher.extensions)}`;
   const cached = routeCache.get(cacheKey);
   if (cached) return cached.promise;
 
-  const promise = scanPageRoutes(pagesDir);
+  const promise = scanPageRoutes(pagesDir, matcher);
   routeCache.set(cacheKey, { routes: [], promise });
   const routes = await promise;
   routeCache.set(cacheKey, { routes, promise });
   return routes;
 }
 
-async function scanPageRoutes(pagesDir: string): Promise<Route[]> {
-  const files = await glob("**/*.{tsx,ts,jsx,js}", {
-    cwd: pagesDir,
-    ignore: ["api/**", "_*"],
-  });
-
+async function scanPageRoutes(
+  pagesDir: string,
+  matcher: ValidFileMatcher,
+): Promise<Route[]> {
   const routes: Route[] = [];
 
-  for (const file of files) {
-    const route = fileToRoute(file, pagesDir);
-    if (route) {
-      routes.push(route);
-    }
+  // Use function form of exclude for Node < 22.14 compatibility (string arrays require >= 22.14)
+  for await (const file of scanWithExtensions(
+    "**/*",
+    pagesDir,
+    matcher.extensions,
+    (name: string) => name === "api" || name.startsWith("_"),
+  )) {
+    const route = fileToRoute(file, pagesDir, matcher);
+    if (route) routes.push(route);
   }
 
   // Sort: static routes first, then dynamic, then catch-all
-  routes.sort((a, b) => {
-    const diff = routePrecedence(a.pattern) - routePrecedence(b.pattern);
-    return diff !== 0 ? diff : a.pattern.localeCompare(b.pattern);
-  });
+  routes.sort(compareRoutes);
 
   return routes;
 }
@@ -75,9 +87,14 @@ async function scanPageRoutes(pagesDir: string): Promise<Route[]> {
 /**
  * Convert a file path relative to pages/ into a Route.
  */
-function fileToRoute(file: string, pagesDir: string): Route | null {
+function fileToRoute(
+  file: string,
+  pagesDir: string,
+  matcher: ValidFileMatcher,
+): Route | null {
   // Remove extension
-  const withoutExt = file.replace(/\.(tsx?|jsx?)$/, "");
+  const withoutExt = matcher.stripExtension(file);
+  if (withoutExt === file) return null;
 
   // Convert to URL segments
   const segments = withoutExt.split(path.sep);
@@ -93,24 +110,24 @@ function fileToRoute(file: string, pagesDir: string): Route | null {
 
   // Convert Next.js dynamic segments to URL patterns
   const urlSegments = segments.map((segment) => {
-    // Catch-all: [...slug] -> :slug+
-    const catchAllMatch = segment.match(/^\[\.\.\.(\w+)\]$/);
+    // Catch-all: [...slug] -> :slug+ (param names may contain hyphens)
+    const catchAllMatch = segment.match(/^\[\.\.\.([\w-]+)\]$/);
     if (catchAllMatch) {
       isDynamic = true;
       params.push(catchAllMatch[1]);
       return `:${catchAllMatch[1]}+`;
     }
 
-    // Optional catch-all: [[...slug]] -> :slug*
-    const optionalCatchAllMatch = segment.match(/^\[\[\.\.\.(\w+)\]\]$/);
+    // Optional catch-all: [[...slug]] -> :slug* (param names may contain hyphens)
+    const optionalCatchAllMatch = segment.match(/^\[\[\.\.\.([\w-]+)\]\]$/);
     if (optionalCatchAllMatch) {
       isDynamic = true;
       params.push(optionalCatchAllMatch[1]);
       return `:${optionalCatchAllMatch[1]}*`;
     }
 
-    // Dynamic segment: [id] -> :id
-    const dynamicMatch = segment.match(/^\[(\w+)\]$/);
+    // Dynamic segment: [id] -> :id (param names may contain hyphens)
+    const dynamicMatch = segment.match(/^\[([\w-]+)\]$/);
     if (dynamicMatch) {
       isDynamic = true;
       params.push(dynamicMatch[1]);
@@ -128,32 +145,6 @@ function fileToRoute(file: string, pagesDir: string): Route | null {
     isDynamic,
     params,
   };
-}
-
-/**
- * Route precedence — lower score is higher priority.
- * Matches Next.js specificity rules:
- * 1. Static routes first (scored by segment count, more = more specific)
- * 2. Dynamic segments penalized by position
- * 3. Catch-all comes after dynamic
- * 4. Optional catch-all last
- * 5. Lexicographic tiebreaker for determinism
- */
-function routePrecedence(pattern: string): number {
-  const parts = pattern.split("/").filter(Boolean);
-  let score = 0;
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i];
-    if (p.endsWith("+")) {
-      score += 10000 + i; // catch-all: high penalty
-    } else if (p.endsWith("*")) {
-      score += 20000 + i; // optional catch-all: highest penalty
-    } else if (p.startsWith(":")) {
-      score += 100 + i; // dynamic: moderate penalty by position
-    }
-    // static segments contribute nothing (better specificity)
-  }
-  return score;
 }
 
 /**
@@ -188,39 +179,54 @@ export function matchRoute(
  * - pages/api/hello.ts -> /api/hello
  * - pages/api/users/[id].ts -> /api/users/:id
  */
-export async function apiRouter(pagesDir: string): Promise<Route[]> {
-  const cacheKey = `api:${pagesDir}`;
+export async function apiRouter(
+  pagesDir: string,
+  pageExtensions?: readonly string[],
+  matcher?: ValidFileMatcher,
+): Promise<Route[]> {
+  matcher ??= createValidFileMatcher(pageExtensions);
+  const cacheKey = `api:${pagesDir}:${JSON.stringify(matcher.extensions)}`;
   const cached = routeCache.get(cacheKey);
   if (cached) return cached.promise;
 
-  const promise = scanApiRoutes(pagesDir);
+  const promise = scanApiRoutes(pagesDir, matcher);
   routeCache.set(cacheKey, { routes: [], promise });
   const routes = await promise;
   routeCache.set(cacheKey, { routes, promise });
   return routes;
 }
 
-async function scanApiRoutes(pagesDir: string): Promise<Route[]> {
+async function scanApiRoutes(
+  pagesDir: string,
+  matcher: ValidFileMatcher,
+): Promise<Route[]> {
   const apiDir = path.join(pagesDir, "api");
-  const files = await glob("**/*.{ts,tsx,js,jsx}", {
-    cwd: apiDir,
-  }).catch(() => [] as string[]);
+  let files: string[];
+  try {
+    files = [];
+    for await (const file of scanWithExtensions(
+      "**/*",
+      apiDir,
+      matcher.extensions,
+    )) {
+      files.push(file);
+    }
+  } catch {
+    files = [];
+  }
 
   const routes: Route[] = [];
 
   for (const file of files) {
     // Reuse fileToRoute but pretend the file is under a virtual "api/" prefix
-    const route = fileToRoute(path.join("api", file), pagesDir);
+    const route = fileToRoute(path.join("api", file), pagesDir, matcher);
     if (route) {
       routes.push(route);
     }
   }
 
   // Sort same as page routes
-  routes.sort((a, b) => {
-    const diff = routePrecedence(a.pattern) - routePrecedence(b.pattern);
-    return diff !== 0 ? diff : a.pattern.localeCompare(b.pattern);
-  });
+  routes.sort(compareRoutes);
 
   return routes;
 }
@@ -279,7 +285,7 @@ function matchPattern(
  */
 export function patternToNextFormat(pattern: string): string {
   return pattern
-    .replace(/:(\w+)\*/g, "[[...$1]]")   // optional catch-all :slug* -> [[...slug]]
-    .replace(/:(\w+)\+/g, "[...$1]")     // catch-all :slug+ -> [...slug]
-    .replace(/:(\w+)/g, "[$1]");          // dynamic :id -> [id]
+    .replace(/:([\w-]+)\*/g, "[[...$1]]")   // optional catch-all :slug* -> [[...slug]]
+    .replace(/:([\w-]+)\+/g, "[...$1]")     // catch-all :slug+ -> [...slug]
+    .replace(/:([\w-]+)/g, "[$1]");          // dynamic :id -> [id]
 }

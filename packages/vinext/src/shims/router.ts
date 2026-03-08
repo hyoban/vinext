@@ -5,7 +5,10 @@
  * Backed by the browser History API. Supports client-side navigation
  * by fetching new page data and re-rendering the React root.
  */
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, createElement, type ReactElement } from "react";
+import { RouterContext } from "./internal/router-context.js";
+import { isValidModulePath } from "../client/validate-module-path.js";
+import { toSameOriginPath } from "./url-utils.js";
 
 /** basePath from next.config.js, injected by the plugin at build time */
 const __basePath: string = process.env.__NEXT_ROUTER_BASEPATH ?? "";
@@ -122,7 +125,7 @@ function resolveUrl(url: string | UrlObject): string {
  */
 export function applyNavigationLocale(url: string, locale?: string): string {
   if (!locale || typeof window === "undefined") return url;
-  const defaultLocale = (window as any).__VINEXT_DEFAULT_LOCALE__;
+  const defaultLocale = window.__VINEXT_DEFAULT_LOCALE__;
   // Default locale doesn't get a prefix
   if (locale === defaultLocale) return url;
   // Don't double-prefix
@@ -130,9 +133,9 @@ export function applyNavigationLocale(url: string, locale?: string): string {
   return `/${locale}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
-/** Check if a URL is external */
+/** Check if a URL is external (any URL scheme per RFC 3986, or protocol-relative) */
 export function isExternalUrl(url: string): boolean {
-  return url.startsWith("http://") || url.startsWith("https://") || url.startsWith("//");
+  return /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
 }
 
 /** Check if a href is only a hash change relative to the current URL */
@@ -259,7 +262,7 @@ function getPathnameAndQuery(): {
   const query: Record<string, string> = {};
   // Include dynamic route params from __NEXT_DATA__ (e.g., { id: "42" } from /posts/[id]).
   // Only include keys that are part of the route pattern (not stale query params).
-  const nextData = (window as any).__NEXT_DATA__;
+  const nextData = window.__NEXT_DATA__;
   if (nextData && nextData.query && nextData.page) {
     const routeParamNames = extractRouteParamNames(nextData.page);
     for (const key of routeParamNames) {
@@ -288,8 +291,7 @@ let _navInProgress = false;
 async function navigateClient(url: string): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const win = window as any;
-  const root = win.__VINEXT_ROOT__;
+  const root = window.__VINEXT_ROOT__;
   if (!root) {
     // No React root yet — fall back to hard navigation
     window.location.href = url;
@@ -319,7 +321,7 @@ async function navigateClient(url: string): Promise<void> {
 
     const nextData = JSON.parse(match[1]);
     const { pageProps } = nextData.props;
-    win.__NEXT_DATA__ = nextData;
+    window.__NEXT_DATA__ = nextData;
 
     // Get the page module URL from __NEXT_DATA__.__vinext (preferred),
     // or fall back to parsing the hydration script
@@ -338,6 +340,14 @@ async function navigateClient(url: string): Promise<void> {
       return;
     }
 
+    // Validate the module URL before importing — defense-in-depth against
+    // unexpected __NEXT_DATA__ or malformed HTML responses
+    if (!isValidModulePath(pageModuleUrl)) {
+      console.error("[vinext] Blocked import of invalid page module path:", pageModuleUrl);
+      window.location.href = url;
+      return;
+    }
+
     // Dynamically import the new page module
     const pageModule = await import(/* @vite-ignore */ pageModuleUrl);
     const PageComponent = pageModule.default;
@@ -351,17 +361,21 @@ async function navigateClient(url: string): Promise<void> {
     const React = (await import("react")).default;
 
     // Re-render with the new page, loading _app if needed
-    let AppComponent = win.__VINEXT_APP__;
+    let AppComponent = window.__VINEXT_APP__;
     const appModuleUrl: string | undefined =
       nextData.__vinext?.appModuleUrl;
 
     if (!AppComponent && appModuleUrl) {
-      try {
-        const appModule = await import(/* @vite-ignore */ appModuleUrl);
-        AppComponent = appModule.default;
-        win.__VINEXT_APP__ = AppComponent;
-      } catch {
-        // _app not available — continue without it
+      if (!isValidModulePath(appModuleUrl)) {
+        console.error("[vinext] Blocked import of invalid app module path:", appModuleUrl);
+      } else {
+        try {
+          const appModule = await import(/* @vite-ignore */ appModuleUrl);
+          AppComponent = appModule.default;
+          window.__VINEXT_APP__ = AppComponent;
+        } catch {
+          // _app not available — continue without it
+        }
       }
     }
 
@@ -375,6 +389,9 @@ async function navigateClient(url: string): Promise<void> {
       element = React.createElement(PageComponent, pageProps);
     }
 
+    // Wrap with RouterContext.Provider so next/compat/router works
+    element = wrapWithRouterContext(element);
+
     root.render(element);
   } catch (err) {
     console.error("[vinext] Client navigation failed:", err);
@@ -383,6 +400,57 @@ async function navigateClient(url: string): Promise<void> {
   } finally {
     _navInProgress = false;
   }
+}
+
+/**
+ * Build the full router value object from the current pathname, query, asPath,
+ * and a set of navigation methods.  Shared by useRouter() (which passes
+ * hook-derived callbacks) and wrapWithRouterContext() (which passes the Router
+ * singleton methods) so the shape stays in sync.
+ */
+function buildRouterValue(
+  pathname: string,
+  query: Record<string, string | string[]>,
+  asPath: string,
+  methods: {
+    push: NextRouter["push"];
+    replace: NextRouter["replace"];
+    back: NextRouter["back"];
+    reload: NextRouter["reload"];
+    prefetch: NextRouter["prefetch"];
+    beforePopState: NextRouter["beforePopState"];
+  },
+): NextRouter {
+  const _ssrState = _getSSRContext();
+  const locale = typeof window === "undefined"
+    ? _ssrState?.locale
+    : window.__VINEXT_LOCALE__;
+  const locales = typeof window === "undefined"
+    ? _ssrState?.locales
+    : window.__VINEXT_LOCALES__;
+  const defaultLocale = typeof window === "undefined"
+    ? _ssrState?.defaultLocale
+    : window.__VINEXT_DEFAULT_LOCALE__;
+
+  const route = typeof window !== "undefined"
+    ? (window.__NEXT_DATA__?.page ?? pathname)
+    : pathname;
+
+  return {
+    pathname,
+    route,
+    query,
+    asPath,
+    basePath: __basePath,
+    locale,
+    locales,
+    defaultLocale,
+    isReady: true,
+    isPreview: false,
+    isFallback: typeof window !== "undefined" && window.__NEXT_DATA__?.isFallback === true,
+    ...methods,
+    events: routerEvents,
+  };
 }
 
 /**
@@ -395,7 +463,7 @@ export function useRouter(): NextRouter {
     const onPopState = (e: PopStateEvent) => {
       setState(getPathnameAndQuery());
       // Re-render with the new page on back/forward navigation
-      navigateClient(window.location.pathname + window.location.search).then(() => {
+      void navigateClient(window.location.pathname + window.location.search).then(() => {
         restoreScrollPosition(e.state);
       });
     };
@@ -414,12 +482,16 @@ export function useRouter(): NextRouter {
 
   const push = useCallback(
     async (url: string | UrlObject, _as?: string, options?: TransitionOptions): Promise<boolean> => {
-      const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+      let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-      // External URLs — delegate to browser
+      // External URLs — delegate to browser (unless same-origin)
       if (isExternalUrl(resolved)) {
-        window.location.assign(resolved);
-        return true;
+        const localPath = toSameOriginPath(resolved);
+        if (localPath == null) {
+          window.location.assign(resolved);
+          return true;
+        }
+        resolved = localPath;
       }
 
       // Hash-only change — no page fetch needed
@@ -457,12 +529,16 @@ export function useRouter(): NextRouter {
 
   const replace = useCallback(
     async (url: string | UrlObject, _as?: string, options?: TransitionOptions): Promise<boolean> => {
-      const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+      let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-      // External URLs — delegate to browser
+      // External URLs — delegate to browser (unless same-origin)
       if (isExternalUrl(resolved)) {
-        window.location.replace(resolved);
-        return true;
+        const localPath = toSameOriginPath(resolved);
+        if (localPath == null) {
+          window.location.replace(resolved);
+          return true;
+        }
+        resolved = localPath;
       }
 
       // Hash-only change — no page fetch needed
@@ -516,45 +592,16 @@ export function useRouter(): NextRouter {
     }
   }, []);
 
-  // Get i18n info from SSR context or window
-  const _ssrState = _getSSRContext();
-  const locale = typeof window === "undefined"
-    ? _ssrState?.locale
-    : (window as any).__VINEXT_LOCALE__;
-  const locales = typeof window === "undefined"
-    ? _ssrState?.locales
-    : (window as any).__VINEXT_LOCALES__;
-  const defaultLocale = typeof window === "undefined"
-    ? _ssrState?.defaultLocale
-    : (window as any).__VINEXT_DEFAULT_LOCALE__;
-
-  // route is the route pattern (e.g., "/posts/[id]"), not the actual path
-  const route = typeof window !== "undefined"
-    ? ((window as any).__NEXT_DATA__?.page ?? pathname)
-    : pathname;
-
   const router = useMemo(
-    (): NextRouter => ({
-      pathname,
-      route,
-      query,
-      asPath,
-      basePath: __basePath,
-      locale,
-      locales,
-      defaultLocale,
-      isReady: true,
-      isPreview: false,
-      isFallback: typeof window !== "undefined" && (window as any).__NEXT_DATA__?.isFallback === true,
+    (): NextRouter => buildRouterValue(pathname, query, asPath, {
       push,
       replace,
       back,
       reload,
       prefetch,
       beforePopState: (cb: BeforePopStateCallback) => { _beforePopStateCb = cb; },
-      events: routerEvents,
     }),
-    [pathname, query, asPath, locale, locales, defaultLocale, push, replace, back, reload, prefetch, route],
+    [pathname, query, asPath, push, replace, back, reload, prefetch],
   );
 
   return router;
@@ -579,7 +626,7 @@ if (typeof window !== "undefined") {
     }
 
     routerEvents.emit("routeChangeStart", appUrl);
-    navigateClient(browserUrl).then(() => {
+    void navigateClient(browserUrl).then(() => {
       routerEvents.emit("routeChangeComplete", appUrl);
       restoreScrollPosition(e.state);
       window.dispatchEvent(new CustomEvent("vinext:navigate"));
@@ -587,15 +634,43 @@ if (typeof window !== "undefined") {
   });
 }
 
+/**
+ * Wrap a React element in a RouterContext.Provider so that
+ * next/compat/router's useRouter() returns the real Pages Router value.
+ *
+ * This is a plain function, NOT a React component — it builds the router
+ * value object directly from the current SSR context (server) or
+ * window.location + Router singleton (client), avoiding duplicate state
+ * that a hook-based component would create.
+ */
+export function wrapWithRouterContext(element: ReactElement): ReactElement {
+  const { pathname, query, asPath } = getPathnameAndQuery();
+
+  const routerValue = buildRouterValue(pathname, query, asPath, {
+    push: Router.push,
+    replace: Router.replace,
+    back: Router.back,
+    reload: Router.reload,
+    prefetch: Router.prefetch,
+    beforePopState: Router.beforePopState,
+  });
+
+  return createElement(RouterContext.Provider, { value: routerValue }, element) as ReactElement;
+}
+
 // Also export a default Router singleton for `import Router from 'next/router'`
 const Router = {
   push: async (url: string | UrlObject, _as?: string, options?: TransitionOptions) => {
-    const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+    let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-    // External URLs
+    // External URLs (unless same-origin)
     if (isExternalUrl(resolved)) {
-      window.location.assign(resolved);
-      return true;
+      const localPath = toSameOriginPath(resolved);
+      if (localPath == null) {
+        window.location.assign(resolved);
+        return true;
+      }
+      resolved = localPath;
     }
 
     // Hash-only change
@@ -626,12 +701,16 @@ const Router = {
     return true;
   },
   replace: async (url: string | UrlObject, _as?: string, options?: TransitionOptions) => {
-    const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+    let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-    // External URLs
+    // External URLs (unless same-origin)
     if (isExternalUrl(resolved)) {
-      window.location.replace(resolved);
-      return true;
+      const localPath = toSameOriginPath(resolved);
+      if (localPath == null) {
+        window.location.replace(resolved);
+        return true;
+      }
+      resolved = localPath;
     }
 
     // Hash-only change

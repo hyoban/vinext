@@ -8,6 +8,7 @@ import { defineConfig } from "@playwright/test";
 const projectServers = {
   "pages-router": {
     testDir: "./tests/e2e/pages-router",
+    use: { baseURL: "http://localhost:4173" },
     server: {
       command:
         "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vite --port 4173",
@@ -19,6 +20,7 @@ const projectServers = {
   },
   "app-router": {
     testDir: "./tests/e2e/app-router",
+    use: { baseURL: "http://localhost:4174" },
     server: {
       command: "npx vite --port 4174",
       cwd: "./tests/fixtures/app-basic",
@@ -28,7 +30,12 @@ const projectServers = {
     },
   },
   "cloudflare-pages-router": {
-    testDir: "./tests/e2e/cloudflare-pages-router",
+    testDir: "./tests/e2e",
+    testMatch: [
+      "**/cloudflare-pages-router/**/*.spec.ts",
+      "**/pages-router/instrumentation-startup.spec.ts",
+    ],
+    use: { baseURL: "http://localhost:4177" },
     server: {
       command: "npx vite build && npx wrangler dev --port 4177",
       cwd: "./examples/pages-router-cloudflare",
@@ -51,7 +58,12 @@ const projectServers = {
     },
   },
   "cloudflare-workers": {
-    testDir: "./tests/e2e/cloudflare-workers",
+    testDir: "./tests/e2e",
+    testMatch: [
+      "**/cloudflare-workers/**/*.spec.ts",
+      "**/app-router/instrumentation.spec.ts",
+    ],
+    use: { baseURL: "http://localhost:4176" },
     server: {
       // Build app-router-cloudflare with Vite, then serve with wrangler dev (miniflare)
       command:
@@ -60,6 +72,38 @@ const projectServers = {
       port: 4176,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+    },
+  },
+  "cloudflare-dev": {
+    testDir: "./tests/e2e",
+    testMatch: [
+      "**/cloudflare-dev/**/*.spec.ts",
+      "**/app-router/instrumentation.spec.ts",
+    ],
+    use: { baseURL: "http://localhost:4178" },
+    server: {
+      // Run vite dev (not wrangler) against the cloudflare example so that
+      // configureServer() is exercised with @cloudflare/vite-plugin loaded.
+      command: "npx vite --port 4178",
+      cwd: "./examples/app-router-cloudflare",
+      port: 4178,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  },
+  "cloudflare-pages-router-dev": {
+    testDir: "./tests/e2e",
+    testMatch: [
+      "**/cloudflare-pages-router-dev/**/*.spec.ts",
+      "**/pages-router/instrumentation-startup.spec.ts",
+    ],
+    use: { baseURL: "http://localhost:4179" },
+    server: {
+      command: "npx vite --port 4179",
+      cwd: "./examples/pages-router-cloudflare",
+      port: 4179,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
     },
   },
 };
@@ -90,9 +134,14 @@ export default defineConfig({
     // Use chromium only — fast and sufficient for our tests
     browserName: "chromium",
   },
-  projects: activeProjects.map((name) => ({
-    name,
-    testDir: projectServers[name].testDir,
-  })),
+  projects: activeProjects.map((name) => {
+    const p = projectServers[name];
+    return {
+      name,
+      testDir: p.testDir,
+      ...("testMatch" in p ? { testMatch: p.testMatch } : {}),
+      ...("use" in p ? { use: p.use } : {}),
+    };
+  }),
   webServer: activeProjects.map((name) => projectServers[name].server),
 });

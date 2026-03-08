@@ -1885,12 +1885,14 @@ describe("MetadataHead rendering", () => {
 
 describe("ViewportHead rendering", () => {
   let ViewportHead: typeof import("../packages/vinext/src/shims/metadata.js").ViewportHead;
+  let mergeViewport: typeof import("../packages/vinext/src/shims/metadata.js").mergeViewport;
   let React: typeof import("react");
   let renderToStaticMarkup: typeof import("react-dom/server").renderToStaticMarkup;
 
   beforeAll(async () => {
     const mod = await import("../packages/vinext/src/shims/metadata.js");
     ViewportHead = mod.ViewportHead;
+    mergeViewport = mod.mergeViewport;
     React = await import("react");
     renderToStaticMarkup = (await import("react-dom/server")).renderToStaticMarkup;
   });
@@ -1958,6 +1960,47 @@ describe("ViewportHead rendering", () => {
     );
     expect(html).toContain('name="color-scheme"');
     expect(html).toContain('content="dark"');
+  });
+
+  // mergeViewport default injection tests
+  it("mergeViewport includes default width and initialScale when not provided", () => {
+    const result = mergeViewport([{ themeColor: "#000" }]);
+    expect(result.width).toBe("device-width");
+    expect(result.initialScale).toBe(1);
+    expect(result.themeColor).toBe("#000");
+  });
+
+  it("mergeViewport allows overriding defaults", () => {
+    const result = mergeViewport([{ width: 1024, initialScale: 0.5 }]);
+    expect(result.width).toBe(1024);
+    expect(result.initialScale).toBe(0.5);
+  });
+
+  it("mergeViewport returns defaults for empty list", () => {
+    const result = mergeViewport([]);
+    expect(result.width).toBe("device-width");
+    expect(result.initialScale).toBe(1);
+  });
+
+  it("mergeViewport later entries override earlier ones including defaults", () => {
+    const result = mergeViewport([
+      { width: 800 },
+      { width: 1024, themeColor: "#fff" },
+    ]);
+    expect(result.width).toBe(1024);
+    expect(result.initialScale).toBe(1);
+    expect(result.themeColor).toBe("#fff");
+  });
+
+  it("renders viewport meta even when only themeColor is provided (defaults injected)", () => {
+    const merged = mergeViewport([{ themeColor: "#000" }]);
+    const html = renderToStaticMarkup(
+      React.createElement(ViewportHead, { viewport: merged }),
+    );
+    expect(html).toContain('name="viewport"');
+    expect(html).toContain("width=device-width");
+    expect(html).toContain("initial-scale=1");
+    expect(html).toContain('name="theme-color"');
   });
 });
 
@@ -2479,15 +2522,15 @@ describe("instrumentation.ts support", () => {
     let registerCalled = false;
     const mockOnRequestError = (_error: any, _request: any, _context: any) => {};
 
-    // Create a mock SSR module loader
-    const mockServer = {
-      ssrLoadModule: async (_id: string) => ({
+    // Create a mock ModuleRunner
+    const mockRunner = {
+      import: async (_id: string) => ({
         register: () => { registerCalled = true; },
         onRequestError: mockOnRequestError,
       }),
     };
 
-    await runInstrumentation(mockServer, "/fake/instrumentation.ts");
+    await runInstrumentation(mockRunner, "/fake/instrumentation.ts");
 
     expect(registerCalled).toBe(true);
     expect(getOnRequestErrorHandler()).toBe(mockOnRequestError);
@@ -2500,8 +2543,8 @@ describe("instrumentation.ts support", () => {
 
     const reportedErrors: { error: Error; request: any; context: any }[] = [];
 
-    const mockServer = {
-      ssrLoadModule: async (_id: string) => ({
+    const mockRunner = {
+      import: async (_id: string) => ({
         register: () => {},
         onRequestError: (error: Error, request: any, context: any) => {
           reportedErrors.push({ error, request, context });
@@ -2509,7 +2552,7 @@ describe("instrumentation.ts support", () => {
       }),
     };
 
-    await runInstrumentation(mockServer, "/fake/instrumentation.ts");
+    await runInstrumentation(mockRunner, "/fake/instrumentation.ts");
 
     const testError = new Error("test error");
     await reportRequestError(
@@ -2530,12 +2573,12 @@ describe("instrumentation.ts support", () => {
     );
 
     // Register a module with no onRequestError
-    const mockServer = {
-      ssrLoadModule: async (_id: string) => ({
+    const mockRunner = {
+      import: async (_id: string) => ({
         register: () => {},
       }),
     };
-    await runInstrumentation(mockServer, "/fake/no-error-handler.ts");
+    await runInstrumentation(mockRunner, "/fake/no-error-handler.ts");
 
     // Should not throw
     await reportRequestError(
@@ -2551,12 +2594,35 @@ describe("instrumentation.ts support", () => {
     );
 
     // Module with no register() or onRequestError()
-    const mockServer = {
-      ssrLoadModule: async (_id: string) => ({}),
+    const mockRunner = {
+      import: async (_id: string) => ({}),
     };
 
     // Should not throw
-    await runInstrumentation(mockServer, "/fake/empty-instrumentation.ts");
+    await runInstrumentation(mockRunner, "/fake/empty-instrumentation.ts");
+  });
+
+  it("runInstrumentation handles import errors gracefully", async () => {
+    const { runInstrumentation } = await import(
+      "../packages/vinext/src/server/instrumentation.js"
+    );
+    const mockRunner = {
+      import: async (_id: string) => {
+        throw new TypeError(
+          "Cannot read properties of undefined (reading 'outsideEmitter')"
+        );
+      },
+    };
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runInstrumentation(mockRunner, "/fake/instrumentation.ts");
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[vinext] Failed to load instrumentation:",
+        "Cannot read properties of undefined (reading 'outsideEmitter')",
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
 
@@ -2726,6 +2792,105 @@ describe("production server compression", () => {
   });
 });
 
+describe("Set-Cookie header preservation in prod-server", () => {
+  it("mergeResponseHeaders preserves multiple Set-Cookie from response", async () => {
+    const { mergeResponseHeaders } = await import(
+      "../packages/vinext/src/server/prod-server.js"
+    );
+
+    const middlewareHeaders: Record<string, string | string[]> = {};
+    const response = new Response("ok", {
+      headers: [
+        ["set-cookie", "a=1; Path=/"],
+        ["set-cookie", "b=2; Path=/"],
+        ["content-type", "text/html"],
+      ],
+    });
+
+    const merged = mergeResponseHeaders(middlewareHeaders, response);
+    expect(merged["set-cookie"]).toEqual(["a=1; Path=/", "b=2; Path=/"]);
+    expect(merged["content-type"]).toBe("text/html");
+  });
+
+  it("mergeResponseHeaders merges middleware and response Set-Cookie", async () => {
+    const { mergeResponseHeaders } = await import(
+      "../packages/vinext/src/server/prod-server.js"
+    );
+
+    const middlewareHeaders: Record<string, string | string[]> = {
+      "set-cookie": ["mw=1; Path=/"],
+    };
+    const response = new Response("ok", {
+      headers: [
+        ["set-cookie", "resp=2; Path=/"],
+      ],
+    });
+
+    const merged = mergeResponseHeaders(middlewareHeaders, response);
+    expect(merged["set-cookie"]).toEqual(["mw=1; Path=/", "resp=2; Path=/"]);
+  });
+
+  it("mergeResponseHeaders handles middleware cookie as plain string", async () => {
+    const { mergeResponseHeaders } = await import(
+      "../packages/vinext/src/server/prod-server.js"
+    );
+
+    const middlewareHeaders: Record<string, string | string[]> = {
+      "set-cookie": "mw=1; Path=/",
+    };
+    const response = new Response("ok", {
+      headers: [
+        ["set-cookie", "resp=2; Path=/"],
+      ],
+    });
+
+    const merged = mergeResponseHeaders(middlewareHeaders, response);
+    expect(merged["set-cookie"]).toEqual(["mw=1; Path=/", "resp=2; Path=/"]);
+  });
+
+  it("mergeResponseHeaders does not duplicate non-Set-Cookie headers", async () => {
+    const { mergeResponseHeaders } = await import(
+      "../packages/vinext/src/server/prod-server.js"
+    );
+
+    const middlewareHeaders: Record<string, string | string[]> = {
+      "x-custom": "from-middleware",
+    };
+    const response = new Response("ok", {
+      headers: [
+        ["x-custom", "from-response"],
+        ["content-type", "text/html"],
+      ],
+    });
+
+    const merged = mergeResponseHeaders(middlewareHeaders, response);
+    // Response headers should override middleware headers for non-Set-Cookie
+    expect(merged["x-custom"]).toBe("from-response");
+  });
+
+  it("sendCompressed passes array-valued Set-Cookie to writeHead", async () => {
+    const { sendCompressed } = await import(
+      "../packages/vinext/src/server/prod-server.js"
+    );
+
+    let writtenHeaders: Record<string, string | string[]> = {};
+    const req = { headers: {} };
+    const res = {
+      writeHead: (_status: number, headers: Record<string, string | string[]>) => {
+        writtenHeaders = headers;
+      },
+      end: () => {},
+    };
+
+    const extraHeaders: Record<string, string | string[]> = {
+      "set-cookie": ["a=1; Path=/", "b=2; Path=/"],
+    };
+
+    sendCompressed(req as any, res as any, "small body", "text/html", 200, extraHeaders, false);
+    expect(writtenHeaders["set-cookie"]).toEqual(["a=1; Path=/", "b=2; Path=/"]);
+  });
+});
+
 describe("host header poisoning prevention", () => {
   it("resolveHost ignores X-Forwarded-Host by default", async () => {
     const { resolveHost } = await import(
@@ -2887,6 +3052,51 @@ describe("X-Forwarded-Proto trust proxy gating", () => {
     };
     const webReq = mod.nodeToWebRequest(req as any);
     expect(webReq.url).toMatch(/^http:\/\/localhost:3000\/test$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Malformed percent-encoded URL regression tests (HackerOne #3575154)
+// ---------------------------------------------------------------------------
+
+describe("malformed percent-encoded URLs return 400 instead of crashing", () => {
+  // Dev server test: uses the Pages Router fixture
+  let malformedServer: ViteDevServer;
+  let malformedBaseUrl: string;
+
+  beforeAll(async () => {
+    ({ server: malformedServer, baseUrl: malformedBaseUrl } = await startFixtureServer(FIXTURE_DIR));
+  }, 30000);
+
+  afterAll(async () => {
+    await malformedServer?.close();
+  });
+
+  it("dev server returns 400 for malformed percent-encoded path", async () => {
+    const res = await fetch(`${malformedBaseUrl}/%E0%A4%A`);
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toContain("Bad Request");
+  });
+
+  it("dev server returns 400 for truncated percent sequence", async () => {
+    const res = await fetch(`${malformedBaseUrl}/%E0%A4`);
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toContain("Bad Request");
+  });
+
+  it("dev server returns 400 for bare percent sign", async () => {
+    const res = await fetch(`${malformedBaseUrl}/%`);
+    expect(res.status).toBe(400);
+    const body = await res.text();
+    expect(body).toContain("Bad Request");
+  });
+
+  it("dev server still serves valid percent-encoded paths", async () => {
+    // %2F is a valid encoding for "/"
+    const res = await fetch(`${malformedBaseUrl}/about`);
+    expect(res.status).toBe(200);
   });
 });
 
@@ -3921,5 +4131,132 @@ export default function NestedProps({ user }) {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toContain("Custom 404 - Not Found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// .env file loading (Issue #228)
+// ---------------------------------------------------------------------------
+
+describe(".env file loading (Issue #228)", () => {
+  let envServer: ViteDevServer;
+  let envBaseUrl: string;
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    const os = await import("node:os");
+    const fsp = await import("node:fs/promises");
+
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-env-"));
+
+    // Symlink node_modules
+    const rootNodeModules = path.resolve(import.meta.dirname, "../node_modules");
+    await fsp.symlink(rootNodeModules, path.join(tmpDir, "node_modules"), "junction");
+
+    // .env file with NEXT_PUBLIC_ and server-only vars
+    await fsp.writeFile(
+      path.join(tmpDir, ".env"),
+      `NEXT_PUBLIC_APP_NAME=vinext-test-app
+SERVER_ONLY_SECRET=super-secret-123
+BETTER_AUTH_URL=http://localhost:9999
+`,
+    );
+
+    // pages directory with a page that renders env vars
+    await fsp.mkdir(path.join(tmpDir, "pages"), { recursive: true });
+
+    await fsp.writeFile(
+      path.join(tmpDir, "pages", "index.tsx"),
+      `export function getServerSideProps() {
+  return {
+    props: {
+      publicVar: process.env.NEXT_PUBLIC_APP_NAME ?? "NOT_LOADED",
+      serverVar: process.env.SERVER_ONLY_SECRET ?? "NOT_LOADED",
+      authUrl: process.env.BETTER_AUTH_URL ?? "NOT_LOADED",
+    },
+  };
+}
+
+export default function Home({ publicVar, serverVar, authUrl }) {
+  return (
+    <div>
+      <p id="public">PUBLIC:{publicVar}</p>
+      <p id="server">SERVER:{serverVar}</p>
+      <p id="auth">AUTH:{authUrl}</p>
+    </div>
+  );
+}
+`,
+    );
+
+    // Start server
+    const plugins: any[] = [vinext()];
+    envServer = await createServer({
+      root: tmpDir,
+      configFile: false,
+      plugins,
+      server: { port: 0 },
+      logLevel: "silent",
+    });
+
+    await envServer.listen();
+    const addr = envServer.httpServer?.address();
+    if (addr && typeof addr === "object") {
+      envBaseUrl = `http://localhost:${addr.port}`;
+    }
+  }, 30000);
+
+  afterAll(async () => {
+    // Clean up env vars loaded from .env to avoid polluting other tests
+    delete process.env.NEXT_PUBLIC_APP_NAME;
+    delete process.env.SERVER_ONLY_SECRET;
+    delete process.env.BETTER_AUTH_URL;
+
+    try {
+      (envServer?.httpServer as any)?.closeAllConnections?.();
+      await Promise.race([
+        envServer?.close(),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    } catch {}
+
+    if (tmpDir) {
+      const fsp = await import("node:fs/promises");
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("NEXT_PUBLIC_ vars from .env are available via process.env", () => {
+    // Check the Vite define config — NEXT_PUBLIC_ vars from .env should
+    // be registered as define entries for client-side inlining.
+    const defineKey = "process.env.NEXT_PUBLIC_APP_NAME";
+    const defineValue = envServer.config.define?.[defineKey];
+    expect(defineValue).toBe(JSON.stringify("vinext-test-app"));
+  });
+
+  it("server-only vars from .env are NOT exposed in client defines", () => {
+    // Only NEXT_PUBLIC_* vars should be inlined into the client bundle.
+    // Server-only secrets must never appear in config.define, or they
+    // would be embedded in client JavaScript and sent to the browser.
+    const defines = envServer.config.define ?? {};
+    expect(defines["process.env.SERVER_ONLY_SECRET"]).toBeUndefined();
+    expect(defines["process.env.BETTER_AUTH_URL"]).toBeUndefined();
+
+    // Also verify no define key contains the secret value itself
+    const allDefineValues = Object.values(defines).join(" ");
+    expect(allDefineValues).not.toContain("super-secret-123");
+    expect(allDefineValues).not.toContain("localhost:9999");
+  });
+
+  it("server-side code can read .env vars via process.env", async () => {
+    // getServerSideProps reads process.env at runtime.
+    // If .env is loaded, these should have the values from .env.
+    const res = await fetch(`${envBaseUrl}/`);
+    const html = await res.text();
+    // React SSR inserts <!-- --> comments between adjacent text nodes,
+    // so check __NEXT_DATA__ which has the raw props.
+    expect(html).toContain('"publicVar":"vinext-test-app"');
+    expect(html).toContain('"serverVar":"super-secret-123"');
+    expect(html).toContain('"authUrl":"http://localhost:9999"');
   });
 });

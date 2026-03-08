@@ -10,6 +10,7 @@
 import type { ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type Route, matchRoute } from "../routing/pages-router.js";
+import { reportRequestError } from "./instrumentation.js";
 import { addQueryParam } from "../utils/query.js";
 
 /**
@@ -179,8 +180,9 @@ export async function handleApiRoute(
     const handler = apiModule.default;
 
     if (typeof handler !== "function") {
+      console.error(`[vinext] API route ${route.filePath} does not export a default function`);
       res.statusCode = 500;
-      res.end(`API route ${route.filePath} does not export a default function`);
+      res.end("API route does not export a default function");
       return true;
     }
 
@@ -206,6 +208,17 @@ export async function handleApiRoute(
   } catch (e) {
     server.ssrFixStacktrace(e as Error);
     console.error(e);
+    reportRequestError(
+      e instanceof Error ? e : new Error(String(e)),
+      {
+        path: url,
+        method: req.method ?? "GET",
+        headers: Object.fromEntries(
+          Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(", ") : String(v ?? "")]),
+        ),
+      },
+      { routerKind: "Pages Router", routePath: match.route.pattern, routeType: "route" },
+    ).catch(() => { /* ignore reporting errors */ });
     if ((e as Error).message === "Request body too large") {
       res.statusCode = 413;
       res.end("Request body too large");

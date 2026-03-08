@@ -45,24 +45,6 @@ const _fallbackState = (_g[_FALLBACK_KEY] ??= {
   draftModeCookieHeader: null,
 } satisfies VinextHeadersShimState) as VinextHeadersShimState;
 
-function _enterWith(state: VinextHeadersShimState): void {
-  // Some non-Node runtimes/polyfills provide AsyncLocalStorage but not enterWith().
-  const enterWith = (_als as any).enterWith;
-  if (typeof enterWith === "function") {
-    try {
-      enterWith.call(_als, state);
-      return;
-    } catch {
-      // Fall through to best-effort fallback.
-    }
-  }
-  // Best-effort fallback: global state (not concurrency-safe).
-  _fallbackState.headersContext = state.headersContext;
-  _fallbackState.dynamicUsageDetected = state.dynamicUsageDetected;
-  _fallbackState.pendingSetCookies = state.pendingSetCookies;
-  _fallbackState.draftModeCookieHeader = state.draftModeCookieHeader;
-}
-
 function _getState(): VinextHeadersShimState {
   const state = _als.getStore();
   return state ?? _fallbackState;
@@ -83,6 +65,53 @@ export function markDynamicUsage(): void {
   _getState().dynamicUsageDetected = true;
 }
 
+// ---------------------------------------------------------------------------
+// Cache scope detection — checks whether we're inside "use cache" or
+// unstable_cache() by reading ALS instances stored on globalThis via Symbols.
+// This avoids circular imports between headers.ts, cache.ts, and cache-runtime.ts.
+// The ALS instances are registered by cache-runtime.ts and cache.ts respectively.
+// ---------------------------------------------------------------------------
+
+/** Symbol used by cache-runtime.ts to store the "use cache" ALS on globalThis */
+const _USE_CACHE_ALS_KEY = Symbol.for("vinext.cacheRuntime.contextAls");
+/** Symbol used by cache.ts to store the unstable_cache ALS on globalThis */
+const _UNSTABLE_CACHE_ALS_KEY = Symbol.for("vinext.unstableCache.als");
+const _gHeaders = globalThis as unknown as Record<PropertyKey, unknown>;
+
+function _isInsideUseCache(): boolean {
+  const als = _gHeaders[_USE_CACHE_ALS_KEY] as AsyncLocalStorage<unknown> | undefined;
+  return als?.getStore() != null;
+}
+
+function _isInsideUnstableCache(): boolean {
+  const als = _gHeaders[_UNSTABLE_CACHE_ALS_KEY] as AsyncLocalStorage<unknown> | undefined;
+  return als?.getStore() === true;
+}
+
+/**
+ * Throw if the current execution is inside a "use cache" or unstable_cache()
+ * scope. Called by dynamic request APIs (headers, cookies, connection) to
+ * prevent request-specific data from being frozen into cached results.
+ *
+ * @param apiName - The name of the API being called (e.g. "connection()")
+ */
+export function throwIfInsideCacheScope(apiName: string): void {
+  if (_isInsideUseCache()) {
+    throw new Error(
+      `\`${apiName}\` cannot be called inside "use cache". ` +
+        `If you need this data inside a cached function, call \`${apiName}\` ` +
+        "outside and pass the required data as an argument.",
+    );
+  }
+  if (_isInsideUnstableCache()) {
+    throw new Error(
+      `\`${apiName}\` cannot be called inside a function cached with \`unstable_cache()\`. ` +
+        `If you need this data inside a cached function, call \`${apiName}\` ` +
+        "outside and pass the required data as an argument.",
+    );
+  }
+}
+
 /**
  * Check and reset the dynamic usage flag.
  * Called by the server after rendering to decide on caching.
@@ -98,19 +127,37 @@ export function consumeDynamicUsage(): boolean {
  * Set the headers/cookies context for the current RSC render.
  * Called by the framework's RSC entry before rendering each request.
  *
- * NOTE: This uses enterWith() which only works reliably within the same
- * synchronous call stack. For full async context propagation (needed for
- * RSC streaming), use runWithHeadersContext() instead.
+ * @deprecated Prefer runWithHeadersContext() which uses als.run() for
+ * proper per-request isolation. This function mutates the ALS store
+ * in-place and is only safe for cleanup (ctx=null) within an existing
+ * als.run() scope.
  */
+/**
+ * Returns the current live HeadersContext from ALS (or the fallback).
+ * Used after applyMiddlewareRequestHeaders() to build a post-middleware
+ * request context for afterFiles/fallback rewrite has/missing evaluation.
+ */
+export function getHeadersContext(): HeadersContext | null {
+  return _getState().headersContext;
+}
+
 export function setHeadersContext(ctx: HeadersContext | null): void {
-  // Start of request: enter a fresh per-request store.
   if (ctx !== null) {
-    _enterWith({
-      headersContext: ctx,
-      dynamicUsageDetected: false,
-      pendingSetCookies: [],
-      draftModeCookieHeader: null,
-    });
+    // For backward compatibility, set context on the current ALS store
+    // if one exists, otherwise update the fallback. Callers should
+    // migrate to runWithHeadersContext() for new-request setup.
+    const existing = _als.getStore();
+    if (existing) {
+      existing.headersContext = ctx;
+      existing.dynamicUsageDetected = false;
+      existing.pendingSetCookies = [];
+      existing.draftModeCookieHeader = null;
+    } else {
+      _fallbackState.headersContext = ctx;
+      _fallbackState.dynamicUsageDetected = false;
+      _fallbackState.pendingSetCookies = [];
+      _fallbackState.draftModeCookieHeader = null;
+    }
     return;
   }
 
@@ -128,16 +175,11 @@ export function setHeadersContext(ctx: HeadersContext | null): void {
  * Run a function with headers context, ensuring the context propagates
  * through all async operations (including RSC streaming).
  *
- * IMPORTANT: RSC rendering is streaming - renderToReadableStream() returns
- * immediately but component execution happens later when the stream is consumed.
- * AsyncLocalStorage.run() only maintains context within the callback scope,
- * so by the time components actually render, we'd be outside that scope.
- *
- * Solution: We use enterWith() to set persistent context AND update the
- * fallback state. This way, even after run() returns, getStore() still
- * returns the right state (via enterWith), and if that fails, we have
- * the fallback. For single-request-at-a-time scenarios (dev mode), this
- * works correctly. For concurrent requests, the ALS should work.
+ * Uses AsyncLocalStorage.run() to guarantee per-request isolation.
+ * The ALS store propagates through all async continuations including
+ * ReadableStream consumption, setTimeout callbacks, and Promise chains,
+ * so RSC streaming works correctly — components that render when the
+ * stream is consumed still see the correct request's context.
  */
 export function runWithHeadersContext<T>(
   ctx: HeadersContext,
@@ -150,17 +192,7 @@ export function runWithHeadersContext<T>(
     draftModeCookieHeader: null,
   };
 
-  // Use enterWith to set persistent context for this async context
-  _enterWith(state);
-
-  // Also update fallback state directly for environments where ALS doesn't
-  // propagate correctly (this is not concurrency-safe but works for dev)
-  _fallbackState.headersContext = ctx;
-  _fallbackState.dynamicUsageDetected = false;
-  _fallbackState.pendingSetCookies = [];
-  _fallbackState.draftModeCookieHeader = null;
-
-  return fn();
+  return _als.run(state, fn);
 }
 
 /**
@@ -214,7 +246,10 @@ export function headersContextFromRequest(request: Request): HeadersContext {
     }
   }
   return {
-    headers: request.headers,
+    // Copy into a mutable Headers instance. In Cloudflare Workers the original
+    // Request.headers is immutable; applyMiddlewareRequestHeaders() needs to
+    // call .set() on this object after middleware runs.
+    headers: new Headers(request.headers),
     cookies,
   };
 }
@@ -229,6 +264,8 @@ export function headersContextFromRequest(request: Request): HeadersContext {
  * the context is already available).
  */
 export async function headers(): Promise<Headers> {
+  throwIfInsideCacheScope("headers()");
+
   const state = _getState();
   if (!state.headersContext) {
     throw new Error(
@@ -245,6 +282,8 @@ export async function headers(): Promise<Headers> {
  * Returns a ReadonlyRequestCookies-like object.
  */
 export async function cookies(): Promise<RequestCookies> {
+  throwIfInsideCacheScope("cookies()");
+
   const state = _getState();
   if (!state.headersContext) {
     throw new Error(
@@ -319,6 +358,8 @@ interface DraftModeResult {
  * - `disable()`: clears the bypass cookie
  */
 export async function draftMode(): Promise<DraftModeResult> {
+  throwIfInsideCacheScope("draftMode()");
+
   const state = _getState();
   const secret = getDraftSecret();
   const isEnabled = state.headersContext
@@ -331,15 +372,17 @@ export async function draftMode(): Promise<DraftModeResult> {
       if (state.headersContext) {
         state.headersContext.cookies.set(DRAFT_MODE_COOKIE, secret);
       }
+      const secure = typeof process !== "undefined" && process.env?.NODE_ENV === "production" ? "; Secure" : "";
       state.draftModeCookieHeader =
-        `${DRAFT_MODE_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax`;
+        `${DRAFT_MODE_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax${secure}`;
     },
     disable(): void {
       if (state.headersContext) {
         state.headersContext.cookies.delete(DRAFT_MODE_COOKIE);
       }
+      const secure = typeof process !== "undefined" && process.env?.NODE_ENV === "production" ? "; Secure" : "";
       state.draftModeCookieHeader =
-        `${DRAFT_MODE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+        `${DRAFT_MODE_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=0`;
     },
   };
 }

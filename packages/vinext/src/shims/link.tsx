@@ -11,6 +11,8 @@ import React, { forwardRef, useRef, useEffect, useCallback, useContext, createCo
 // Import shared RSC prefetch utilities from navigation shim (relative path
 // so this resolves both via the Vite plugin and in direct vitest imports)
 import { toRscUrl, getPrefetchedUrls, storePrefetchResponse } from "./navigation.js";
+import { isDangerousScheme } from "./url-safety.js";
+import { toSameOriginPath } from "./url-utils.js";
 
 interface NavigateEvent {
   url: URL;
@@ -145,10 +147,15 @@ function scrollToHash(hash: string): void {
 function prefetchUrl(href: string): void {
   if (typeof window === "undefined") return;
 
-  const fullHref = withBasePath(href);
+  // Normalize same-origin absolute URLs to local paths before prefetching
+  let prefetchHref = href;
+  if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//")) {
+    const localPath = toSameOriginPath(href);
+    if (localPath == null) return; // truly external — don't prefetch
+    prefetchHref = localPath;
+  }
 
-  // Don't prefetch external URLs
-  if (fullHref.startsWith("http://") || fullHref.startsWith("https://") || fullHref.startsWith("//")) return;
+  const fullHref = withBasePath(prefetchHref);
 
   // Don't prefetch the same URL twice (keyed by rscUrl so the browser
   // entry can clear the key when a cache entry is consumed)
@@ -160,11 +167,11 @@ function prefetchUrl(href: string): void {
   const schedule = (window as any).requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 100));
 
   schedule(() => {
-    const win = window as any;
-    if (typeof win.__VINEXT_RSC_NAVIGATE__ === "function") {
+    if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
       // App Router: prefetch the RSC payload and store in cache
       fetch(rscUrl, {
         headers: { Accept: "text/x-component" },
+        credentials: "include",
         priority: "low" as any,
         // @ts-expect-error — purpose is a valid fetch option in some browsers
         purpose: "prefetch",
@@ -179,7 +186,7 @@ function prefetchUrl(href: string): void {
         // Network error: allow retry on next viewport intersection
         prefetched.delete(rscUrl);
       });
-    } else if (win.__NEXT_DATA__?.__vinext?.pageModuleUrl) {
+    } else if (window.__NEXT_DATA__?.__vinext?.pageModuleUrl) {
       // Pages Router: inject a prefetch link for the target page module
       // We can't easily resolve the target page's module URL from the Link,
       // so we create a <link rel="prefetch"> for the HTML page which helps
@@ -230,9 +237,9 @@ function getSharedObserver(): IntersectionObserver | null {
 
 function getDefaultLocale(): string | undefined {
   if (typeof window !== "undefined") {
-    return (window as any).__VINEXT_DEFAULT_LOCALE__ as string | undefined;
+    return window.__VINEXT_DEFAULT_LOCALE__;
   }
-  return (globalThis as any).__VINEXT_DEFAULT_LOCALE__ as string | undefined;
+  return globalThis.__VINEXT_DEFAULT_LOCALE__;
 }
 
 /**
@@ -277,8 +284,16 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
   // If `as` is provided, use it as the actual URL (legacy Next.js pattern
   // where href is a route pattern like "/user/[id]" and as is "/user/1")
   const resolvedHref = as ?? resolveHref(href);
-  // Apply locale prefix if specified
-  const localizedHref = applyLocaleToHref(resolvedHref, locale);
+
+  const isDangerous =
+    typeof resolvedHref === "string" && isDangerousScheme(resolvedHref);
+
+  // Apply locale prefix if specified (safe even for dangerous hrefs since we
+  // won't use the result when isDangerous is true)
+  const localizedHref = applyLocaleToHref(
+    isDangerous ? "/" : resolvedHref,
+    locale,
+  );
   // Full href with basePath for browser URLs and fetches
   const fullHref = withBasePath(localizedHref);
 
@@ -293,7 +308,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
   // Prefetching: observe the element when it enters the viewport.
   // prefetch={false} disables, prefetch={true} or undefined/null (default) enables.
   const internalRef = useRef<HTMLAnchorElement | null>(null);
-  const shouldPrefetch = prefetchProp !== false;
+  const shouldPrefetch = prefetchProp !== false && !isDangerous;
 
   const setRefs = useCallback(
     (node: HTMLAnchorElement | null) => {
@@ -309,13 +324,18 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
     const node = internalRef.current;
     if (!node) return;
 
-    // Don't prefetch external URLs
-    if (localizedHref.startsWith("http://") || localizedHref.startsWith("https://") || localizedHref.startsWith("//")) return;
+    // Normalize same-origin absolute URLs; skip truly external ones
+    let hrefToPrefetch = localizedHref;
+    if (localizedHref.startsWith("http://") || localizedHref.startsWith("https://") || localizedHref.startsWith("//")) {
+      const localPath = toSameOriginPath(localizedHref);
+      if (localPath == null) return; // truly external
+      hrefToPrefetch = localPath;
+    }
 
     const observer = getSharedObserver();
     if (!observer) return;
 
-    observerCallbacks.set(node, () => prefetchUrl(localizedHref));
+    observerCallbacks.set(node, () => prefetchUrl(hrefToPrefetch));
     observer.observe(node);
 
     return () => {
@@ -344,13 +364,18 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       return;
     }
 
-    // External links: let the browser handle it
+    // External links: let the browser handle it.
+    // Same-origin absolute URLs (e.g. http://localhost:3000/about) are
+    // normalized to local paths so they get client-side navigation.
+    let navigateHref = resolvedHref;
     if (
       resolvedHref.startsWith("http://") ||
       resolvedHref.startsWith("https://") ||
       resolvedHref.startsWith("//")
     ) {
-      return;
+      const localPath = toSameOriginPath(resolvedHref);
+      if (localPath == null) return; // truly external
+      navigateHref = localPath;
     }
 
     e.preventDefault();
@@ -386,7 +411,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
     }
 
     // Resolve relative hrefs (#hash, ?query) against current URL
-    const absoluteHref = resolveRelativeHref(resolvedHref);
+    const absoluteHref = resolveRelativeHref(navigateHref);
     const absoluteFullHref = withBasePath(absoluteHref);
 
     // Hash-only change: update URL and scroll to target, skip RSC fetch
@@ -408,8 +433,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
     const hash = hashIdx !== -1 ? absoluteFullHref.slice(hashIdx) : "";
 
     // Try RSC navigation first (App Router), then Pages Router
-    const win = window as any;
-    if (typeof win.__VINEXT_RSC_NAVIGATE__ === "function") {
+    if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
       // App Router: push/replace history state, then fetch RSC stream.
       // Await the RSC navigate so scroll-to-top happens after the new
       // content is committed to the DOM (prevents flash of old page at top).
@@ -420,7 +444,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       }
       setPending(true);
       try {
-        await win.__VINEXT_RSC_NAVIGATE__(absoluteFullHref);
+        await window.__VINEXT_RSC_NAVIGATE__(absoluteFullHref);
       } finally {
         if (mountedRef.current) setPending(false);
       }
@@ -459,6 +483,17 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
   const { passHref: _p, ...anchorProps } = restWithoutLocale;
 
   const linkStatusValue = React.useMemo(() => ({ pending }), [pending]);
+
+  // Block dangerous URI schemes (javascript:, data:, vbscript:).
+  // Render an inert <a> without href to prevent XSS while preserving
+  // styling and attributes like className, id, aria-*.
+  // This check is placed after all hooks to satisfy the Rules of Hooks.
+  if (isDangerous) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`<Link> blocked dangerous href: ${resolvedHref}`);
+    }
+    return <a {...anchorProps}>{children}</a>;
+  }
 
   return (
     <LinkStatusContext.Provider value={linkStatusValue}>

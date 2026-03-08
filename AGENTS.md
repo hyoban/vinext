@@ -17,11 +17,13 @@ vinext reimplements the Next.js API surface using Vite, with Cloudflare Workers 
 ### Commands
 
 ```bash
-pnpm test             # Vitest unit + integration tests
-pnpm run test:e2e     # Playwright E2E tests (5 projects)
-pnpm run typecheck    # TypeScript via tsgo (fast)
-pnpm run lint         # oxlint
-pnpm run build        # Build the vinext package
+pnpm test                                        # Vitest — full suite (~2 min, serial)
+pnpm test tests/routing.test.ts                  # Run a single test file (~seconds)
+pnpm test tests/shims.test.ts tests/link.test.ts # Run specific files
+pnpm run test:e2e                                # Playwright E2E tests (all projects, use PLAYWRIGHT_PROJECT=<name> to target one)
+pnpm run typecheck                               # TypeScript via tsgo (fast)
+pnpm run lint                                    # oxlint
+pnpm run build                                   # Build the vinext package
 ```
 
 ### Project Structure
@@ -61,10 +63,70 @@ examples/               # User-facing demo apps
 ### Adding a New Feature
 
 1. **Check if Next.js has it** — look at Next.js source to understand expected behavior
-2. **Add tests first** — put test cases in the appropriate `tests/*.test.ts` file
-3. **Implement in shims or server** — most features are either a shim (`next/*` module) or server-side logic
-4. **Add fixture pages if needed** — `tests/fixtures/` has test apps for integration testing
-5. **Run the full test suite** before committing
+2. **Search the Next.js test suite** — before writing code, search `test/e2e/` and `test/unit/` in the Next.js repo for related test files (see below)
+3. **Add tests first** — put test cases in the appropriate `tests/*.test.ts` file
+4. **Implement in shims or server** — most features are either a shim (`next/*` module) or server-side logic
+5. **Add fixture pages if needed** — `tests/fixtures/` has test apps for integration testing
+6. **Run the relevant test file(s)** to verify your changes (see [Running Tests](#running-tests) below)
+
+### Searching the Next.js Test Suite
+
+**This is a required step for all feature work and bug fixes.** Before writing code, search the Next.js repo's `test/e2e/` and `test/unit/` directories for tests related to whatever you're working on. Search broadly, not just for exact feature names.
+
+For example, when working on middleware:
+- Search for `middleware` and `proxy` in test directory names
+- Search for error messages like `"must export"` to find validation tests
+- Check for edge cases like missing exports, misspelled names, invalid configs
+
+**Why this matters:** vinext aims to match Next.js behavior exactly. If Next.js has a test for it, we should have an equivalent test. Missing this step has caused silent behavioral differences, like middleware failing open on invalid exports instead of throwing an error (which Next.js tests explicitly).
+
+When you find relevant Next.js tests, port the test cases to our test suite and include a comment linking back to the original Next.js test file:
+```ts
+// Ported from Next.js: test/e2e/app-dir/proxy-missing-export/proxy-missing-export.test.ts
+// https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/proxy-missing-export/proxy-missing-export.test.ts
+```
+
+**Use `gh search code` for efficient searching:**
+```bash
+gh search code "middleware" --repo vercel/next.js --filename "*.test.*" --limit 20
+gh search code "must export" --repo vercel/next.js --filename "*.test.*" --limit 10
+```
+
+### Running Tests
+
+**Always run targeted tests, not the full suite.** The full Vitest suite takes ~2 minutes because test files run serially (to avoid Vite deps optimizer cache races). Running the full suite during development wastes time, especially when multiple agents are working on the repo simultaneously.
+
+**During development**, run only the test file(s) relevant to your change:
+
+```bash
+# Run a single test file (fast — seconds, not minutes)
+pnpm test tests/routing.test.ts
+
+# Run a few related files
+pnpm test tests/shims.test.ts tests/link.test.ts
+
+# Run all nextjs-compat tests
+pnpm test tests/nextjs-compat/
+
+# Run tests matching a name pattern
+pnpm test -t "middleware"
+```
+
+**Which test files to run** depends on what you changed:
+
+| If you changed... | Run these tests |
+|-------------------|----------------|
+| A shim (`shims/*.ts`) | `tests/shims.test.ts` + the specific shim test (e.g., `tests/link.test.ts`) |
+| Routing (`routing/*.ts`) | `tests/routing.test.ts`, `tests/route-sorting.test.ts` |
+| App Router server (`server/app-dev-server.ts`) | `tests/app-router.test.ts`, `tests/features.test.ts` |
+| Pages Router server (`server/dev-server.ts`) | `tests/pages-router.test.ts` |
+| Caching/ISR | `tests/isr-cache.test.ts`, `tests/fetch-cache.test.ts`, `tests/kv-cache-handler.test.ts` |
+| Build/deploy | `tests/deploy.test.ts`, `tests/build-optimization.test.ts` |
+| Next.js compat features | `tests/nextjs-compat/` (the relevant file) |
+
+**Let CI run the full suite.** The full `pnpm test` and all 5 Playwright E2E projects run in CI on every PR. You do not need to run the full suite locally before pushing. CI will catch any cross-cutting regressions.
+
+**When to run the full suite locally:** Only if you're making a broad change that touches shared infrastructure (e.g., the Vite plugin's `resolveId` hook, virtual module generation, or the test helpers themselves). Even then, consider pushing and letting CI do it.
 
 ### Fixing Bugs
 
@@ -181,6 +243,23 @@ If you're trying to understand how something works under the hood — route matc
 
 ---
 
+## Code Style & Dependencies
+
+### Prefer Node.js Built-in APIs
+
+Always use Node.js built-in modules and APIs before reaching for third-party packages or hand-rolling your own implementation. Node ships a lot of useful utilities that people forget about or don't know exist. Examples:
+
+- `node:util` `parseEnv` for parsing `.env` file contents (not `dotenv`)
+- `node:crypto` `randomUUID()` for UUIDs (not `uuid`)
+- `node:fs/promises` for async file operations
+- `node:test` patterns when they apply
+- `URL` and `URLSearchParams` for URL manipulation (not string splitting)
+- `structuredClone` for deep cloning (not `lodash.cloneDeep`)
+
+If a Node built-in does the job, use it. Only reach for a dependency when the built-in is genuinely insufficient.
+
+---
+
 ## Git Workflow
 
 - **NEVER push directly to main.** Always create a feature branch and open a PR, even for small fixes. This ensures CI runs before changes are merged and provides a review checkpoint.
@@ -197,6 +276,30 @@ If you're trying to understand how something works under the hood — route matc
   5. Wait for CI to pass — all required checks (Lint, Typecheck, Vitest, Playwright E2E) must be green
   6. Merge via `gh pr merge --squash --delete-branch`
   7. If merge is blocked, check which status check failed and fix it — do not bypass with `--admin`
+
+### CI for External Contributors
+
+CI is split into safe checks (no secrets) and deploy previews (requires secrets). This lets external contributors get feedback on their PRs without exposing credentials.
+
+**Safe CI (`ci.yml`)** runs for all PRs after first-time contributor approval:
+- Lint, Typecheck, Vitest, Playwright E2E
+- Uses zero secrets and read-only permissions
+- First-time contributors need one manual approval, then subsequent PRs run automatically
+
+**Deploy previews (`deploy-examples.yml`)** run automatically only for same-repo branches:
+- The entire workflow is skipped for fork PRs via a job-level `if` condition
+- Cloudflare employees should push branches to the main repo (not fork), so previews deploy automatically
+- For fork PRs, a maintainer can comment `/deploy-preview` to trigger the deploy (see `deploy-preview-command.yml`)
+
+**`/deploy-preview` slash command** (`deploy-preview-command.yml`):
+- Triggered by commenting `/deploy-preview` on any PR
+- Restricted to org members, collaborators, and repo owners via `author_association`
+- Builds all examples, deploys previews, runs smoke tests, and posts preview URLs
+
+When modifying CI workflows, keep these rules in mind:
+- `ci.yml` must never use secrets. It runs untrusted code from forks.
+- `deploy-examples.yml` must skip entirely for fork PRs. Don't remove the job-level `if` guard.
+- The `/deploy-preview` slash command gates secret usage behind the `author_association` check.
 
 ---
 

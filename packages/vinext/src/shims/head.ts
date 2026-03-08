@@ -78,7 +78,10 @@ function reactElementToHTML(child: React.ReactElement): string {
         innerHTML = escapeHTML(value);
       }
     } else if (key === "dangerouslySetInnerHTML") {
-      // Intentionally raw — developer explicitly opted in
+      // Intentionally raw — developer explicitly opted in.
+      // SECURITY NOTE: This injects raw HTML during SSR. The client-side
+      // path (line ~148) skips dangerouslySetInnerHTML for safety. Developers
+      // must never pass unsanitized user input here — it is a stored XSS vector.
       const html = value as { __html: string };
       if (html?.__html) innerHTML = html.__html;
     } else if (key === "className") {
@@ -98,6 +101,13 @@ function reactElementToHTML(child: React.ReactElement): string {
     return `<${tag}${attrStr} data-vinext-head="true" />`;
   }
 
+  // For raw-content tags (script, style), escape closing-tag sequences so the
+  // HTML parser doesn't prematurely terminate the element.
+  const rawContentTags = ["script", "style"];
+  if (rawContentTags.includes(tag) && innerHTML) {
+    innerHTML = escapeInlineContent(innerHTML, tag);
+  }
+
   return `<${tag}${attrStr} data-vinext-head="true">${innerHTML}</${tag}>`;
 }
 
@@ -107,6 +117,22 @@ function escapeHTML(s: string): string {
 
 export function escapeAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Escape content that will be placed inside a raw <script> or <style> tag
+ * during SSR. The HTML parser treats `</script>` (or `</style>`) as the end
+ * of the block regardless of JavaScript string context, so any occurrence
+ * of `</` followed by the tag name must be escaped.
+ *
+ * We replace `</script` and `</style` (case-insensitive) with `<\/script`
+ * and `<\/style` respectively. The `<\/` form is harmless in JS/CSS string
+ * context but prevents the HTML parser from seeing a closing tag.
+ */
+export function escapeInlineContent(content: string, tag: string): string {
+  // Build a pattern like `<\/script` or `<\/style`, case-insensitive
+  const pattern = new RegExp(`<\\/(${tag})`, "gi");
+  return content.replace(pattern, "<\\/$1");
 }
 
 // --- Component ---

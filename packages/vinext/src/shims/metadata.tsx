@@ -10,6 +10,15 @@ import React from "react";
 // Viewport types and resolution
 // ---------------------------------------------------------------------------
 
+/**
+ * Normalize null-prototype objects from matchPattern() into thenable objects.
+ * See app-dev-server.ts makeThenableParams() for full explanation.
+ */
+function makeThenableParams<T extends Record<string, unknown>>(obj: T): Promise<T> & T {
+  const plain = { ...obj } as T;
+  return Object.assign(Promise.resolve(plain), plain);
+}
+
 export interface Viewport {
   /** Viewport width (default: "device-width") */
   width?: string | number;
@@ -40,7 +49,7 @@ export async function resolveModuleViewport(
   params: Record<string, string | string[]>,
 ): Promise<Viewport | null> {
   if (typeof mod.generateViewport === "function") {
-    const asyncParams = Object.assign(Promise.resolve(params), params);
+    const asyncParams = makeThenableParams(params);
     return await mod.generateViewport({ params: asyncParams });
   }
   if (mod.viewport && typeof mod.viewport === "object") {
@@ -53,8 +62,13 @@ export async function resolveModuleViewport(
  * Merge viewport configs from multiple sources (layouts + page).
  * Later entries override earlier ones.
  */
+export const DEFAULT_VIEWPORT: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export function mergeViewport(viewportList: Viewport[]): Viewport {
-  const merged: Viewport = {};
+  const merged: Viewport = { ...DEFAULT_VIEWPORT };
   for (const vp of viewportList) {
     Object.assign(merged, vp);
   }
@@ -266,10 +280,10 @@ export async function resolveModuleMetadata(
 ): Promise<Metadata | null> {
   if (typeof mod.generateMetadata === "function") {
     // Next.js 16 passes params/searchParams as Promises (async pattern).
-    // Create thenable objects that work both as Promises and plain objects.
-    const asyncParams = Object.assign(Promise.resolve(params), params);
+    // makeThenableParams() normalises null-prototype + preserves sync access.
+    const asyncParams = makeThenableParams(params);
     const sp = searchParams ?? {};
-    const asyncSp = Object.assign(Promise.resolve(sp), sp);
+    const asyncSp = makeThenableParams(sp);
     return await mod.generateMetadata({ params: asyncParams, searchParams: asyncSp });
   }
   if (mod.metadata && typeof mod.metadata === "object") {

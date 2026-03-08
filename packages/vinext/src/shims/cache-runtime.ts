@@ -44,7 +44,13 @@ export interface CacheContext {
   variant: string;
 }
 
-export const cacheContextStorage = new AsyncLocalStorage<CacheContext>();
+// Store on globalThis via Symbol so headers.ts can detect "use cache" scope
+// without a direct import (avoiding circular dependencies).
+const _CONTEXT_ALS_KEY = Symbol.for("vinext.cacheRuntime.contextAls");
+const _gCacheRuntime = globalThis as unknown as Record<PropertyKey, unknown>;
+export const cacheContextStorage = (
+  _gCacheRuntime[_CONTEXT_ALS_KEY] ??= new AsyncLocalStorage<CacheContext>()
+) as AsyncLocalStorage<CacheContext>;
 
 // Register the context accessor so cacheLife()/cacheTag() in cache.ts can
 // access the context without a circular import.
@@ -148,7 +154,8 @@ export async function replyToCacheKey(reply: string | FormData): Promise<string>
   // Collect entries in stable order (sorted by name, then by value for
   // entries with the same name) so the hash is deterministic.
   const entries: [string, FormDataEntryValue][] = [...reply.entries()];
-  entries.sort((a, b) => a[0].localeCompare(b[0]) || String(a[1]).localeCompare(String(b[1])));
+  const valStr = (v: FormDataEntryValue): string => typeof v === "string" ? v : v.name;
+  entries.sort((a, b) => a[0].localeCompare(b[0]) || valStr(a[1]).localeCompare(valStr(b[1])));
 
   const parts: string[] = [];
   for (const [name, value] of entries) {
@@ -227,29 +234,33 @@ const _privateFallbackState = (_g[_PRIVATE_FALLBACK_KEY] ??= {
   cache: new Map<string, unknown>(),
 } satisfies PrivateCacheState) as PrivateCacheState;
 
-function _privateEnterWith(state: PrivateCacheState): void {
-  const enterWith = (_privateAls as any).enterWith;
-  if (typeof enterWith === "function") {
-    try {
-      enterWith.call(_privateAls, state);
-      return;
-    } catch {
-      // Fall through to best-effort fallback.
-    }
-  }
-  _privateFallbackState.cache = state.cache;
-}
-
 function _getPrivateState(): PrivateCacheState {
   return _privateAls.getStore() ?? _privateFallbackState;
 }
 
 /**
+ * Run a function within a private cache ALS scope.
+ * Ensures per-request isolation for "use cache: private" entries
+ * on concurrent runtimes.
+ */
+export function runWithPrivateCache<T>(fn: () => T | Promise<T>): T | Promise<T> {
+  const state: PrivateCacheState = {
+    cache: new Map(),
+  };
+  return _privateAls.run(state, fn);
+}
+
+/**
  * Clear the private per-request cache. Should be called at the start of each request.
+ * Only needed when not using runWithPrivateCache() (legacy path).
  */
 export function clearPrivateCache(): void {
-  _privateEnterWith({ cache: new Map() });
-  _privateFallbackState.cache = new Map();
+  const state = _privateAls.getStore();
+  if (state) {
+    state.cache = new Map();
+  } else {
+    _privateFallbackState.cache = new Map();
+  }
 }
 
 // ---------------------------------------------------------------------------

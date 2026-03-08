@@ -81,6 +81,9 @@ declare module "next/navigation" {
   export function useSelectedLayoutSegment(parallelRoutesKey?: string): string | null;
   export function useSelectedLayoutSegments(parallelRoutesKey?: string): string[];
   export function useServerInsertedHTML(callback: () => unknown): void;
+  export const ServerInsertedHTMLContext: import("react").Context<
+    ((callback: () => unknown) => void) | null
+  > | null;
   export enum RedirectType {
     push = "push",
     replace = "replace",
@@ -99,7 +102,7 @@ declare module "next/navigation" {
   export function setNavigationContext(ctx: any): void;
   export function setClientParams(params: Record<string, string | string[]>): void;
   export function getClientParams(): Record<string, string | string[]>;
-  export function getLayoutSegmentContext(): import("react").Context<number> | null;
+  export function getLayoutSegmentContext(): import("react").Context<string[]> | null;
 
   // RSC prefetch cache utilities (shared between link.tsx and browser entry)
   export interface PrefetchCacheEntry {
@@ -249,27 +252,7 @@ declare module "next/font/google" {
   }
 
   type FontLoader = (options?: FontOptions) => FontResult;
-
-  export const Inter: FontLoader;
-  export const Roboto: FontLoader;
-  export const Roboto_Mono: FontLoader;
-  export const Open_Sans: FontLoader;
-  export const Lato: FontLoader;
-  export const Poppins: FontLoader;
-  export const Montserrat: FontLoader;
-  export const Source_Code_Pro: FontLoader;
-  export const Noto_Sans: FontLoader;
-  export const Raleway: FontLoader;
-  export const Ubuntu: FontLoader;
-  export const Nunito: FontLoader;
-  export const Playfair_Display: FontLoader;
-  export const Merriweather: FontLoader;
-  export const PT_Sans: FontLoader;
-  export const Fira_Code: FontLoader;
-  export const JetBrains_Mono: FontLoader;
-  export const Geist: FontLoader;
-  export const Geist_Mono: FontLoader;
-  // Any other Google Font can be imported via the Proxy
+  // Named exports are generated in next-shims-font-google.generated.d.ts
   const googleFonts: Record<string, FontLoader>;
   export default googleFonts;
 }
@@ -318,7 +301,7 @@ declare module "next/cache" {
   }
 
   export type IncrementalCacheValue =
-    | { kind: "FETCH"; data: { headers: Record<string, string>; body: string; url: string; status?: number }; tags?: string[]; revalidate: number }
+    | { kind: "FETCH"; data: { headers: Record<string, string>; body: string; url: string; status?: number }; tags?: string[]; revalidate: number | false }
     | { kind: "APP_PAGE"; html: string; rscData: ArrayBuffer | undefined; headers: Record<string, string | string[]> | undefined; postponed: string | undefined; status: number | undefined }
     | { kind: "PAGES"; html: string; pageData: object; headers: Record<string, string | string[]> | undefined; status: number | undefined }
     | { kind: "APP_ROUTE"; body: ArrayBuffer; status: number; headers: Record<string, string | string[]> }

@@ -23,9 +23,10 @@ import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { matchRedirect, matchRewrite, matchHeaders, requestContextFromRequest, isExternalUrl, proxyExternalRequest } from "../config/config-matchers.js";
+import { matchRedirect, matchRewrite, matchHeaders, requestContextFromRequest, applyMiddlewareRequestHeaders, isExternalUrl, proxyExternalRequest, sanitizeDestination } from "../config/config-matchers.js";
 import type { RequestContext } from "../config/config-matchers.js";
-import { IMAGE_OPTIMIZATION_PATH, parseImageParams } from "./image-optimization.js";
+import { IMAGE_OPTIMIZATION_PATH, IMAGE_CONTENT_SECURITY_POLICY, parseImageParams, isSafeImageContentType, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES, type ImageConfig } from "./image-optimization.js";
+import { normalizePath } from "./normalize-path.js";
 import { computeLazyChunks } from "../index.js";
 
 /** Convert a Node.js IncomingMessage into a ReadableStream for Web Request body. */
@@ -104,6 +105,37 @@ function createCompressor(encoding: "br" | "gzip" | "deflate"): zlib.BrotliCompr
 }
 
 /**
+ * Merge middleware headers and a Web Response's headers into a single
+ * record suitable for Node.js `res.writeHead()`. Uses `getSetCookie()`
+ * to preserve multiple Set-Cookie values instead of flattening them.
+ */
+function mergeResponseHeaders(
+  middlewareHeaders: Record<string, string | string[]>,
+  response: Response,
+): Record<string, string | string[]> {
+  const merged: Record<string, string | string[]> = { ...middlewareHeaders };
+
+  // Copy all non-Set-Cookie headers from the response (response wins on conflict)
+  // Headers.forEach() always yields lowercase keys
+  response.headers.forEach((v, k) => {
+    if (k === "set-cookie") return;
+    merged[k] = v;
+  });
+
+  // Preserve multiple Set-Cookie headers using getSetCookie()
+  const responseCookies = response.headers.getSetCookie?.() ?? [];
+  if (responseCookies.length > 0) {
+    const existing = merged["set-cookie"];
+    const mwCookies = existing
+      ? (Array.isArray(existing) ? existing : [existing])
+      : [];
+    merged["set-cookie"] = [...mwCookies, ...responseCookies];
+  }
+
+  return merged;
+}
+
+/**
  * Send a compressed response if the content type is compressible and the
  * client supports compression. Otherwise send uncompressed.
  */
@@ -113,7 +145,7 @@ function sendCompressed(
   body: string | Buffer,
   contentType: string,
   statusCode: number,
-  extraHeaders: Record<string, string> = {},
+  extraHeaders: Record<string, string | string[]> = {},
   compress: boolean = true,
 ): void {
   const buf = typeof body === "string" ? Buffer.from(body) : body;
@@ -122,11 +154,23 @@ function sendCompressed(
 
   if (encoding && COMPRESSIBLE_TYPES.has(baseType) && buf.length >= COMPRESS_THRESHOLD) {
     const compressor = createCompressor(encoding);
+    // Merge Accept-Encoding into existing Vary header from extraHeaders instead
+    // of overwriting. Preserves Vary values set by the App Router for content
+    // negotiation (e.g. "RSC, Accept").
+    const rawVary = extraHeaders["Vary"] ?? extraHeaders["vary"];
+    const existingVary = Array.isArray(rawVary) ? rawVary.join(", ") : rawVary;
+    let varyValue: string;
+    if (existingVary) {
+      const existing = existingVary.toLowerCase();
+      varyValue = existing.includes("accept-encoding") ? existingVary : existingVary + ", Accept-Encoding";
+    } else {
+      varyValue = "Accept-Encoding";
+    }
     res.writeHead(statusCode, {
       ...extraHeaders,
       "Content-Type": contentType,
       "Content-Encoding": encoding,
-      Vary: "Accept-Encoding",
+      Vary: varyValue,
     });
     compressor.end(buf);
     pipeline(compressor, res, () => { /* ignore pipeline errors on closed connections */ });
@@ -172,6 +216,7 @@ function tryServeStatic(
   clientDir: string,
   pathname: string,
   compress: boolean,
+  extraHeaders?: Record<string, string>,
 ): boolean {
   // Resolve the path and guard against directory traversal (e.g. /../../../etc/passwd)
   const resolvedClient = path.resolve(clientDir);
@@ -179,6 +224,14 @@ function tryServeStatic(
   try {
     decodedPathname = decodeURIComponent(pathname);
   } catch {
+    return false;
+  }
+
+  // Block access to internal build metadata directories. The .vite/
+  // directory contains manifests and other build artifacts that should
+  // not be publicly served. Check after decoding to catch encoded
+  // variants like /%2Evite/manifest.json.
+  if (decodedPathname.startsWith("/.vite/") || decodedPathname === "/.vite") {
     return false;
   }
   const staticFile = path.resolve(clientDir, "." + decodedPathname);
@@ -200,6 +253,12 @@ function tryServeStatic(
     ? "public, max-age=31536000, immutable"
     : "public, max-age=3600";
 
+  const baseHeaders = {
+    "Content-Type": ct,
+    "Cache-Control": cacheControl,
+    ...extraHeaders,
+  };
+
   const baseType = ct.split(";")[0].trim();
   if (compress && COMPRESSIBLE_TYPES.has(baseType)) {
     const encoding = negotiateEncoding(req);
@@ -207,9 +266,8 @@ function tryServeStatic(
       const fileStream = fs.createReadStream(staticFile);
       const compressor = createCompressor(encoding);
       res.writeHead(200, {
-        "Content-Type": ct,
+        ...baseHeaders,
         "Content-Encoding": encoding,
-        "Cache-Control": cacheControl,
         Vary: "Accept-Encoding",
       });
       pipeline(fileStream, compressor, res, () => { /* ignore */ });
@@ -217,10 +275,7 @@ function tryServeStatic(
     }
   }
 
-  res.writeHead(200, {
-    "Content-Type": ct,
-    "Cache-Control": cacheControl,
-  });
+  res.writeHead(200, baseHeaders);
   fs.createReadStream(staticFile).pipe(res);
   return true;
 }
@@ -351,7 +406,18 @@ async function sendWebResponse(
     delete nodeHeaders["content-length"];
     delete nodeHeaders["Content-Length"];
     nodeHeaders["Content-Encoding"] = encoding!;
-    nodeHeaders["Vary"] = "Accept-Encoding";
+    // Merge Accept-Encoding into existing Vary header (e.g. "RSC, Accept") instead
+    // of overwriting. This prevents stripping the Vary values that the App Router
+    // sets for content negotiation (RSC stream vs HTML).
+    const existingVary = nodeHeaders["Vary"] ?? nodeHeaders["vary"];
+    if (existingVary) {
+      const existing = String(existingVary).toLowerCase();
+      if (!existing.includes("accept-encoding")) {
+        nodeHeaders["Vary"] = existingVary + ", Accept-Encoding";
+      }
+    } else {
+      nodeHeaders["Vary"] = "Accept-Encoding";
+    }
   }
 
   res.writeHead(status, nodeHeaders);
@@ -440,6 +506,16 @@ interface AppRouterServerOptions {
 async function startAppRouterServer(options: AppRouterServerOptions) {
   const { port, host, clientDir, rscEntryPath, compress } = options;
 
+  // Load image config written at build time by vinext:image-config plugin.
+  // This provides SVG/security header settings for the image optimization endpoint.
+  let imageConfig: ImageConfig | undefined;
+  const imageConfigPath = path.join(path.dirname(rscEntryPath), "image-config.json");
+  if (fs.existsSync(imageConfigPath)) {
+    try {
+      imageConfig = JSON.parse(fs.readFileSync(imageConfigPath, "utf-8"));
+    } catch { /* ignore parse errors */ }
+  }
+
   // Import the RSC handler (use file:// URL for reliable dynamic import)
   const rscModule = await import(pathToFileURL(rscEntryPath).href);
   const rscHandler: (request: Request) => Promise<Response> = rscModule.default;
@@ -451,11 +527,21 @@ async function startAppRouterServer(options: AppRouterServerOptions) {
 
   const server = createServer(async (req, res) => {
     const url = req.url ?? "/";
-    const pathname = url.split("?")[0];
+    // Normalize backslashes (browsers treat /\ as //), then decode and normalize path.
+    const rawPathname = url.split("?")[0].replaceAll("\\", "/");
+    let pathname: string;
+    try {
+      pathname = normalizePath(decodeURIComponent(rawPathname));
+    } catch {
+      // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of crashing.
+      res.writeHead(400);
+      res.end("Bad Request");
+      return;
+    }
 
     // Guard against protocol-relative URL open redirect attacks.
-    // See comment in app-dev-server.ts _handleRequest for full explanation.
-    if (pathname.startsWith("//")) {
+    // Check rawPathname before normalizePath collapses //.
+    if (rawPathname.startsWith("//")) {
       res.writeHead(404);
       res.end("404 Not Found");
       return;
@@ -467,17 +553,32 @@ async function startAppRouterServer(options: AppRouterServerOptions) {
     }
 
     // Image optimization passthrough (Node.js prod server has no Images binding;
-    // serves the original file with cache headers)
+    // serves the original file with cache headers and security headers)
     if (pathname === IMAGE_OPTIMIZATION_PATH) {
       const parsedUrl = new URL(url, "http://localhost");
-      const params = parseImageParams(parsedUrl);
+      const defaultAllowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
+      const params = parseImageParams(parsedUrl, defaultAllowedWidths);
       if (!params) {
         res.writeHead(400);
         res.end("Bad Request");
         return;
       }
-      // Serve the original image from the client build directory
-      if (tryServeStatic(req, res, clientDir, params.imageUrl, false)) {
+      // Block SVG and other unsafe content types by checking the file extension.
+      // SVG is only allowed when dangerouslyAllowSVG is enabled in next.config.js.
+      const ext = path.extname(params.imageUrl).toLowerCase();
+      const ct = CONTENT_TYPES[ext] ?? "application/octet-stream";
+      if (!isSafeImageContentType(ct, imageConfig?.dangerouslyAllowSVG)) {
+        res.writeHead(400);
+        res.end("The requested resource is not an allowed image type");
+        return;
+      }
+      // Serve the original image with CSP and security headers
+      const imageSecurityHeaders: Record<string, string> = {
+        "Content-Security-Policy": imageConfig?.contentSecurityPolicy ?? IMAGE_CONTENT_SECURITY_POLICY,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": imageConfig?.contentDispositionType ?? "inline",
+      };
+      if (tryServeStatic(req, res, clientDir, params.imageUrl, false, imageSecurityHeaders)) {
         return;
       }
       res.writeHead(404);
@@ -529,7 +630,7 @@ interface PagesRouterServerOptions {
  * Uses the server entry (dist/server/entry.js) which exports:
  * - renderPage(request, url, manifest) — SSR rendering (Web Request → Response)
  * - handleApiRoute(request, url) — API route handling (Web Request → Response)
- * - runMiddleware(request) — middleware execution
+ * - runMiddleware(request, ctx?) — middleware execution (ctx optional; pass for ctx.waitUntil() on Workers)
  * - vinextConfig — embedded next.config.js settings
  */
 async function startPagesRouterServer(options: PagesRouterServerOptions) {
@@ -551,7 +652,7 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
       const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, "utf-8"));
       const lazyChunks = computeLazyChunks(buildManifest);
       if (lazyChunks.length > 0) {
-        (globalThis as any).__VINEXT_LAZY_CHUNKS__ = lazyChunks;
+        globalThis.__VINEXT_LAZY_CHUNKS__ = lazyChunks;
       }
     } catch { /* ignore parse errors */ }
   }
@@ -566,15 +667,40 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
   const configRedirects = vinextConfig?.redirects ?? [];
   const configRewrites = vinextConfig?.rewrites ?? { beforeFiles: [], afterFiles: [], fallback: [] };
   const configHeaders = vinextConfig?.headers ?? [];
+  // Compute allowed image widths from config (union of deviceSizes + imageSizes)
+  const allowedImageWidths: number[] = [
+    ...(vinextConfig?.images?.deviceSizes ?? DEFAULT_DEVICE_SIZES),
+    ...(vinextConfig?.images?.imageSizes ?? DEFAULT_IMAGE_SIZES),
+  ];
+  // Extract image security config for SVG handling and security headers
+  const pagesImageConfig: ImageConfig | undefined = vinextConfig?.images ? {
+    dangerouslyAllowSVG: vinextConfig.images.dangerouslyAllowSVG,
+    contentDispositionType: vinextConfig.images.contentDispositionType,
+    contentSecurityPolicy: vinextConfig.images.contentSecurityPolicy,
+  } : undefined;
 
   const server = createServer(async (req, res) => {
     const rawUrl = req.url ?? "/";
-    let url = rawUrl;
-    let pathname = url.split("?")[0];
+    // Normalize backslashes (browsers treat /\ as //), then decode and normalize path.
+    // Rebuild `url` from the decoded pathname + original query string so all
+    // downstream consumers (resolvedUrl, resolvedPathname, config matchers)
+    // always work with the decoded, canonical path.
+    const rawPagesPathname = rawUrl.split("?")[0].replaceAll("\\", "/");
+    const rawQs = rawUrl.includes("?") ? rawUrl.slice(rawUrl.indexOf("?")) : "";
+    let pathname: string;
+    try {
+      pathname = normalizePath(decodeURIComponent(rawPagesPathname));
+    } catch {
+      // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of crashing.
+      res.writeHead(400);
+      res.end("Bad Request");
+      return;
+    }
+    let url = pathname + rawQs;
 
     // Guard against protocol-relative URL open redirect attacks.
-    // See comment in app-dev-server.ts _handleRequest for full explanation.
-    if (pathname.startsWith("//")) {
+    // Check rawPagesPathname before normalizePath collapses //.
+    if (rawPagesPathname.startsWith("//")) {
       res.writeHead(404);
       res.end("404 Not Found");
       return;
@@ -598,13 +724,27 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
     // ── Image optimization passthrough ──────────────────────────────
     if (pathname === IMAGE_OPTIMIZATION_PATH || staticLookupPath === IMAGE_OPTIMIZATION_PATH) {
       const parsedUrl = new URL(rawUrl, "http://localhost");
-      const params = parseImageParams(parsedUrl);
+      const params = parseImageParams(parsedUrl, allowedImageWidths);
       if (!params) {
         res.writeHead(400);
         res.end("Bad Request");
         return;
       }
-      if (tryServeStatic(req, res, clientDir, params.imageUrl, false)) {
+      // Block SVG and other unsafe content types.
+      // SVG is only allowed when dangerouslyAllowSVG is enabled.
+      const ext = path.extname(params.imageUrl).toLowerCase();
+      const ct = CONTENT_TYPES[ext] ?? "application/octet-stream";
+      if (!isSafeImageContentType(ct, pagesImageConfig?.dangerouslyAllowSVG)) {
+        res.writeHead(400);
+        res.end("The requested resource is not an allowed image type");
+        return;
+      }
+      const imageSecurityHeaders: Record<string, string> = {
+        "Content-Security-Policy": pagesImageConfig?.contentSecurityPolicy ?? IMAGE_CONTENT_SECURITY_POLICY,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": pagesImageConfig?.contentDispositionType ?? "inline",
+      };
+      if (tryServeStatic(req, res, clientDir, params.imageUrl, false, imageSecurityHeaders)) {
         return;
       }
       res.writeHead(404);
@@ -649,7 +789,7 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
       }, new Headers());
       const method = req.method ?? "GET";
       const hasBody = method !== "GET" && method !== "HEAD";
-      const webRequest = new Request(`${protocol}://${hostHeader}${url}`, {
+      let webRequest = new Request(`${protocol}://${hostHeader}${url}`, {
         method,
         headers: reqHeaders,
         body: hasBody ? readNodeStream(req) : undefined,
@@ -657,15 +797,18 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
         duplex: hasBody ? "half" : undefined,
       });
 
-      // Build request context for has/missing condition matching
+      // Build request context for has/missing condition matching.
+      // headers and redirects run before middleware and use this pre-middleware
+      // snapshot. beforeFiles, afterFiles, and fallback all run after middleware
+      // per the Next.js execution order, so they use postMwReqCtx below.
       const reqCtx: RequestContext = requestContextFromRequest(webRequest);
 
       // ── 4. Run middleware ─────────────────────────────────────────
       let resolvedUrl = url;
-      const middlewareHeaders: Record<string, string> = {};
+      const middlewareHeaders: Record<string, string | string[]> = {};
       let middlewareRewriteStatus: number | undefined;
       if (typeof runMiddleware === "function") {
-        const result = await runMiddleware(webRequest);
+        const result = await runMiddleware(webRequest, undefined);
 
         if (!result.continue) {
           if (result.redirectUrl) {
@@ -678,16 +821,37 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
           if (result.response) {
             // Use arrayBuffer() to handle binary response bodies correctly
             const body = Buffer.from(await result.response.arrayBuffer());
-            res.writeHead(result.response.status, Object.fromEntries(result.response.headers));
+            // Preserve multi-value headers (especially Set-Cookie) by
+            // using getSetCookie() for cookies and forEach for the rest.
+            const respHeaders: Record<string, string | string[]> = {};
+            result.response.headers.forEach((value: string, key: string) => {
+              if (key === "set-cookie") return; // handled below
+              respHeaders[key] = value;
+            });
+            const setCookies = result.response.headers.getSetCookie?.() ?? [];
+            if (setCookies.length > 0) respHeaders["set-cookie"] = setCookies;
+            res.writeHead(result.response.status, respHeaders);
             res.end(body);
             return;
           }
         }
 
-        // Collect middleware response headers to merge into final response
+        // Collect middleware response headers to merge into final response.
+        // Use an array for Set-Cookie to preserve multiple values.
         if (result.responseHeaders) {
           for (const [key, value] of result.responseHeaders) {
-            middlewareHeaders[key] = value;
+            if (key === "set-cookie") {
+              const existing = middlewareHeaders[key];
+              if (Array.isArray(existing)) {
+                existing.push(value);
+              } else if (existing) {
+                middlewareHeaders[key] = [existing as string, value];
+              } else {
+                middlewareHeaders[key] = [value];
+              }
+            } else {
+              middlewareHeaders[key] = value;
+            }
           }
         }
 
@@ -701,25 +865,41 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
         middlewareRewriteStatus = result.rewriteStatus;
       }
 
-      // Unpack x-middleware-request-* headers into the actual request so that
-      // renderPage / handleApiRoute see the middleware-modified headers.
-      // Also remove them from middlewareHeaders to prevent leaking as response headers.
-      const mwReqPrefix = "x-middleware-request-";
-      for (const key of Object.keys(middlewareHeaders)) {
-        if (key.startsWith(mwReqPrefix)) {
-          const realName = key.slice(mwReqPrefix.length);
-          webRequest.headers.set(realName, middlewareHeaders[key]);
-          delete middlewareHeaders[key];
-        }
-      }
+      // Unpack x-middleware-request-* headers into the actual request and strip
+      // all x-middleware-* internal signals. Rebuilds postMwReqCtx for use by
+      // beforeFiles, afterFiles, and fallback config rules (which run after
+      // middleware per the Next.js execution order).
+      const { postMwReqCtx, request: postMwReq } = applyMiddlewareRequestHeaders(middlewareHeaders, webRequest);
+      webRequest = postMwReq;
 
       let resolvedPathname = resolvedUrl.split("?")[0];
 
       // ── 5. Apply custom headers from next.config.js ───────────────
+      // Config headers are additive for multi-value headers (Vary,
+      // Set-Cookie) and override for everything else. Set-Cookie values
+      // are stored as arrays (RFC 6265 forbids comma-joining cookies).
+      // Middleware headers take precedence: skip config keys already set
+      // by middleware so middleware always wins for the same key.
       if (configHeaders.length) {
-        const matched = matchHeaders(resolvedPathname, configHeaders);
+        const matched = matchHeaders(resolvedPathname, configHeaders, reqCtx);
         for (const h of matched) {
-          middlewareHeaders[h.key.toLowerCase()] = h.value;
+          const lk = h.key.toLowerCase();
+          if (lk === "set-cookie") {
+            const existing = middlewareHeaders[lk];
+            if (Array.isArray(existing)) {
+              existing.push(h.value);
+            } else if (existing) {
+              middlewareHeaders[lk] = [existing as string, h.value];
+            } else {
+              middlewareHeaders[lk] = [h.value];
+            }
+          } else if (lk === "vary" && middlewareHeaders[lk]) {
+            middlewareHeaders[lk] += ", " + h.value;
+          } else if (!(lk in middlewareHeaders)) {
+            // Middleware headers take precedence: only set if middleware
+            // did not already place this key on the response.
+            middlewareHeaders[lk] = h.value;
+          }
         }
       }
 
@@ -729,9 +909,12 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
         if (redirect) {
           // Guard against double-prefixing: only add basePath if destination
           // doesn't already start with it.
-          const dest = basePath && !redirect.destination.startsWith(basePath)
-            ? basePath + redirect.destination
-            : redirect.destination;
+          // Sanitize the final destination to prevent protocol-relative URL open redirects.
+          const dest = sanitizeDestination(
+            basePath && !redirect.destination.startsWith(basePath)
+              ? basePath + redirect.destination
+              : redirect.destination,
+          );
           res.writeHead(redirect.permanent ? 308 : 307, { Location: dest });
           res.end();
           return;
@@ -740,7 +923,7 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
 
       // ── 7. Apply beforeFiles rewrites from next.config.js ─────────
       if (configRewrites.beforeFiles?.length) {
-        const rewritten = matchRewrite(resolvedPathname, configRewrites.beforeFiles, reqCtx);
+        const rewritten = matchRewrite(resolvedPathname, configRewrites.beforeFiles, postMwReqCtx);
         if (rewritten) {
           if (isExternalUrl(rewritten)) {
             const proxyResponse = await proxyExternalRequest(webRequest, rewritten);
@@ -762,10 +945,12 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
         }
 
         // Merge middleware + config headers into the response
-        const responseBody = await response.text();
-        const ct = response.headers.get("content-type") ?? "text/html";
-        const responseHeaders: Record<string, string> = { ...middlewareHeaders };
-        response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+        const responseBody = Buffer.from(await response.arrayBuffer());
+        // API routes may return arbitrary data (JSON, binary, etc.), so
+        // default to application/octet-stream rather than text/html when
+        // the handler doesn't set an explicit Content-Type.
+        const ct = response.headers.get("content-type") ?? "application/octet-stream";
+        const responseHeaders = mergeResponseHeaders(middlewareHeaders, response);
 
         sendCompressed(req, res, responseBody, ct, middlewareRewriteStatus ?? response.status, responseHeaders, compress);
         return;
@@ -773,7 +958,7 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
 
       // ── 9. Apply afterFiles rewrites from next.config.js ──────────
       if (configRewrites.afterFiles?.length) {
-        const rewritten = matchRewrite(resolvedPathname, configRewrites.afterFiles, reqCtx);
+        const rewritten = matchRewrite(resolvedPathname, configRewrites.afterFiles, postMwReqCtx);
         if (rewritten) {
           if (isExternalUrl(rewritten)) {
             const proxyResponse = await proxyExternalRequest(webRequest, rewritten);
@@ -792,7 +977,7 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
 
         // ── 11. Fallback rewrites (if SSR returned 404) ─────────────
         if (response && response.status === 404 && configRewrites.fallback?.length) {
-          const fallbackRewrite = matchRewrite(resolvedPathname, configRewrites.fallback, reqCtx);
+          const fallbackRewrite = matchRewrite(resolvedPathname, configRewrites.fallback, postMwReqCtx);
           if (fallbackRewrite) {
             if (isExternalUrl(fallbackRewrite)) {
               const proxyResponse = await proxyExternalRequest(webRequest, fallbackRewrite);
@@ -811,10 +996,9 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
       }
 
       // Merge middleware + config headers into the response
-      const responseBody = await response.text();
+      const responseBody = Buffer.from(await response.arrayBuffer());
       const ct = response.headers.get("content-type") ?? "text/html";
-      const responseHeaders: Record<string, string> = { ...middlewareHeaders };
-      response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+      const responseHeaders = mergeResponseHeaders(middlewareHeaders, response);
 
       sendCompressed(req, res, responseBody, ct, middlewareRewriteStatus ?? response.status, responseHeaders, compress);
     } catch (e) {
@@ -837,4 +1021,4 @@ async function startPagesRouterServer(options: PagesRouterServerOptions) {
 }
 
 // Export helpers for testing
-export { sendCompressed, negotiateEncoding, COMPRESSIBLE_TYPES, COMPRESS_THRESHOLD, resolveHost, trustedHosts, trustProxy, nodeToWebRequest };
+export { sendCompressed, negotiateEncoding, COMPRESSIBLE_TYPES, COMPRESS_THRESHOLD, resolveHost, trustedHosts, trustProxy, nodeToWebRequest, mergeResponseHeaders };

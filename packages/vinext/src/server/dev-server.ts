@@ -13,13 +13,13 @@ import {
   getRevalidateDuration,
 } from "./isr-cache.js";
 import type { CachedPagesValue } from "../shims/cache.js";
-import { withFetchCache } from "../shims/fetch-cache.js";
-import { _initRequestScopedCacheState } from "../shims/cache.js";
-import { clearPrivateCache } from "../shims/cache-runtime.js";
+import { runWithFetchCache } from "../shims/fetch-cache.js";
+import { _runWithCacheState } from "../shims/cache.js";
+import { runWithPrivateCache } from "../shims/cache-runtime.js";
 // Import server-only state modules to register ALS-backed accessors.
 // These modules must be imported before any rendering occurs.
-import "../shims/router-state.js";
-import "../shims/head-state.js";
+import { runWithRouterState } from "../shims/router-state.js";
+import { runWithHeadState } from "../shims/head-state.js";
 import { reportRequestError } from "./instrumentation.js";
 import { safeJsonStringify } from "./html.js";
 import { parseQueryString as parseQuery } from "../utils/query.js";
@@ -27,8 +27,8 @@ import path from "node:path";
 import fs from "node:fs";
 import React from "react";
 import { renderToReadableStream } from "react-dom/server.edge";
-
-const PAGE_EXTENSIONS = [".tsx", ".ts", ".jsx", ".js"];
+import { logRequest, now } from "./request-log.js";
+import { createValidFileMatcher, type ValidFileMatcher } from "../routing/file-matcher.js";
 
 /**
  * Render a React element to a string using renderToReadableStream.
@@ -69,7 +69,7 @@ async function streamPageToResponse(
     scripts: string;
     DocumentComponent: React.ComponentType | null;
     statusCode?: number;
-    extraHeaders?: Record<string, string>;
+    extraHeaders?: Record<string, string | string[]>;
     /** Called after renderToReadableStream resolves (shell ready) to collect head HTML */
     getHeadHTML: () => string;
   },
@@ -133,12 +133,23 @@ async function streamPageToResponse(
   const prefix = transformedShell.slice(0, markerIdx);
   const suffix = transformedShell.slice(markerIdx + STREAM_BODY_MARKER.length);
 
-  // Send headers and start streaming
+  // Send headers and start streaming.
+  // Set array-valued headers (e.g. Set-Cookie from gSSP) via setHeader()
+  // before writeHead(), since writeHead()'s headers object doesn't handle
+  // arrays portably. Then writeHead() merges with any setHeader() calls.
   const headers: Record<string, string> = {
     "Content-Type": "text/html",
     "Transfer-Encoding": "chunked",
-    ...extraHeaders,
   };
+  if (extraHeaders) {
+    for (const [key, val] of Object.entries(extraHeaders)) {
+      if (Array.isArray(val)) {
+        res.setHeader(key, val);
+      } else {
+        headers[key] = val;
+      }
+    }
+  }
   res.writeHead(statusCode, headers);
 
   // Write the document prefix (head, opening body)
@@ -160,9 +171,9 @@ async function streamPageToResponse(
   res.end(suffix);
 }
 
-/** Check if a file exists with any page extension (tsx, ts, jsx, js). */
-function findFileWithExtensions(basePath: string): boolean {
-  return PAGE_EXTENSIONS.some((ext) => fs.existsSync(basePath + ext));
+/** Check if a file exists with any configured page extension. */
+function findFileWithExtensions(basePath: string, matcher: ValidFileMatcher): boolean {
+  return matcher.dottedExtensions.some((ext) => fs.existsSync(basePath + ext));
 }
 
 /**
@@ -265,7 +276,9 @@ export function createSSRHandler(
   routes: Route[],
   pagesDir: string,
   i18nConfig?: NextI18nConfig | null,
+  fileMatcher?: ValidFileMatcher,
 ) {
+  const matcher = fileMatcher ?? createValidFileMatcher();
   return async (
     req: IncomingMessage,
     res: ServerResponse,
@@ -273,6 +286,28 @@ export function createSSRHandler(
     /** Status code override — propagated from middleware rewrite status. */
     statusCode?: number,
   ): Promise<void> => {
+    const _reqStart = now();
+    let _compileEnd: number | undefined;
+    let _renderEnd: number | undefined;
+
+    res.on("finish", () => {
+      const totalMs = now() - _reqStart;
+      const compileMs = _compileEnd !== undefined ? Math.round(_compileEnd - _reqStart) : undefined;
+      // renderMs = time from end of compile to end of stream.
+      // _renderEnd is set just after streamPageToResponse resolves.
+      const renderMs = _renderEnd !== undefined && _compileEnd !== undefined
+        ? Math.round(_renderEnd - _compileEnd)
+        : undefined;
+      logRequest({
+        method: req.method ?? "GET",
+        url,
+        status: res.statusCode,
+        totalMs,
+        compileMs,
+        renderMs,
+      });
+    });
+
     // --- i18n: extract locale from URL prefix ---
     let locale: string | undefined;
     let localeStrippedUrl = url;
@@ -309,18 +344,19 @@ export function createSSRHandler(
 
     if (!match) {
       // No route matched — try to render custom 404 page
-      await renderErrorPage(server, req, res, url, pagesDir, 404);
+      await renderErrorPage(server, req, res, url, pagesDir, 404, undefined, matcher);
       return;
     }
 
     const { route, params } = match;
 
-    // Initialize per-request state for cache isolation
-    _initRequestScopedCacheState();
-    clearPrivateCache();
-    // Install patched fetch with Next.js caching semantics for this request
-    const cleanupFetchCache = withFetchCache();
-
+    // Wrap the entire request in nested AsyncLocalStorage.run() scopes to
+    // ensure per-request isolation for all state modules.
+    return runWithRouterState(() =>
+      runWithHeadState(() =>
+        _runWithCacheState(() =>
+          runWithPrivateCache(() =>
+            runWithFetchCache(async () => {
     try {
       // Set SSR context for the router shim so useRouter() returns
       // the correct URL and params during server-side rendering.
@@ -338,20 +374,23 @@ export function createSSRHandler(
 
       // Set globalThis locale info for Link component locale prop support during SSR
       if (i18nConfig) {
-        (globalThis as any).__VINEXT_LOCALE__ = locale ?? i18nConfig.defaultLocale;
-        (globalThis as any).__VINEXT_LOCALES__ = i18nConfig.locales;
-        (globalThis as any).__VINEXT_DEFAULT_LOCALE__ = i18nConfig.defaultLocale;
+        globalThis.__VINEXT_LOCALE__ = locale ?? i18nConfig.defaultLocale;
+        globalThis.__VINEXT_LOCALES__ = i18nConfig.locales;
+        globalThis.__VINEXT_DEFAULT_LOCALE__ = i18nConfig.defaultLocale;
       }
 
       // Load the page module through Vite's SSR pipeline
       // This gives us HMR and transform support for free
       const pageModule = await server.ssrLoadModule(route.filePath);
+      // Mark end of compile phase: everything from here is rendering.
+      _compileEnd = now();
 
       // Get the page component (default export)
       const PageComponent = pageModule.default;
       if (!PageComponent) {
+        console.error(`[vinext] Page ${route.filePath} has no default export`);
         res.statusCode = 500;
-        res.end(`Page ${route.filePath} has no default export`);
+        res.end("Page has no default export");
         return;
       }
 
@@ -383,7 +422,7 @@ export function createSSRHandler(
           });
 
           if (!isValidPath) {
-            await renderErrorPage(server, req, res, url, pagesDir, 404);
+            await renderErrorPage(server, req, res, url, pagesDir, 404, routerShim.wrapWithRouterContext, matcher);
             return;
           }
         }
@@ -394,7 +433,16 @@ export function createSSRHandler(
         // but since we always have data available via SSR, we render fully.
       }
 
+      // Headers set by getServerSideProps for explicit forwarding to
+      // streamPageToResponse. Without this, they survive only through
+      // Node.js writeHead() implicitly merging setHeader() calls, which
+      // would silently break if streamPageToResponse is refactored.
+      const gsspExtraHeaders: Record<string, string | string[]> = {};
+
       if (typeof pageModule.getServerSideProps === "function") {
+        // Snapshot existing headers so we can detect what gSSP adds.
+        const headersBeforeGSSP = new Set(Object.keys(res.getHeaders()));
+
         const context = {
           params,
           req,
@@ -406,21 +454,55 @@ export function createSSRHandler(
           defaultLocale: i18nConfig?.defaultLocale,
         };
         const result = await pageModule.getServerSideProps(context);
+        // If gSSP called res.end() directly (short-circuit pattern),
+        // the response is already sent. Do not continue rendering.
+        // Note: middleware headers are already on `res` (middleware runs
+        // before this handler in the connect chain), so they are included
+        // in the short-circuited response. The prod path achieves the same
+        // result via the worker entry merging middleware headers after
+        // renderPage() returns.
+        if (res.writableEnded) {
+          return;
+        }
         if (result && "props" in result) {
           pageProps = result.props;
         }
         if (result && "redirect" in result) {
           const { redirect } = result;
           const status = redirect.statusCode ?? (redirect.permanent ? 308 : 307);
+          // Sanitize destination to prevent open redirect via protocol-relative URLs.
+          // Also normalize backslashes — browsers treat \ as / in URL contexts.
+          let dest = redirect.destination;
+          if (!dest.startsWith("http://") && !dest.startsWith("https://")) {
+            dest = dest.replace(/^[\\/]+/, "/");
+          }
           res.writeHead(status, {
-            Location: redirect.destination,
+            Location: dest,
           });
           res.end();
           return;
         }
         if (result && "notFound" in result && result.notFound) {
-          await renderErrorPage(server, req, res, url, pagesDir, 404);
+          await renderErrorPage(server, req, res, url, pagesDir, 404, routerShim.wrapWithRouterContext);
           return;
+        }
+        // Preserve any status code set by gSSP (e.g. res.statusCode = 201).
+        // This takes precedence over the default 200 but not over middleware status.
+        if (!statusCode && res.statusCode !== 200) {
+          statusCode = res.statusCode;
+        }
+
+        // Capture headers newly set by gSSP and forward them explicitly.
+        // Remove from `res` to prevent duplication when writeHead() merges.
+        const headersAfterGSSP = res.getHeaders();
+        for (const [key, val] of Object.entries(headersAfterGSSP)) {
+          if (headersBeforeGSSP.has(key) || val == null) continue;
+          res.removeHeader(key);
+          if (Array.isArray(val)) {
+            gsspExtraHeaders[key] = val.map(String);
+          } else {
+            gsspExtraHeaders[key] = String(val);
+          }
         }
       }
       // Collect font preloads early so ISR cached responses can include
@@ -512,14 +594,20 @@ export function createSSRHandler(
         if (result && "redirect" in result) {
           const { redirect } = result;
           const status = redirect.statusCode ?? (redirect.permanent ? 308 : 307);
+          // Sanitize destination to prevent open redirect via protocol-relative URLs.
+          // Also normalize backslashes — browsers treat \ as / in URL contexts.
+          let dest = redirect.destination;
+          if (!dest.startsWith("http://") && !dest.startsWith("https://")) {
+            dest = dest.replace(/^[\\/]+/, "/");
+          }
           res.writeHead(status, {
-            Location: redirect.destination,
+            Location: dest,
           });
           res.end();
           return;
         }
         if (result && "notFound" in result && result.notFound) {
-          await renderErrorPage(server, req, res, url, pagesDir, 404);
+          await renderErrorPage(server, req, res, url, pagesDir, 404, routerShim.wrapWithRouterContext);
           return;
         }
 
@@ -533,7 +621,7 @@ export function createSSRHandler(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let AppComponent: any = null;
       const appPath = path.join(pagesDir, "_app");
-      if (findFileWithExtensions(appPath)) {
+      if (findFileWithExtensions(appPath, matcher)) {
         try {
           const appModule = await server.ssrLoadModule(appPath);
           AppComponent = appModule.default ?? null;
@@ -548,6 +636,10 @@ export function createSSRHandler(
       const createElement = React.createElement;
       let element: React.ReactElement;
 
+      // wrapWithRouterContext wraps the element in RouterContext.Provider so that
+      // next/compat/router's useRouter() returns the real router.
+      const wrapWithRouterContext = routerShim.wrapWithRouterContext;
+
       if (AppComponent) {
         element = createElement(AppComponent, {
           Component: PageComponent,
@@ -555,6 +647,10 @@ export function createSSRHandler(
         });
       } else {
         element = createElement(PageComponent, pageProps);
+      }
+
+      if (wrapWithRouterContext) {
+        element = wrapWithRouterContext(element);
       }
 
       // Reset SSR head collector before rendering so <Head> tags are captured
@@ -633,6 +729,7 @@ export function createSSRHandler(
 <script type="module">
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
+import { wrapWithRouterContext } from "next/router";
 
 const nextData = window.__NEXT_DATA__;
 const { pageProps } = nextData.props;
@@ -653,6 +750,7 @@ async function hydrate() {
   element = React.createElement(PageComponent, pageProps);
   `
   }
+  element = wrapWithRouterContext(element);
   const root = hydrateRoot(document.getElementById("__next"), element);
   window.__VINEXT_ROOT__ = root;
 }
@@ -677,7 +775,7 @@ hydrate();
       // Try to load custom _document.tsx
       const docPath = path.join(pagesDir, "_document");
       let DocumentComponent: any = null;
-      if (findFileWithExtensions(docPath)) {
+      if (findFileWithExtensions(docPath, matcher)) {
         try {
           const docModule = await server.ssrLoadModule(docPath);
           DocumentComponent = docModule.default ?? null;
@@ -688,8 +786,9 @@ hydrate();
 
       const allScripts = `${nextDataScript}\n  ${hydrationScript}`;
 
-      // Build cache headers for ISR responses
-      const extraHeaders: Record<string, string> = {};
+      // Build response headers: start with gSSP headers, then layer on
+      // ISR and font preload headers (which take precedence).
+      const extraHeaders: Record<string, string | string[]> = { ...gsspExtraHeaders };
       if (isrRevalidateSeconds) {
         extraHeaders["Cache-Control"] = `s-maxage=${isrRevalidateSeconds}, stale-while-revalidate`;
         extraHeaders["X-Vinext-Cache"] = "MISS";
@@ -721,6 +820,7 @@ hydrate();
           ? headShim.getSSRHeadHTML()
           : "",
       });
+      _renderEnd = now();
 
       // Clear SSR context after rendering
       if (typeof routerShim.setSSRContext === "function") {
@@ -731,9 +831,12 @@ hydrate();
       // For ISR, re-render synchronously to get the complete HTML string.
       // This runs after the stream is already sent, so it doesn't affect TTFB.
       if (isrRevalidateSeconds !== null && isrRevalidateSeconds > 0) {
-        const isrElement = AppComponent
+        let isrElement = AppComponent
           ? createElement(AppComponent, { Component: pageModule.default, pageProps })
           : createElement(pageModule.default, pageProps);
+        if (wrapWithRouterContext) {
+          isrElement = wrapWithRouterContext(isrElement);
+        }
         const isrBodyHtml = await renderToStringAsync(isrElement);
         const isrHtml = `<!DOCTYPE html><html><head></head><body><div id="__next">${isrBodyHtml}</div>${allScripts}</body></html>`;
         const cacheKey = isrCacheKey("pages", url.split("?")[0]);
@@ -762,15 +865,23 @@ hydrate();
       ).catch(() => { /* ignore reporting errors */ });
       // Try to render custom 500 error page
       try {
-        await renderErrorPage(server, req, res, url, pagesDir, 500);
-      } catch {
-        // If error page itself fails, fall back to plain text
+        await renderErrorPage(server, req, res, url, pagesDir, 500, undefined, matcher);
+      } catch (fallbackErr) {
+        // If error page itself fails, fall back to plain text.
+        // This is a dev-only code path (prod uses prod-server.ts), so
+        // include the error message for debugging.
         res.statusCode = 500;
-        res.end(`Internal Server Error: ${(e as Error).message}`);
+        res.end(`Internal Server Error: ${(fallbackErr as Error).message}`);
       }
     } finally {
-      cleanupFetchCache();
+      // Cleanup is handled by ALS scope unwinding —
+      // each runWith*() scope is automatically cleaned up when it exits.
     }
+            }) // end runWithFetchCache
+          ) // end runWithPrivateCache
+        ) // end _runWithCacheState
+      ) // end runWithHeadState
+    ); // end runWithRouterState
   };
 }
 
@@ -789,7 +900,10 @@ async function renderErrorPage(
   url: string,
   pagesDir: string,
   statusCode: number,
+  wrapWithRouterContext?: ((el: React.ReactElement) => React.ReactElement) | null,
+  fileMatcher?: ValidFileMatcher,
 ): Promise<void> {
+  const matcher = fileMatcher ?? createValidFileMatcher();
   // Try specific status page first, then _error, then fallback
   const candidates =
     statusCode === 404
@@ -801,7 +915,7 @@ async function renderErrorPage(
   for (const candidate of candidates) {
     try {
       const candidatePath = path.join(pagesDir, candidate);
-      if (!findFileWithExtensions(candidatePath)) continue;
+      if (!findFileWithExtensions(candidatePath, matcher)) continue;
 
       const errorModule = await server.ssrLoadModule(candidatePath);
       const ErrorComponent = errorModule.default;
@@ -810,7 +924,7 @@ async function renderErrorPage(
       // Try to load _app.tsx to wrap the error page
       let AppComponent: any = null;
       const appPathErr = path.join(pagesDir, "_app");
-      if (findFileWithExtensions(appPathErr)) {
+      if (findFileWithExtensions(appPathErr, matcher)) {
         try {
           const appModule = await server.ssrLoadModule(appPathErr);
           AppComponent = appModule.default ?? null;
@@ -822,6 +936,18 @@ async function renderErrorPage(
       const createElement = React.createElement;
       const errorProps = { statusCode };
 
+      // If the caller didn't supply wrapWithRouterContext, load it now.
+      // ssrLoadModule caches internally so the cost is negligible.
+      let wrapFn = wrapWithRouterContext;
+      if (!wrapFn) {
+        try {
+          const errRouterShim = await server.ssrLoadModule("next/router");
+          wrapFn = errRouterShim.wrapWithRouterContext;
+        } catch {
+          // router shim not available — continue without it
+        }
+      }
+
       let element: React.ReactElement;
       if (AppComponent) {
         element = createElement(AppComponent, {
@@ -832,13 +958,17 @@ async function renderErrorPage(
         element = createElement(ErrorComponent, errorProps);
       }
 
+      if (wrapFn) {
+        element = wrapFn(element);
+      }
+
       const bodyHtml = await renderToStringAsync(element);
 
       // Try custom _document
       let html: string;
       let DocumentComponent: any = null;
       const docPathErr = path.join(pagesDir, "_document");
-      if (findFileWithExtensions(docPathErr)) {
+      if (findFileWithExtensions(docPathErr, matcher)) {
         try {
           const docModule = await server.ssrLoadModule(docPathErr);
           DocumentComponent = docModule.default ?? null;
