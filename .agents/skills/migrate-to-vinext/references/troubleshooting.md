@@ -24,6 +24,22 @@ When adding `"type": "module"`, any `.js` file using `module.exports` or `requir
 
 Alternatively, convert these files to ESM (`export default` syntax) and keep the `.js` extension.
 
+## Third-Party Package ESM Resolution Errors
+
+**Symptom:** `Cannot find module '...'` errors in dev server when using certain npm packages.
+
+**Example Error:**
+```
+Cannot find module '\node_modules.pnpm\validator@13.15.26\node_modules\validator\es\lib\util\assertString' 
+imported from \node_modules.pnpm\validator@13.15.26\node_modules\validator\es\lib\isEmail.js
+```
+
+**Cause:** Some ESM packages have complex internal import structures that Node.js module resolution can't handle when externalized.
+
+**vinext Fix:** vinext sets `noExternal: true` in all server environments (RSC and SSR), which forces all dependencies through Vite's transform pipeline. This resolves extensionless import issues automatically.
+
+**No configuration needed** — this is the default behavior.
+
 ## App Router vs Pages Router Issues
 
 **Symptom:** RSC-related errors, "client/server component" boundary violations.

@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useMemo, createElement, type ReactElement } from "react";
 import { RouterContext } from "./internal/router-context.js";
 import { isValidModulePath } from "../client/validate-module-path.js";
+import { toSameOriginPath } from "./url-utils.js";
 
 /** basePath from next.config.js, injected by the plugin at build time */
 const __basePath: string = process.env.__NEXT_ROUTER_BASEPATH ?? "";
@@ -124,7 +125,7 @@ function resolveUrl(url: string | UrlObject): string {
  */
 export function applyNavigationLocale(url: string, locale?: string): string {
   if (!locale || typeof window === "undefined") return url;
-  const defaultLocale = (window as any).__VINEXT_DEFAULT_LOCALE__;
+  const defaultLocale = window.__VINEXT_DEFAULT_LOCALE__;
   // Default locale doesn't get a prefix
   if (locale === defaultLocale) return url;
   // Don't double-prefix
@@ -261,7 +262,7 @@ function getPathnameAndQuery(): {
   const query: Record<string, string> = {};
   // Include dynamic route params from __NEXT_DATA__ (e.g., { id: "42" } from /posts/[id]).
   // Only include keys that are part of the route pattern (not stale query params).
-  const nextData = (window as any).__NEXT_DATA__;
+  const nextData = window.__NEXT_DATA__;
   if (nextData && nextData.query && nextData.page) {
     const routeParamNames = extractRouteParamNames(nextData.page);
     for (const key of routeParamNames) {
@@ -290,8 +291,7 @@ let _navInProgress = false;
 async function navigateClient(url: string): Promise<void> {
   if (typeof window === "undefined") return;
 
-  const win = window as any;
-  const root = win.__VINEXT_ROOT__;
+  const root = window.__VINEXT_ROOT__;
   if (!root) {
     // No React root yet — fall back to hard navigation
     window.location.href = url;
@@ -321,7 +321,7 @@ async function navigateClient(url: string): Promise<void> {
 
     const nextData = JSON.parse(match[1]);
     const { pageProps } = nextData.props;
-    win.__NEXT_DATA__ = nextData;
+    window.__NEXT_DATA__ = nextData;
 
     // Get the page module URL from __NEXT_DATA__.__vinext (preferred),
     // or fall back to parsing the hydration script
@@ -361,7 +361,7 @@ async function navigateClient(url: string): Promise<void> {
     const React = (await import("react")).default;
 
     // Re-render with the new page, loading _app if needed
-    let AppComponent = win.__VINEXT_APP__;
+    let AppComponent = window.__VINEXT_APP__;
     const appModuleUrl: string | undefined =
       nextData.__vinext?.appModuleUrl;
 
@@ -372,7 +372,7 @@ async function navigateClient(url: string): Promise<void> {
         try {
           const appModule = await import(/* @vite-ignore */ appModuleUrl);
           AppComponent = appModule.default;
-          win.__VINEXT_APP__ = AppComponent;
+          window.__VINEXT_APP__ = AppComponent;
         } catch {
           // _app not available — continue without it
         }
@@ -424,16 +424,16 @@ function buildRouterValue(
   const _ssrState = _getSSRContext();
   const locale = typeof window === "undefined"
     ? _ssrState?.locale
-    : (window as any).__VINEXT_LOCALE__;
+    : window.__VINEXT_LOCALE__;
   const locales = typeof window === "undefined"
     ? _ssrState?.locales
-    : (window as any).__VINEXT_LOCALES__;
+    : window.__VINEXT_LOCALES__;
   const defaultLocale = typeof window === "undefined"
     ? _ssrState?.defaultLocale
-    : (window as any).__VINEXT_DEFAULT_LOCALE__;
+    : window.__VINEXT_DEFAULT_LOCALE__;
 
   const route = typeof window !== "undefined"
-    ? ((window as any).__NEXT_DATA__?.page ?? pathname)
+    ? (window.__NEXT_DATA__?.page ?? pathname)
     : pathname;
 
   return {
@@ -447,7 +447,7 @@ function buildRouterValue(
     defaultLocale,
     isReady: true,
     isPreview: false,
-    isFallback: typeof window !== "undefined" && (window as any).__NEXT_DATA__?.isFallback === true,
+    isFallback: typeof window !== "undefined" && window.__NEXT_DATA__?.isFallback === true,
     ...methods,
     events: routerEvents,
   };
@@ -482,12 +482,16 @@ export function useRouter(): NextRouter {
 
   const push = useCallback(
     async (url: string | UrlObject, _as?: string, options?: TransitionOptions): Promise<boolean> => {
-      const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+      let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-      // External URLs — delegate to browser
+      // External URLs — delegate to browser (unless same-origin)
       if (isExternalUrl(resolved)) {
-        window.location.assign(resolved);
-        return true;
+        const localPath = toSameOriginPath(resolved);
+        if (localPath == null) {
+          window.location.assign(resolved);
+          return true;
+        }
+        resolved = localPath;
       }
 
       // Hash-only change — no page fetch needed
@@ -525,12 +529,16 @@ export function useRouter(): NextRouter {
 
   const replace = useCallback(
     async (url: string | UrlObject, _as?: string, options?: TransitionOptions): Promise<boolean> => {
-      const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+      let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-      // External URLs — delegate to browser
+      // External URLs — delegate to browser (unless same-origin)
       if (isExternalUrl(resolved)) {
-        window.location.replace(resolved);
-        return true;
+        const localPath = toSameOriginPath(resolved);
+        if (localPath == null) {
+          window.location.replace(resolved);
+          return true;
+        }
+        resolved = localPath;
       }
 
       // Hash-only change — no page fetch needed
@@ -653,12 +661,16 @@ export function wrapWithRouterContext(element: ReactElement): ReactElement {
 // Also export a default Router singleton for `import Router from 'next/router'`
 const Router = {
   push: async (url: string | UrlObject, _as?: string, options?: TransitionOptions) => {
-    const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+    let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-    // External URLs
+    // External URLs (unless same-origin)
     if (isExternalUrl(resolved)) {
-      window.location.assign(resolved);
-      return true;
+      const localPath = toSameOriginPath(resolved);
+      if (localPath == null) {
+        window.location.assign(resolved);
+        return true;
+      }
+      resolved = localPath;
     }
 
     // Hash-only change
@@ -689,12 +701,16 @@ const Router = {
     return true;
   },
   replace: async (url: string | UrlObject, _as?: string, options?: TransitionOptions) => {
-    const resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
+    let resolved = applyNavigationLocale(resolveUrl(url), options?.locale);
 
-    // External URLs
+    // External URLs (unless same-origin)
     if (isExternalUrl(resolved)) {
-      window.location.replace(resolved);
-      return true;
+      const localPath = toSameOriginPath(resolved);
+      if (localPath == null) {
+        window.location.replace(resolved);
+        return true;
+      }
+      resolved = localPath;
     }
 
     // Hash-only change

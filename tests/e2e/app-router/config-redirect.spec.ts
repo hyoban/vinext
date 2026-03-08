@@ -11,6 +11,27 @@ import { test, expect } from "@playwright/test";
 const BASE = "http://localhost:4174";
 
 test.describe("Config Redirects (OpenNext compat)", () => {
+  test("config redirects are applied to direct RSC requests", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/redirect-test-config.rsc`);
+    expect(page.url()).toMatch(/\/about/);
+
+    const el = page.getByText("About", { exact: true });
+    await expect(el).toBeVisible();
+  });
+
+  test("config redirects are applied to soft-nav RSC requests and update request path", async ({
+    page,
+  }) => {
+    await page.goto(BASE);
+    await page.click('[data-testid="redirect-test-link"]');
+    await page.waitForURL(/\/about/);
+
+    const el = page.getByText("About", { exact: true });
+    await expect(el).toBeVisible();
+  });
+
   // Ref: opennextjs-cloudflare config.redirect.test.ts — simple redirect
   test("simple redirect from config source to destination", async ({
     page,
@@ -137,17 +158,20 @@ test.describe("Config Custom Headers (OpenNext compat)", () => {
   });
 
   // Ref: opennextjs-cloudflare headers.test.ts — "Middleware headers override next.config.js headers"
-  // In Next.js, `dangerous.middlewareHeadersOverrideNextConfigHeaders` lets middleware
-  // overwrite config headers for the same key. vinext does not implement this config flag.
+  // Middleware response headers always take precedence over next.config.js `headers()` rules for
+  // the same key, matching Next.js behavior.
+  // Fixture: middleware sets e2e-headers=middleware for /headers/override-from-middleware;
+  //          next.config.ts sets e2e-headers=next.config.js on /(.*)
   // Tests: ON-8 #2 in TRACKING.md
-  test.fixme(
-    "middleware headers override config headers for same key",
-    async () => {
-      // Would test: middleware sets e2e-headers=middleware, config sets e2e-headers=next.config.js
-      // With dangerous.middlewareHeadersOverrideNextConfigHeaders enabled, middleware wins.
-      // Needs: config flag support + fixture with conflicting header keys
-    },
-  );
+  // Ported from: https://github.com/opennextjs/opennextjs-cloudflare/blob/main/examples/e2e/app-router/e2e/headers.test.ts
+  test("middleware headers override config headers for same key", async ({
+    request,
+  }) => {
+    const res = await request.get(`${BASE}/headers/override-from-middleware`);
+    expect(res.status()).toBe(200);
+    // Middleware wins: the response should carry the middleware value, not the config value.
+    expect(res.headers()["e2e-headers"]).toBe("middleware");
+  });
 
   // Ref: opennextjs-cloudflare headers.test.ts — has/missing conditions
   test("config headers with has/missing conditions", async ({ request }) => {

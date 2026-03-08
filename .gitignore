@@ -9,6 +9,7 @@ out/
 .wrangler/
 test-results/
 playwright-report/
+out-e2e
 
 # Environment + secrets
 .env
@@ -22,6 +23,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 coverage/
+
+# Worktrees
+.worktrees/
 
 # OS / editor
 .DS_Store

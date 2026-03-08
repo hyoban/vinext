@@ -266,13 +266,10 @@ test.describe("Route Handler HTTP Methods (OpenNext compat)", () => {
  *
  * In Next.js, a GET-only route handler with `export const revalidate = N`
  * receives Cache-Control: s-maxage=N, stale-while-revalidate.
- * vinext does not read `revalidate` from route handler modules.
  */
 test.describe("Route Handler Cache Headers (OpenNext compat)", () => {
   // Ref: opennextjs-cloudflare methods.test.ts — static GET cache headers
-  // vinext does not apply Cache-Control to route handler responses.
-  // The dev server only reads `revalidate` from page modules, not route handlers.
-  test.fixme(
+  test(
     "static GET route handler has s-maxage Cache-Control",
     async ({ request }) => {
       const res = await request.get(`${BASE}/api/static-data`);
@@ -285,7 +282,9 @@ test.describe("Route Handler Cache Headers (OpenNext compat)", () => {
 
   // Ref: opennextjs-cloudflare methods.test.ts — revalidation timing
   // Fixture uses revalidate=1 so the sleep can be short.
-  test.fixme(
+  // This test verifies dev behavior where responses are not cached —
+  // each GET invocation runs the handler fresh, so timestamps always differ.
+  test(
     "static GET route handler serves fresh data after revalidation period",
     async ({ request }) => {
       const res1 = await request.get(`${BASE}/api/static-data`);

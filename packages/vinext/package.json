@@ -44,6 +44,10 @@
     "./config/config-matchers": {
       "import": "./dist/config/config-matchers.js",
       "types": "./dist/config/config-matchers.d.ts"
+    },
+    "./server/worker-utils": {
+      "import": "./dist/server/worker-utils.js",
+      "types": "./dist/server/worker-utils.d.ts"
     }
   },
   "files": [
@@ -62,6 +66,7 @@
   "dependencies": {
     "@unpic/react": "^1.0.2",
     "@vercel/og": "^0.8.6",
+    "@vitejs/plugin-react": "^5.1.4",
     "@vitejs/plugin-rsc": "^0.5.19",
     "magic-string": "^0.30.21",
     "react-server-dom-webpack": "^19.2.4",

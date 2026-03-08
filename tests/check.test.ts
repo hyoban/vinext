@@ -260,6 +260,18 @@ describe("analyzeConfig", () => {
     expect(items.find((i) => i.name === "experimental.serverActions")?.status).toBe("supported");
   });
 
+  it("detects allowedDevOrigins as supported", () => {
+    writeFile(
+      "next.config.mjs",
+      `export default {
+        allowedDevOrigins: ["staging.example.com"],
+      };`,
+    );
+
+    const items = analyzeConfig(tmpDir);
+    expect(items.find((i) => i.name === "allowedDevOrigins")?.status).toBe("supported");
+  });
+
   it("detects i18n.domains as unsupported", () => {
     writeFile(
       "next.config.js",

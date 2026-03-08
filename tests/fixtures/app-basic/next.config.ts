@@ -8,7 +8,7 @@
  * Since next.config.ts takes priority over .mjs, this file must include
  * all redirects/rewrites/headers that those tests expect.
  */
-import type { NextConfig } from "next";
+import type { NextConfig } from "vinext";
 
 const nextConfig: NextConfig = {
   // Default is false — trailing slashes are stripped (redirects /about/ → /about)
@@ -54,6 +54,12 @@ const nextConfig: NextConfig = {
         permanent: false,
         missing: [{ type: "cookie", key: "stay-here" }],
       },
+      // Used by E2E: config-redirect.spec.ts
+      {
+        source: "/redirect-test-config",
+        destination: "/about",
+        permanent: false,
+      },
     ];
   },
 
@@ -67,6 +73,14 @@ const nextConfig: NextConfig = {
         ...(process.env.TEST_EXTERNAL_PROXY_TARGET
           ? [{ source: "/proxy-external-test/:path*", destination: `${process.env.TEST_EXTERNAL_PROXY_TARGET}/:path*` }]
           : []),
+        // Used by Vitest: app-router.test.ts — beforeFiles rewrite gated on a
+        // cookie injected by middleware. In App Router order, beforeFiles runs
+        // after middleware, so it should see middleware-injected cookies.
+        {
+          source: "/mw-gated-before",
+          has: [{ type: "cookie", key: "mw-before-user" }],
+          destination: "/about",
+        },
       ],
       afterFiles: [
         // Used by Vitest: app-router.test.ts
@@ -74,7 +88,17 @@ const nextConfig: NextConfig = {
         // Used by E2E: config-redirect.spec.ts
         { source: "/config-rewrite", destination: "/" },
       ],
-      fallback: [],
+      fallback: [
+        // Used by Vitest: app-router.test.ts — fallback rewrite gated on a
+        // cookie injected by middleware. Fallback runs after middleware and
+        // after a 404 from route matching, so it should see middleware-injected
+        // cookies. /mw-gated-fallback has no real page, so it falls through.
+        {
+          source: "/mw-gated-fallback",
+          has: [{ type: "cookie", key: "mw-fallback-user" }],
+          destination: "/about",
+        },
+      ],
     };
   },
 
@@ -107,6 +131,13 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [{ key: "X-E2E-Header", value: "vinext-e2e" }],
+      },
+      // Used by E2E: config-redirect.spec.ts — middleware header override test (ON-8 #2)
+      // Middleware sets e2e-headers=middleware; this config rule sets e2e-headers=next.config.js.
+      // Middleware always wins (matching Next.js behavior), so middleware's value takes precedence.
+      {
+        source: "/(.*)",
+        headers: [{ key: "e2e-headers", value: "next.config.js" }],
       },
     ];
   },

@@ -228,6 +228,38 @@ describe("nuqs", () => {
   });
 });
 
+// ─── next-intl ───────────────────────────────────────────────────────────────
+describe("next-intl", () => {
+  let proc: ChildProcess | null = null;
+  let fetchPage: (path: string) => Promise<{ html: string; status: number }>;
+
+  beforeAll(async () => {
+    const fixture = await startFixture("next-intl", 4403);
+    proc = fixture.process;
+    fetchPage = fixture.fetchPage;
+  }, 30000);
+
+  afterAll(() => killProcess(proc));
+
+  it("renders English SSR content", async () => {
+    const { html, status } = await fetchPage("/en");
+    expect(status).toBe(200);
+    expect(html).toContain('<html lang="en"');
+    expect(html).toContain('data-testid="title"');
+    expect(html).toContain("Hello World");
+    expect(html).toContain("This page uses next-intl for internationalization.");
+  });
+
+  it("renders German SSR content", async () => {
+    const { html, status } = await fetchPage("/de");
+    expect(status).toBe(200);
+    expect(html).toContain('<html lang="de"');
+    expect(html).toContain('data-testid="title"');
+    expect(html).toContain("Hallo Welt");
+    expect(html).toContain("Diese Seite verwendet next-intl zur Internationalisierung.");
+  });
+});
+
 // ─── better-auth ──────────────────────────────────────────────────────────────
 describe("better-auth", () => {
   let proc: ChildProcess | null = null;
@@ -255,7 +287,7 @@ describe("better-auth", () => {
   }
 
   beforeAll(async () => {
-    const fixture = await startFixture("better-auth", 4403);
+    const fixture = await startFixture("better-auth", 4404);
     proc = fixture.process;
     baseUrl = fixture.baseUrl;
     fetchPage = fixture.fetchPage;
@@ -359,7 +391,7 @@ describe("shadcn", () => {
   let fetchPage: (path: string) => Promise<{ html: string; status: number }>;
 
   beforeAll(async () => {
-    const fixture = await startFixture("shadcn", 4404);
+    const fixture = await startFixture("shadcn", 4405);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
   }, 30000);
@@ -404,5 +436,29 @@ describe("shadcn", () => {
     expect(html).toContain('data-testid="dropdown-trigger"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain("Open Menu");
+  });
+});
+
+// ─── validator ──────────────────────────────────────────────────────────────
+
+describe("validator", () => {
+  let proc: ChildProcess | null = null;
+  let fetchPage: (pathname: string) => Promise<{ html: string; status: number }>;
+
+  beforeAll(async () => {
+    const fixture = await startFixture("validator", 4405);
+    proc = fixture.process;
+    fetchPage = fixture.fetchPage;
+  }, 30000);
+
+  afterAll(() => killProcess(proc));
+
+  it("can import and use validator/es/lib/isEmail.js in SSR", async () => {
+    const { html, status } = await fetchPage("/");
+    expect(status).toBe(200);
+    expect(html).toContain("<h1>Validator Test</h1>");
+    // React adds HTML comments for hydration markers, so check without whitespace sensitivity
+    expect(html).toMatch(/Email:.*test@example\.com/);
+    expect(html).toMatch(/Valid:.*true/);
   });
 });

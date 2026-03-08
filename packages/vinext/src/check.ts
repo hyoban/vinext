@@ -72,6 +72,7 @@ const CONFIG_SUPPORT: Record<string, { status: Status; detail?: string }> = {
   i18n: { status: "supported", detail: "path-prefix routing (domains not yet supported)" },
   env: { status: "supported" },
   images: { status: "partial", detail: "remotePatterns validated, no local optimization" },
+  allowedDevOrigins: { status: "supported", detail: "dev server cross-origin allowlist" },
   output: { status: "supported", detail: "'export' and 'standalone' modes" },
   transpilePackages: { status: "supported", detail: "Vite handles this natively" },
   webpack: { status: "unsupported", detail: "Vite replaces webpack — custom webpack configs need migration" },
@@ -90,7 +91,7 @@ const LIBRARY_SUPPORT: Record<string, { status: Status; detail?: string }> = {
   nuqs: { status: "supported" },
   "next-view-transitions": { status: "supported" },
   "@vercel/analytics": { status: "supported", detail: "analytics script injected client-side" },
-  "next-intl": { status: "partial", detail: "works with middleware-based setup, some server component features may differ" },
+  "next-intl": { status: "partial", detail: "App Router works with next-intl/plugin + i18n/request.ts; some server component features may differ" },
   "@clerk/nextjs": { status: "unsupported", detail: "deep Next.js middleware integration not compatible" },
   "@auth/nextjs": { status: "unsupported", detail: "relies on Next.js internal auth handlers; consider migrating to better-auth" },
   "next-auth": { status: "unsupported", detail: "relies on Next.js API route internals; consider migrating to better-auth (see https://authjs.dev/getting-started/migrate-to-better-auth)" },
@@ -215,7 +216,7 @@ export function analyzeConfig(root: string): CheckItem[] {
   // Check for known config options by searching for property names in the config file
   const configOptions = [
     "basePath", "trailingSlash", "redirects", "rewrites", "headers",
-    "i18n", "env", "images", "output", "transpilePackages", "webpack",
+    "i18n", "env", "images", "allowedDevOrigins", "output", "transpilePackages", "webpack",
     "reactStrictMode", "poweredByHeader",
   ];
 

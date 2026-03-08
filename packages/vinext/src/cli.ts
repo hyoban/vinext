@@ -19,7 +19,7 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { detectPackageManager } from "./utils/project.js";
+import { detectPackageManager, ensureViteConfigCompatibility } from "./utils/project.js";
 import { deploy as runDeploy, parseDeployArgs } from "./deploy.js";
 import { runCheck, formatReport } from "./check.js";
 import { init as runInit, getReactUpgradeDeps } from "./init.js";
@@ -178,6 +178,34 @@ function buildViteConfig(overrides: Record<string, unknown> = {}) {
   return config;
 }
 
+/**
+ * Ensure the project's package.json has `"type": "module"` before Vite loads
+ * the vite.config.ts. This prevents the esbuild CJS-bundling path that Vite
+ * takes for projects without `"type": "module"`, which produces a `.mjs` temp
+ * file containing `require()` calls — calls that fail on Node 22 when
+ * targeting pure-ESM packages like `@cloudflare/vite-plugin`.
+ *
+ * This mirrors what `vinext init` does, but is applied lazily at dev/build
+ * time for projects that were set up before `vinext init` added the step, or
+ * that were migrated manually.
+ */
+function applyViteConfigCompatibility(root: string): void {
+  const result = ensureViteConfigCompatibility(root);
+  if (!result) return;
+
+  for (const [oldName, newName] of result.renamed) {
+    console.warn(
+      `  [vinext] Renamed ${oldName} → ${newName} (required for "type": "module")`
+    );
+  }
+  if (result.addedTypeModule) {
+    console.warn(
+      `  [vinext] Added "type": "module" to package.json (required for Vite ESM config loading).\n` +
+        `  Run \`vinext init\` to review all project configuration.`
+    );
+  }
+}
+
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 async function dev() {
@@ -188,6 +216,11 @@ async function dev() {
     root: process.cwd(),
     mode: "development",
   });
+
+  // Ensure "type": "module" in package.json before Vite loads vite.config.ts.
+  // Without this, Vite bundles the config as CJS and tries require() on pure-ESM
+  // packages like @cloudflare/vite-plugin, which fails on Node 22.
+  applyViteConfigCompatibility(process.cwd());
 
   const vite = await loadVite();
 
@@ -213,6 +246,11 @@ async function buildApp() {
     root: process.cwd(),
     mode: "production",
   });
+
+  // Ensure "type": "module" in package.json before Vite loads vite.config.ts.
+  // Without this, Vite bundles the config as CJS and tries require() on pure-ESM
+  // packages like @cloudflare/vite-plugin, which fails on Node 22.
+  applyViteConfigCompatibility(process.cwd());
 
   const vite = await loadVite();
 
