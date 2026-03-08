@@ -232,12 +232,12 @@ export async function loadNextConfig(
     try {
       // Load config via Vite's module runner (TS + extensionless import support)
       const { runnerImport } = await import("vite");
-      const { module } = await runnerImport(configPath, {
+      const { module: mod } = await runnerImport(configPath, {
         root,
         logLevel: "error",
         clearScreen: false,
       });
-      return await unwrapConfig(module);
+      return await unwrapConfig(mod, phase);
     } catch (e) {
       // If the error indicates a CJS file loaded in ESM context, retry with
       // createRequire which provides a proper CommonJS environment.
