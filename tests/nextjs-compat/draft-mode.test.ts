@@ -124,6 +124,30 @@ describe("Next.js compat: draft-mode", () => {
     expect(bypassCookie).not.toMatch(/;\s*Secure/i);
   });
 
+  // ── draftMode() marks dynamic usage ──────────────────────────
+  // draftMode() reads from a request cookie, so it must opt out of
+  // static/ISR caching — same as headers() and cookies().
+
+  it("draftMode() marks dynamic usage so the render is uncacheable", async () => {
+    const {
+      draftMode: draftModeFn,
+      consumeDynamicUsage,
+      runWithHeadersContext,
+      headersContextFromRequest,
+    } = await import("../../packages/vinext/src/shims/headers.js");
+
+    const ctx = headersContextFromRequest(
+      new Request("http://localhost/test"),
+    );
+    await runWithHeadersContext(ctx, async () => {
+      // Reset any prior dynamic usage
+      consumeDynamicUsage();
+
+      await draftModeFn();
+      expect(consumeDynamicUsage()).toBe(true);
+    });
+  });
+
   it("draftMode().isEnabled returns true after enable() round-trip", async () => {
     // Enable draft mode and extract the Set-Cookie value
     const enableRes = await fetch(`${baseUrl}/nextjs-compat/api/draft-enable`);

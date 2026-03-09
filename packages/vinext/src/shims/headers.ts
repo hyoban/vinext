@@ -359,6 +359,7 @@ interface DraftModeResult {
  */
 export async function draftMode(): Promise<DraftModeResult> {
   throwIfInsideCacheScope("draftMode()");
+  markDynamicUsage();
 
   const state = _getState();
   const secret = getDraftSecret();
