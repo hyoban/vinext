@@ -412,15 +412,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.4
         version: 5.1.4(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1))
-      '@vitejs/plugin-rsc':
-        specifier: ^0.5.19
-        version: 0.5.20(react-dom@19.2.4(react@19.2.4))(react-server-dom-webpack@19.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1))
       magic-string:
         specifier: ^0.30.21
         version: 0.30.21
-      react-server-dom-webpack:
-        specifier: ^19.2.4
-        version: 19.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       rsc-html-stream:
         specifier: ^0.0.7
         version: 0.0.7
@@ -440,6 +434,12 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-rsc':
+        specifier: ^0.5.19
+        version: 0.5.20(react-dom@19.2.4(react@19.2.4))(react-server-dom-webpack@19.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1))
+      react-server-dom-webpack:
+        specifier: ^19.2.4
+        version: 19.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
