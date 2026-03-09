@@ -378,6 +378,64 @@ describe("Next.js compat: metadata", () => {
     expect(html).toMatch(/meta\s+name="viewport"/);
   });
 
+  // ── generateMetadata with parent parameter ────────────────────
+  // Regression test for: https://github.com/cloudflare/vinext/issues/375
+  //
+  // Next.js passes a `parent` Promise<ResolvedMetadata> as the second argument
+  // to generateMetadata(). This allows child segments to extend ancestor metadata
+  // (e.g. prepend/append OG images from a parent layout) rather than replace it.
+  //
+  // Ported from: https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/metadata/app/dynamic/%5Bslug%5D/page.tsx
+  //   "should support generateMetadata with parent parameter"
+
+  it("should pass parent metadata to generateMetadata via parent parameter", async () => {
+    const { html } = await fetchHtml(
+      baseUrl,
+      "/nextjs-compat/metadata-parent-generate",
+    );
+    // The layout's generateMetadata() returns openGraph.images: ['/base-image.jpg'].
+    // The page's generateMetadata() prepends '/new-image.jpg' to the parent images.
+    // Both images must appear in the HTML.
+    expect(html).toMatch(/og:image.*new-image\.jpg/);
+    expect(html).toMatch(/og:image.*base-image\.jpg/);
+  });
+
+  it("should render page title from generateMetadata that uses parent", async () => {
+    const { html } = await fetchHtml(
+      baseUrl,
+      "/nextjs-compat/metadata-parent-generate",
+    );
+    expect(html).toContain("<title>parent-generate page</title>");
+  });
+
+  it("parent parameter should not be undefined (await parent must not throw)", async () => {
+    // If parent is undefined, `await parent` throws a TypeError at runtime.
+    // A successful 200 response means parent was a valid thenable.
+    const res = await fetch(`${baseUrl}/nextjs-compat/metadata-parent-generate`);
+    expect(res.status).toBe(200);
+  });
+
+  // ── generateMetadata with searchParams ───────────────────────
+  // Regression test: searchParams was not forwarded to the page's generateMetadata()
+  // call (undefined was always passed). Verify that query-string values are
+  // accessible inside generateMetadata via the searchParams argument.
+
+  it("should pass searchParams to page generateMetadata()", async () => {
+    const { html } = await fetchHtml(
+      baseUrl,
+      "/nextjs-compat/metadata-generate-searchparams?q=hello",
+    );
+    expect(html).toContain("<title>search: hello</title>");
+  });
+
+  it("generateMetadata searchParams defaults to empty when no query string", async () => {
+    const { html } = await fetchHtml(
+      baseUrl,
+      "/nextjs-compat/metadata-generate-searchparams",
+    );
+    expect(html).toContain("<title>search: (none)</title>");
+  });
+
   // ── Browser-only tests (documented, not ported) ──────────────
   //
   // N/A: 'should apply metadata when navigating client-side'
