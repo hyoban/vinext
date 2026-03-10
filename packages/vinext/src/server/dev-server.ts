@@ -556,7 +556,13 @@ export function createSSRHandler(
 
                         if (typeof pageModule.getStaticProps === "function") {
                           // Check ISR cache before calling getStaticProps
-                          const cacheKey = isrCacheKey("pages", url.split("?")[0]);
+                          const cacheKey = isrCacheKey(
+                            "pages",
+                            url.split("?")[0],
+                            // __VINEXT_BUILD_ID is a compile-time define — undefined in dev,
+                            // which is fine: dev doesn't need cross-deploy cache isolation.
+                            process.env.__VINEXT_BUILD_ID,
+                          );
                           const cached = await isrGet(cacheKey);
 
                           if (cached && !cached.isStale && cached.value.value?.kind === "PAGES") {
@@ -899,7 +905,13 @@ hydrate();
                           }
                           const isrBodyHtml = await renderToStringAsync(isrElement);
                           const isrHtml = `<!DOCTYPE html><html><head></head><body><div id="__next">${isrBodyHtml}</div>${allScripts}</body></html>`;
-                          const cacheKey = isrCacheKey("pages", url.split("?")[0]);
+                          const cacheKey = isrCacheKey(
+                            "pages",
+                            url.split("?")[0],
+                            // __VINEXT_BUILD_ID is a compile-time define — undefined in dev,
+                            // which is fine: dev doesn't need cross-deploy cache isolation.
+                            process.env.__VINEXT_BUILD_ID,
+                          );
                           await isrSet(
                             cacheKey,
                             buildPagesCacheValue(isrHtml, pageProps),
