@@ -810,6 +810,7 @@ hydrate();
                           props: { pageProps },
                           page: patternToNextFormat(route.pattern),
                           query: params,
+                          buildId: process.env.__VINEXT_BUILD_ID,
                           isFallback: false,
                           locale: locale ?? i18nConfig?.defaultLocale,
                           locales: i18nConfig?.locales,
