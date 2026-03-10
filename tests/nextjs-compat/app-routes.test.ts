@@ -325,6 +325,27 @@ describe("Next.js compat: app-routes", () => {
     expect(cacheControl).toBe("public, max-age=300");
   });
 
+  it("does not set s-maxage when a revalidated GET handler reads request-specific data", async () => {
+    const res = await fetch(`${baseUrl}/api/dynamic-request-data`, {
+      headers: {
+        "x-test-ping": "pong",
+        cookie: "ping=cookie-pong",
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ping: "pong",
+      cookie: "cookie-pong",
+    });
+
+    const cacheControl = res.headers.get("cache-control");
+    if (cacheControl) {
+      expect(cacheControl).not.toContain("s-maxage");
+      expect(cacheControl).not.toContain("stale-while-revalidate");
+    }
+  });
+
   // ── Documented skips ─────────────────────────────────────────
   //
   // N/A: 'statically generates correctly with no dynamic usage'

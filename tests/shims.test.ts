@@ -279,6 +279,70 @@ describe("next/headers shim", () => {
     expect(req.headers.get("x-custom")).toBe("original");
   });
 
+  it("headersContextFromRequest defers new Headers() copy until first write", async () => {
+    // Performance regression guard: the expensive cross-boundary copy in Workerd
+    // (new Headers(request.headers)) must NOT happen on reads — only on the
+    // first mutating call (.set/.delete/.append).
+    const { headersContextFromRequest } = await import("../packages/vinext/src/shims/headers.js");
+    const req = new Request("https://example.com", {
+      headers: { "x-foo": "bar", cookie: "a=1" },
+    });
+    const ctx = headersContextFromRequest(req);
+
+    // Reads must work before any write (no copy yet)
+    expect(ctx.headers.get("x-foo")).toBe("bar");
+    expect(ctx.headers.has("x-foo")).toBe(true);
+
+    // After a write, the copy is materialised and the new value is visible
+    ctx.headers.set("x-foo", "baz");
+    expect(ctx.headers.get("x-foo")).toBe("baz");
+
+    // Original request is untouched
+    expect(req.headers.get("x-foo")).toBe("bar");
+  });
+
+  it("headersContextFromRequest defers cookie parsing until first access", async () => {
+    // Cookie parsing should be deferred: accessing ctx.cookies triggers parsing,
+    // but merely calling headersContextFromRequest must not.
+    const { headersContextFromRequest } = await import("../packages/vinext/src/shims/headers.js");
+    const req = new Request("https://example.com", {
+      headers: { cookie: "session=xyz; theme=dark" },
+    });
+    const ctx = headersContextFromRequest(req);
+
+    // First access parses cookies
+    expect(ctx.cookies.get("session")).toBe("xyz");
+    expect(ctx.cookies.get("theme")).toBe("dark");
+
+    // Subsequent access returns the same map (no re-parse)
+    const map1 = ctx.cookies;
+    const map2 = ctx.cookies;
+    expect(map1).toBe(map2);
+  });
+
+  it("headersContextFromRequest cookie getter reflects middleware-modified cookie header", async () => {
+    // When middleware calls ctx.headers.set("cookie", ...) the lazy cookie
+    // map must reflect the new value on next access.
+    const { headersContextFromRequest, applyMiddlewareRequestHeaders, runWithHeadersContext } =
+      await import("../packages/vinext/src/shims/headers.js");
+    const req = new Request("https://example.com", {
+      headers: { cookie: "a=1" },
+    });
+    const ctx = headersContextFromRequest(req);
+
+    // Simulate middleware updating the cookie header
+    const middlewareResponseHeaders = new Headers({
+      "x-middleware-request-cookie": "a=2; b=3",
+    });
+
+    await runWithHeadersContext(ctx, async () => {
+      applyMiddlewareRequestHeaders(middlewareResponseHeaders);
+      // Cookies map should be rebuilt with the new values
+      expect(ctx.cookies.get("a")).toBe("2");
+      expect(ctx.cookies.get("b")).toBe("3");
+    });
+  });
+
   it("throws when called outside request context", async () => {
     const { headers, cookies } = await import("../packages/vinext/src/shims/headers.js");
     // Ensure context is cleared
@@ -1419,6 +1483,72 @@ describe("middleware runner", () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dev-mode runMiddleware header preservation tests
+// Tests that the middleware.ts runner (used by the dev server) preserves
+// x-middleware-request-* headers so the caller can unpack them into actual
+// request headers. This is the dev/prod parity fix — the production inline
+// codegen (pages-server-entry.ts) already preserved them correctly.
+
+describe("runMiddleware preserves x-middleware-request-* headers (dev mode)", () => {
+  it("keeps x-middleware-request-* headers on NextResponse.next()", async () => {
+    const { runMiddleware } = await import("../packages/vinext/src/server/middleware.js");
+    const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
+
+    // Mock runner that loads a fake middleware module
+    const mockRunner = {
+      import: async () => ({
+        default: () =>
+          NextResponse.next({
+            request: {
+              headers: new Headers({ "x-custom-injected": "from-middleware" }),
+            },
+          }),
+        config: { matcher: "/" },
+      }),
+    };
+
+    const request = new Request("http://localhost/");
+    const result = await runMiddleware(mockRunner as any, "/fake/middleware.ts", request);
+
+    expect(result.continue).toBe(true);
+    expect(result.responseHeaders).toBeDefined();
+    // x-middleware-request-* must survive so the dev server can unpack them
+    expect(result.responseHeaders!.get("x-middleware-request-x-custom-injected")).toBe(
+      "from-middleware",
+    );
+    // Other x-middleware-* internal headers must be stripped
+    expect(result.responseHeaders!.has("x-middleware-next")).toBe(false);
+  });
+
+  it("keeps x-middleware-request-* headers on rewrite", async () => {
+    const { runMiddleware } = await import("../packages/vinext/src/server/middleware.js");
+    const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
+
+    const mockRunner = {
+      import: async () => ({
+        default: () => {
+          const res = NextResponse.rewrite(new URL("/rewritten", "http://localhost"));
+          // Simulate middleware also setting request headers on a rewrite
+          res.headers.set("x-middleware-request-x-auth", "bearer-token");
+          return res;
+        },
+        config: { matcher: "/" },
+      }),
+    };
+
+    const request = new Request("http://localhost/");
+    const result = await runMiddleware(mockRunner as any, "/fake/middleware.ts", request);
+
+    expect(result.continue).toBe(true);
+    expect(result.rewriteUrl).toBe("/rewritten");
+    expect(result.responseHeaders).toBeDefined();
+    expect(result.responseHeaders!.get("x-middleware-request-x-auth")).toBe("bearer-token");
+    // x-middleware-rewrite must be stripped
+    expect(result.responseHeaders!.has("x-middleware-rewrite")).toBe(false);
   });
 });
 
@@ -2994,6 +3124,198 @@ describe("matchConfigPattern rejects ReDoS patterns", () => {
   });
 });
 
+describe("matchConfigPattern compiled pattern cache", () => {
+  it("returns consistent results when the same pattern is called multiple times", async () => {
+    // Regression test for the per-request recompilation bug: patterns that
+    // enter the regex branch (containing `(`, `\`, or param suffixes) were
+    // previously re-running isSafeRegex + new RegExp() on every call, which
+    // dominated CPU profiles on apps with many locale-prefixed redirect rules.
+    // After the fix the compiled RegExp is cached at module level.
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
+
+    // Locale capture-group pattern — the kind that triggered the bottleneck.
+    const localePattern = "/:locale(en|es|fr|id|ja|ko|pt-br|pt|ro|ta|tr|uk|zh-cn|zh-tw)?/security";
+
+    // First call — populates the cache.
+    const first = matchConfigPattern("/en/security", localePattern);
+    expect(first).not.toBeNull();
+    expect(first!.locale).toBe("en");
+
+    // Second call — must hit the cache and return the same result.
+    const second = matchConfigPattern("/en/security", localePattern);
+    expect(second).toEqual(first);
+
+    // Different pathname, same pattern — still uses the cached RegExp.
+    const third = matchConfigPattern("/fr/security", localePattern);
+    expect(third).not.toBeNull();
+    expect(third!.locale).toBe("fr");
+
+    // Non-matching pathname — cache must not corrupt the null path.
+    const fourth = matchConfigPattern("/de/security", localePattern);
+    expect(fourth).toBeNull();
+
+    // Plain no-match when locale omitted and path wrong.
+    const fifth = matchConfigPattern("/security/extra", localePattern);
+    expect(fifth).toBeNull();
+  });
+
+  it("caches rejection for unsafe (ReDoS) patterns and returns null on repeat calls", async () => {
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
+    // lgtm[js/redos] — deliberate pathological regex to test cache-of-null path
+    const unsafe = "/:id((a+)+b)";
+    expect(matchConfigPattern("/x", unsafe)).toBeNull();
+    // Second call must not re-run isSafeRegex — just return null from cache.
+    expect(matchConfigPattern("/x", unsafe)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchRedirect locale-static index tests
+// Verifies the O(1) locale-prefix optimization in matchRedirect.
+
+describe("matchRedirect locale-static index", () => {
+  const emptyCtx = {
+    headers: new Headers(),
+    cookies: {},
+    query: new URLSearchParams(),
+    host: "localhost",
+  };
+
+  // 63 locale-prefix rules — matches the profiled bottleneck scenario.
+  const locales = "en|es|fr|id|ja|ko|pt-br|pt|ro|ta|tr|uk|zh-cn|zh-tw|";
+  function makeLocaleRules(suffixes: string[]) {
+    return suffixes.map((s) => ({
+      source: `/:locale(${locales})?${s}`,
+      destination: `/:locale${s}-dest`,
+      permanent: false as const,
+    }));
+  }
+
+  it("matches a locale-prefixed pathname (locale present)", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = makeLocaleRules(["/security", "/advisory-board"]);
+    const result = matchRedirect("/en/security", redirects, emptyCtx);
+    expect(result).not.toBeNull();
+    expect(result!.destination).toBe("/en/security-dest");
+    expect(result!.permanent).toBe(false);
+  });
+
+  it("matches a locale-prefixed pathname (locale omitted)", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = makeLocaleRules(["/security", "/advisory-board"]);
+    // When locale is omitted the destination :locale param substitutes to "".
+    // sanitizeDestination collapses the leading double slash.
+    const result = matchRedirect("/security", redirects, emptyCtx);
+    expect(result).not.toBeNull();
+    expect(result!.destination).toBe("/security-dest");
+  });
+
+  it("returns null when pathname does not match any rule", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = makeLocaleRules(["/security", "/advisory-board"]);
+    // /blog is not in any indexed suffix
+    expect(matchRedirect("/blog", redirects, emptyCtx)).toBeNull();
+    expect(matchRedirect("/en/blog", redirects, emptyCtx)).toBeNull();
+  });
+
+  it("returns null when locale segment is not in the alternation", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = makeLocaleRules(["/security"]);
+    // "de" is not in the locales alternation
+    expect(matchRedirect("/de/security", redirects, emptyCtx)).toBeNull();
+  });
+
+  it("matches multi-segment locale codes like pt-br and zh-cn", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = makeLocaleRules(["/security"]);
+    const ptBr = matchRedirect("/pt-br/security", redirects, emptyCtx);
+    expect(ptBr).not.toBeNull();
+    expect(ptBr!.destination).toBe("/pt-br/security-dest");
+
+    const zhCn = matchRedirect("/zh-cn/security", redirects, emptyCtx);
+    expect(zhCn).not.toBeNull();
+    expect(zhCn!.destination).toBe("/zh-cn/security-dest");
+  });
+
+  it("preserves ordering: linear rule earlier than locale-static wins", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    // Rule 0 is a linear catch-all; rule 1 is locale-static.
+    // For /en/security, the linear rule (index 0) matches first.
+    const redirects = [
+      { source: "/:path*", destination: "/catchall", permanent: false as const },
+      ...makeLocaleRules(["/security"]),
+    ];
+    const result = matchRedirect("/en/security", redirects, emptyCtx);
+    expect(result).not.toBeNull();
+    expect(result!.destination).toBe("/catchall");
+  });
+
+  it("preserves ordering: locale-static rule earlier than linear wins", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    // Rule 0 is locale-static; rule 1 is linear.
+    // For /en/security, the locale-static rule (index 0) matches first.
+    const redirects = [
+      ...makeLocaleRules(["/security"]),
+      { source: "/:path*", destination: "/catchall", permanent: false as const },
+    ];
+    const result = matchRedirect("/en/security", redirects, emptyCtx);
+    expect(result).not.toBeNull();
+    expect(result!.destination).toBe("/en/security-dest");
+  });
+
+  it("returns null efficiently for 63 rules on a non-matching path (no regex exec on hot path)", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    // Construct 63 locale-prefixed rules (matches the profiled bottleneck).
+    const suffixes = Array.from({ length: 63 }, (_, i) => `/page-${i}`);
+    const redirects = makeLocaleRules(suffixes);
+    // /blog does not match any rule.
+    const result = matchRedirect("/blog", redirects, emptyCtx);
+    expect(result).toBeNull();
+    // /en/blog also does not match.
+    const result2 = matchRedirect("/en/blog", redirects, emptyCtx);
+    expect(result2).toBeNull();
+  });
+
+  it("respects has/missing conditions on locale-static rules", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    const redirects = [
+      {
+        source: `/:locale(en|fr)?/gated`,
+        destination: `/:locale/gated-dest`,
+        permanent: false as const,
+        has: [{ type: "header" as const, key: "x-auth", value: "1" }],
+      },
+    ];
+
+    // Without the header — should NOT match.
+    const noHeader = matchRedirect("/en/gated", redirects, emptyCtx);
+    expect(noHeader).toBeNull();
+
+    // With the header — should match.
+    const withHeader = matchRedirect("/en/gated", redirects, {
+      headers: new Headers({ "x-auth": "1" }),
+      cookies: {},
+      query: new URLSearchParams(),
+      host: "localhost",
+    });
+    expect(withHeader).not.toBeNull();
+    expect(withHeader!.destination).toBe("/en/gated-dest");
+  });
+
+  it("falls back to linear matching for rules that are not locale-static", async () => {
+    const { matchRedirect } = await import("../packages/vinext/src/config/config-matchers.js");
+    // A mix: some locale-static rules and one catch-all that matches /other.
+    const redirects = [
+      ...makeLocaleRules(["/security", "/advisory-board"]),
+      { source: "/other", destination: "/other-dest", permanent: true as const },
+    ];
+    const result = matchRedirect("/other", redirects, emptyCtx);
+    expect(result).not.toBeNull();
+    expect(result!.destination).toBe("/other-dest");
+    expect(result!.permanent).toBe(true);
+  });
+});
+
 describe("matchConfigPattern handles parameterized suffix patterns", () => {
   it("matches :path* with literal suffix (e.g. /:path*.md)", async () => {
     const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
@@ -3346,6 +3668,140 @@ describe("matchHeaders", () => {
     // Request without the required header should not match
     const matched = matchHeaders("/about", rules, makeCtx());
     expect(matched).toEqual([]);
+  });
+});
+
+describe("matchHeaders compiled source cache", () => {
+  // Regression test: escapeHeaderSource() + safeRegExp() were re-run on every
+  // request for every header rule. The result is now cached in _compiledHeaderSourceCache
+  // keyed by rule.source so subsequent calls skip the tokeniser and isSafeRegex.
+  function makeCtx(h: Record<string, string> = {}) {
+    return {
+      headers: new Headers(h),
+      cookies: {},
+      query: new URLSearchParams(),
+      host: "localhost",
+    };
+  }
+
+  it("returns consistent results when the same source is matched multiple times", async () => {
+    const { matchHeaders } = await import("../packages/vinext/src/config/config-matchers.js");
+    const rules: any[] = [
+      {
+        source: "/blog/:slug",
+        headers: [{ key: "x-content-type", value: "article" }],
+      },
+    ];
+
+    // First call — populates _compiledHeaderSourceCache.
+    const first = matchHeaders("/blog/hello-world", rules, makeCtx());
+    expect(first).toEqual([{ key: "x-content-type", value: "article" }]);
+
+    // Second call — must hit the cache and return the same result.
+    const second = matchHeaders("/blog/hello-world", rules, makeCtx());
+    expect(second).toEqual(first);
+
+    // Different matching pathname, same rule — still uses cached regex.
+    const third = matchHeaders("/blog/another-post", rules, makeCtx());
+    expect(third).toEqual([{ key: "x-content-type", value: "article" }]);
+
+    // Non-matching pathname.
+    const fourth = matchHeaders("/about", rules, makeCtx());
+    expect(fourth).toEqual([]);
+  });
+
+  it("caches regex-bearing source patterns (containing `(`)", async () => {
+    const { matchHeaders } = await import("../packages/vinext/src/config/config-matchers.js");
+    const rules: any[] = [
+      {
+        source: "/:locale(en|fr|de)/blog",
+        headers: [{ key: "x-locale-blog", value: "1" }],
+      },
+    ];
+
+    const first = matchHeaders("/en/blog", rules, makeCtx());
+    expect(first).toEqual([{ key: "x-locale-blog", value: "1" }]);
+
+    // Cache hit — same source pattern, different matching pathname.
+    const second = matchHeaders("/fr/blog", rules, makeCtx());
+    expect(second).toEqual([{ key: "x-locale-blog", value: "1" }]);
+
+    // Non-matching locale.
+    const third = matchHeaders("/zh/blog", rules, makeCtx());
+    expect(third).toEqual([]);
+  });
+});
+
+describe("checkHasConditions condition value cache", () => {
+  // Regression test: safeRegExp(condition.value) was called on every request
+  // for every has/missing condition. The result is now cached in
+  // _compiledConditionCache keyed by value so isSafeRegex runs at most once.
+  function makeCtx(
+    overrides: {
+      headers?: Record<string, string>;
+      cookies?: Record<string, string>;
+      query?: Record<string, string>;
+      host?: string;
+    } = {},
+  ) {
+    return {
+      headers: new Headers(overrides.headers ?? {}),
+      cookies: overrides.cookies ?? {},
+      query: new URLSearchParams(overrides.query ?? {}),
+      host: overrides.host ?? "localhost",
+    };
+  }
+
+  it("returns consistent results when the same condition value is evaluated multiple times", async () => {
+    const { checkHasConditions } = await import("../packages/vinext/src/config/config-matchers.js");
+    const has = [{ type: "header" as const, key: "x-tier", value: "pro|enterprise" }];
+
+    // First call — populates _compiledConditionCache for "pro|enterprise".
+    expect(checkHasConditions(has, undefined, makeCtx({ headers: { "x-tier": "pro" } }))).toBe(
+      true,
+    );
+
+    // Second call — must hit the cache.
+    expect(
+      checkHasConditions(has, undefined, makeCtx({ headers: { "x-tier": "enterprise" } })),
+    ).toBe(true);
+
+    // Non-matching value.
+    expect(checkHasConditions(has, undefined, makeCtx({ headers: { "x-tier": "free" } }))).toBe(
+      false,
+    );
+  });
+
+  it("caches condition values across all condition types (header, cookie, query, host)", async () => {
+    const { checkHasConditions } = await import("../packages/vinext/src/config/config-matchers.js");
+    const sharedPattern = "^v\\d+$"; // a pattern that will be cached once and reused
+
+    // header
+    const hasHeader = [{ type: "header" as const, key: "x-version", value: sharedPattern }];
+    expect(
+      checkHasConditions(hasHeader, undefined, makeCtx({ headers: { "x-version": "v3" } })),
+    ).toBe(true);
+    expect(
+      checkHasConditions(hasHeader, undefined, makeCtx({ headers: { "x-version": "v3" } })),
+    ).toBe(true);
+
+    // cookie — same pattern string, should hit cache populated by header call above
+    const hasCookie = [{ type: "cookie" as const, key: "ver", value: sharedPattern }];
+    expect(checkHasConditions(hasCookie, undefined, makeCtx({ cookies: { ver: "v1" } }))).toBe(
+      true,
+    );
+    expect(checkHasConditions(hasCookie, undefined, makeCtx({ cookies: { ver: "beta" } }))).toBe(
+      false,
+    );
+
+    // query
+    const hasQuery = [{ type: "query" as const, key: "v", value: sharedPattern }];
+    expect(checkHasConditions(hasQuery, undefined, makeCtx({ query: { v: "v2" } }))).toBe(true);
+
+    // host
+    const hasHost = [{ type: "host" as const, key: "", value: sharedPattern }];
+    expect(checkHasConditions(hasHost, undefined, makeCtx({ host: "v9" }))).toBe(true);
+    expect(checkHasConditions(hasHost, undefined, makeCtx({ host: "prod" }))).toBe(false);
   });
 });
 

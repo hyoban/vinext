@@ -2157,6 +2157,10 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                     await proxyExternalRewriteNode(req, res, fallbackRewrite);
                     return;
                   }
+                  // App Router: the RSC entry handles fallback rewrites internally
+                  // (with its own middleware + config processing). Don't dispatch
+                  // to the Pages Router handler which would 404 on App Router routes.
+                  if (hasAppDir) return next();
                   await handler(req, res, fallbackRewrite, mwStatus);
                   return;
                 }

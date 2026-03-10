@@ -1822,10 +1822,17 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     if (typeof handlerFn === "function") {
       try {
         const response = await handlerFn(request, { params });
+        const dynamicUsedInHandler = consumeDynamicUsage();
 
         // Apply Cache-Control from route segment config (export const revalidate = N).
-        // Next.js sets s-maxage on GET route handlers with a numeric revalidate value.
-        if (revalidateSeconds !== null && (method === "GET" || isAutoHead) && !response.headers.has("cache-control")) {
+        // Runtime request APIs like headers() / cookies() make GET handlers dynamic,
+        // so only attach ISR headers when the handler stayed static.
+        if (
+          revalidateSeconds !== null &&
+          !dynamicUsedInHandler &&
+          (method === "GET" || isAutoHead) &&
+          !response.headers.has("cache-control")
+        ) {
           response.headers.set("cache-control", "s-maxage=" + revalidateSeconds + ", stale-while-revalidate");
         }
 

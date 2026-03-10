@@ -7,6 +7,155 @@
 
 import type { NextRedirect, NextRewrite, NextHeader, HasCondition } from "./next-config.js";
 
+/**
+ * Cache for compiled regex patterns in matchConfigPattern.
+ *
+ * Redirect/rewrite patterns are static — they come from next.config.js and
+ * never change at runtime. Without caching, every request that hits the regex
+ * branch re-runs the full tokeniser walk + isSafeRegex + new RegExp() for
+ * every rule in the array. On apps with many locale-prefixed rules (which all
+ * contain `(` and therefore enter the regex branch) this dominated profiling
+ * at ~2.4 seconds of CPU self-time.
+ *
+ * Value is `null` when safeRegExp rejected the pattern (ReDoS risk), so we
+ * skip it on subsequent requests too without re-running the scanner.
+ */
+const _compiledPatternCache = new Map<string, { re: RegExp; paramNames: string[] } | null>();
+
+/**
+ * Cache for compiled header source regexes in matchHeaders.
+ *
+ * Each NextHeader rule has a `source` that is run through escapeHeaderSource()
+ * then safeRegExp() to produce a RegExp. Both are pure functions of the source
+ * string and the result never changes. Without caching, every request
+ * re-runs the full escapeHeaderSource tokeniser + isSafeRegex scan + new RegExp()
+ * for every header rule.
+ *
+ * Value is `null` when safeRegExp rejected the pattern (ReDoS risk).
+ */
+const _compiledHeaderSourceCache = new Map<string, RegExp | null>();
+
+/**
+ * Cache for compiled has/missing condition value regexes in checkSingleCondition.
+ *
+ * Each has/missing condition may carry a `value` string that is passed directly
+ * to safeRegExp() for matching against header/cookie/query/host values. The
+ * condition objects are static (from next.config.js) so the compiled RegExp
+ * never changes. Without caching, safeRegExp() is called on every request for
+ * every condition on every rule.
+ *
+ * Value is `null` when safeRegExp rejected the pattern, or `false` when the
+ * value string was undefined (no regex needed — use exact string comparison).
+ */
+const _compiledConditionCache = new Map<string, RegExp | null>();
+
+/**
+ * Redirect index for O(1) locale-static rule lookup.
+ *
+ * Many Next.js apps generate 50-100 redirect rules of the form:
+ *   /:locale(en|es|fr|...)?/some-static-path  →  /some-destination
+ *
+ * The compiled regex for each is like:
+ *   ^/(en|es|fr|...)?/some-static-path$
+ *
+ * When no redirect matches (the common case for ordinary page loads),
+ * matchRedirect previously ran exec() on every one of those regexes —
+ * ~2ms per call, ~2992ms total self-time in profiles.
+ *
+ * The index splits rules into two buckets:
+ *
+ *   localeStatic — rules whose source is exactly /:paramName(alt1|alt2|...)?/suffix
+ *     where `suffix` is a static path with no further params or regex groups.
+ *     These are indexed in a Map<suffix, entry[]> for O(1) lookup after a
+ *     single fast strip of the optional locale prefix.
+ *
+ *   linear — all other rules. Matched with the original O(n) loop.
+ *
+ * The index is stored in a WeakMap keyed by the redirects array so it is
+ * computed once per config load and GC'd when the array is no longer live.
+ *
+ * ## Ordering invariant
+ *
+ * Redirect rules must be evaluated in their original order (first match wins).
+ * Each locale-static entry stores its `originalIndex` so that, when a
+ * locale-static fast-path match is found, any linear rules that appear earlier
+ * in the array are still checked first.
+ */
+
+/** Matches `/:param(alternation)?/static/suffix` — the locale-static pattern. */
+const _LOCALE_STATIC_RE = /^\/:[\w-]+\(([^)]+)\)\?\/([a-zA-Z0-9_~.%@!$&'*+,;=:/-]+)$/;
+
+type LocaleStaticEntry = {
+  /** The param name extracted from the source (e.g. "locale"). */
+  paramName: string;
+  /** The compiled regex matching just the alternation, used at match time. */
+  altRe: RegExp;
+  /** The original redirect rule. */
+  redirect: NextRedirect;
+  /** Position of this rule in the original redirects array. */
+  originalIndex: number;
+};
+
+type RedirectIndex = {
+  /** Fast-path map: strippedPath (e.g. "/security") → matching entries. */
+  localeStatic: Map<string, LocaleStaticEntry[]>;
+  /**
+   * Linear fallback for rules that couldn't be indexed.
+   * Each entry is [originalIndex, redirect].
+   */
+  linear: Array<[number, NextRedirect]>;
+};
+
+const _redirectIndexCache = new WeakMap<NextRedirect[], RedirectIndex>();
+
+/**
+ * Build (or retrieve from cache) the redirect index for a given redirects array.
+ *
+ * Called once per config load from matchRedirect. The WeakMap ensures the index
+ * is recomputed if the config is reloaded (new array reference) and GC'd when
+ * the array is collected.
+ */
+function _getRedirectIndex(redirects: NextRedirect[]): RedirectIndex {
+  let index = _redirectIndexCache.get(redirects);
+  if (index !== undefined) return index;
+
+  const localeStatic = new Map<string, LocaleStaticEntry[]>();
+  const linear: Array<[number, NextRedirect]> = [];
+
+  for (let i = 0; i < redirects.length; i++) {
+    const redirect = redirects[i];
+    const m = _LOCALE_STATIC_RE.exec(redirect.source);
+    if (m) {
+      const paramName = redirect.source.slice(2, redirect.source.indexOf("("));
+      const alternation = m[1];
+      const suffix = "/" + m[2]; // e.g. "/security"
+      // Build a small regex to validate the captured locale value against the
+      // alternation. Using anchored match to avoid partial matches.
+      // The alternation comes from user config; run it through safeRegExp to
+      // guard against ReDoS in pathological configs.
+      const altRe = safeRegExp("^(?:" + alternation + ")$");
+      if (!altRe) {
+        // Unsafe alternation — fall back to linear scan for this rule.
+        linear.push([i, redirect]);
+        continue;
+      }
+      const entry: LocaleStaticEntry = { paramName, altRe, redirect, originalIndex: i };
+      const bucket = localeStatic.get(suffix);
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        localeStatic.set(suffix, [entry]);
+      }
+    } else {
+      linear.push([i, redirect]);
+    }
+  }
+
+  index = { localeStatic, linear };
+  _redirectIndexCache.set(redirects, index);
+  return index;
+}
+
 /** Hop-by-hop headers that should not be forwarded through a proxy. */
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -330,7 +479,7 @@ function checkSingleCondition(condition: HasCondition, ctx: RequestContext): boo
       const headerValue = ctx.headers.get(condition.key);
       if (headerValue === null) return false;
       if (condition.value !== undefined) {
-        const re = safeRegExp(condition.value);
+        const re = _cachedConditionRegex(condition.value);
         if (re) return re.test(headerValue);
         return headerValue === condition.value;
       }
@@ -340,7 +489,7 @@ function checkSingleCondition(condition: HasCondition, ctx: RequestContext): boo
       const cookieValue = ctx.cookies[condition.key];
       if (cookieValue === undefined) return false;
       if (condition.value !== undefined) {
-        const re = safeRegExp(condition.value);
+        const re = _cachedConditionRegex(condition.value);
         if (re) return re.test(cookieValue);
         return cookieValue === condition.value;
       }
@@ -350,7 +499,7 @@ function checkSingleCondition(condition: HasCondition, ctx: RequestContext): boo
       const queryValue = ctx.query.get(condition.key);
       if (queryValue === null) return false;
       if (condition.value !== undefined) {
-        const re = safeRegExp(condition.value);
+        const re = _cachedConditionRegex(condition.value);
         if (re) return re.test(queryValue);
         return queryValue === condition.value;
       }
@@ -358,7 +507,7 @@ function checkSingleCondition(condition: HasCondition, ctx: RequestContext): boo
     }
     case "host": {
       if (condition.value !== undefined) {
-        const re = safeRegExp(condition.value);
+        const re = _cachedConditionRegex(condition.value);
         if (re) return re.test(ctx.host);
         return ctx.host === condition.value;
       }
@@ -367,6 +516,20 @@ function checkSingleCondition(condition: HasCondition, ctx: RequestContext): boo
     default:
       return false;
   }
+}
+
+/**
+ * Return a cached RegExp for a has/missing condition value string, compiling
+ * on first use. Returns null if safeRegExp rejected the pattern or if the
+ * value is not a valid regex (fall back to exact string comparison).
+ */
+function _cachedConditionRegex(value: string): RegExp | null {
+  let re = _compiledConditionCache.get(value);
+  if (re === undefined) {
+    re = safeRegExp(value);
+    _compiledConditionCache.set(value, re);
+  }
+  return re;
 }
 
 /**
@@ -444,49 +607,59 @@ export function matchConfigPattern(
     /:[\w-]+\./.test(pattern)
   ) {
     try {
-      // Param names may contain hyphens (e.g. :auth-method, :sign-in).
-      const paramNames: string[] = [];
-      // Single-pass conversion with procedural suffix handling. The tokenizer
-      // matches only simple, non-overlapping tokens; quantifier/constraint
-      // suffixes after :param are consumed procedurally to avoid polynomial
-      // backtracking in the regex engine.
-      let regexStr = "";
-      const tokenRe = /:([\w-]+)|[.]|[^:.]+/g; // lgtm[js/redos] — alternatives are non-overlapping (`:` and `.` excluded from `[^:.]+`)
-      let tok: RegExpExecArray | null;
-      while ((tok = tokenRe.exec(pattern)) !== null) {
-        if (tok[1] !== undefined) {
-          const name = tok[1];
-          const rest = pattern.slice(tokenRe.lastIndex);
-          // Check for quantifier (* or +) with optional constraint
-          if (rest.startsWith("*") || rest.startsWith("+")) {
-            const quantifier = rest[0];
-            tokenRe.lastIndex += 1;
-            const constraint = extractConstraint(pattern, tokenRe);
-            paramNames.push(name);
-            if (constraint !== null) {
-              regexStr += `(${constraint})`;
+      // Look up the compiled regex in the module-level cache. Patterns come
+      // from next.config.js and are static, so we only need to compile each
+      // one once across the lifetime of the worker/server process.
+      let compiled = _compiledPatternCache.get(pattern);
+      if (compiled === undefined) {
+        // Cache miss — compile the pattern now and store the result.
+        // Param names may contain hyphens (e.g. :auth-method, :sign-in).
+        const paramNames: string[] = [];
+        // Single-pass conversion with procedural suffix handling. The tokenizer
+        // matches only simple, non-overlapping tokens; quantifier/constraint
+        // suffixes after :param are consumed procedurally to avoid polynomial
+        // backtracking in the regex engine.
+        let regexStr = "";
+        const tokenRe = /:([\w-]+)|[.]|[^:.]+/g; // lgtm[js/redos] — alternatives are non-overlapping (`:` and `.` excluded from `[^:.]+`)
+        let tok: RegExpExecArray | null;
+        while ((tok = tokenRe.exec(pattern)) !== null) {
+          if (tok[1] !== undefined) {
+            const name = tok[1];
+            const rest = pattern.slice(tokenRe.lastIndex);
+            // Check for quantifier (* or +) with optional constraint
+            if (rest.startsWith("*") || rest.startsWith("+")) {
+              const quantifier = rest[0];
+              tokenRe.lastIndex += 1;
+              const constraint = extractConstraint(pattern, tokenRe);
+              paramNames.push(name);
+              if (constraint !== null) {
+                regexStr += `(${constraint})`;
+              } else {
+                regexStr += quantifier === "*" ? "(.*)" : "(.+)";
+              }
             } else {
-              regexStr += quantifier === "*" ? "(.*)" : "(.+)";
+              // Check for inline constraint without quantifier
+              const constraint = extractConstraint(pattern, tokenRe);
+              paramNames.push(name);
+              regexStr += constraint !== null ? `(${constraint})` : "([^/]+)";
             }
+          } else if (tok[0] === ".") {
+            regexStr += "\\.";
           } else {
-            // Check for inline constraint without quantifier
-            const constraint = extractConstraint(pattern, tokenRe);
-            paramNames.push(name);
-            regexStr += constraint !== null ? `(${constraint})` : "([^/]+)";
+            regexStr += tok[0];
           }
-        } else if (tok[0] === ".") {
-          regexStr += "\\.";
-        } else {
-          regexStr += tok[0];
         }
+        const re = safeRegExp("^" + regexStr + "$");
+        // Store null for rejected patterns so we don't re-run isSafeRegex.
+        compiled = re ? { re, paramNames } : null;
+        _compiledPatternCache.set(pattern, compiled);
       }
-      const re = safeRegExp("^" + regexStr + "$");
-      if (!re) return null;
-      const match = re.exec(pathname);
+      if (!compiled) return null;
+      const match = compiled.re.exec(pathname);
       if (!match) return null;
       const params: Record<string, string> = Object.create(null);
-      for (let i = 0; i < paramNames.length; i++) {
-        params[paramNames[i]] = match[i + 1] ?? "";
+      for (let i = 0; i < compiled.paramNames.length; i++) {
+        params[compiled.paramNames[i]] = match[i + 1] ?? "";
       }
       return params;
     } catch {
@@ -539,13 +712,117 @@ export function matchConfigPattern(
  * `ctx` provides the request context (cookies, headers, query, host) used
  * to evaluate has/missing conditions. Next.js always has request context
  * when evaluating redirects, so this parameter is required.
+ *
+ * ## Performance
+ *
+ * Rules with a locale-capture-group prefix (the dominant pattern in large
+ * Next.js apps — e.g. `/:locale(en|es|fr|...)?/some-path`) are handled via
+ * a pre-built index. Instead of running exec() on each locale regex
+ * individually, we:
+ *
+ *   1. Strip the optional locale prefix from the pathname with one cheap
+ *      string-slice check (no regex exec on the hot path).
+ *   2. Look up the stripped suffix in a Map<suffix, entry[]>.
+ *   3. For each matching entry, validate the captured locale string against
+ *      a small, anchored alternation regex.
+ *
+ * This reduces the per-request cost from O(n × regex) to O(1) map lookup +
+ * O(matches × tiny-regex), eliminating the ~2992ms self-time reported in
+ * profiles for apps with 63+ locale-prefixed rules.
+ *
+ * Rules that don't fit the locale-static pattern fall back to the original
+ * linear matchConfigPattern scan.
+ *
+ * ## Ordering invariant
+ *
+ * First match wins, preserving the original redirect array order. When a
+ * locale-static fast-path match is found at position N, all linear rules with
+ * an original index < N are checked via matchConfigPattern first — they are
+ * few in practice (typically zero) so this is not a hot-path concern.
  */
 export function matchRedirect(
   pathname: string,
   redirects: NextRedirect[],
   ctx: RequestContext,
 ): { destination: string; permanent: boolean } | null {
-  for (const redirect of redirects) {
+  if (redirects.length === 0) return null;
+
+  const index = _getRedirectIndex(redirects);
+
+  // --- Locate the best locale-static candidate ---
+  //
+  // We look for the locale-static entry with the LOWEST originalIndex that
+  // matches this pathname (and passes has/missing conditions).
+  //
+  // Strategy: try both the full pathname (locale omitted, e.g. "/security")
+  // and the pathname with the first segment stripped (locale present, e.g.
+  // "/en/security" → suffix "/security", locale "en").
+  //
+  // We do NOT use a regex here — just a single indexOf('/') to locate the
+  // second slash, which is O(n) on the path length but far cheaper than
+  // running 63 compiled regexes.
+
+  let localeMatch: { destination: string; permanent: boolean } | null = null;
+  let localeMatchIndex = Infinity;
+
+  if (index.localeStatic.size > 0) {
+    // Case 1: no locale prefix — pathname IS the suffix.
+    const noLocaleBucket = index.localeStatic.get(pathname);
+    if (noLocaleBucket) {
+      for (const entry of noLocaleBucket) {
+        if (entry.originalIndex >= localeMatchIndex) continue; // already have a better match
+        const redirect = entry.redirect;
+        if (redirect.has || redirect.missing) {
+          if (!checkHasConditions(redirect.has, redirect.missing, ctx)) continue;
+        }
+        // Locale was omitted (the `?` made it optional) — param value is "".
+        let dest = redirect.destination;
+        dest = dest.replace(`:${entry.paramName}`, "");
+        dest = sanitizeDestination(dest);
+        localeMatch = { destination: dest, permanent: redirect.permanent };
+        localeMatchIndex = entry.originalIndex;
+        break; // bucket entries are in insertion order = original order
+      }
+    }
+
+    // Case 2: locale prefix present — first path segment is the locale.
+    // Find the second slash: pathname = "/locale/rest/of/path"
+    //                                         ^--- slashTwo
+    const slashTwo = pathname.indexOf("/", 1);
+    if (slashTwo !== -1) {
+      const suffix = pathname.slice(slashTwo); // e.g. "/security"
+      const localePart = pathname.slice(1, slashTwo); // e.g. "en"
+      const localeBucket = index.localeStatic.get(suffix);
+      if (localeBucket) {
+        for (const entry of localeBucket) {
+          if (entry.originalIndex >= localeMatchIndex) continue;
+          // Validate that `localePart` is one of the allowed alternation values.
+          if (!entry.altRe.test(localePart)) continue;
+          const redirect = entry.redirect;
+          if (redirect.has || redirect.missing) {
+            if (!checkHasConditions(redirect.has, redirect.missing, ctx)) continue;
+          }
+          let dest = redirect.destination;
+          dest = dest.replace(`:${entry.paramName}`, localePart);
+          dest = sanitizeDestination(dest);
+          localeMatch = { destination: dest, permanent: redirect.permanent };
+          localeMatchIndex = entry.originalIndex;
+          break; // bucket entries are in insertion order = original order
+        }
+      }
+    }
+  }
+
+  // --- Linear fallback: all non-locale-static rules ---
+  //
+  // We only need to check linear rules whose originalIndex < localeMatchIndex.
+  // If localeMatchIndex is Infinity (no locale match), we check all of them.
+  for (const [origIdx, redirect] of index.linear) {
+    if (origIdx >= localeMatchIndex) {
+      // This linear rule comes after the best locale-static match —
+      // the locale-static match wins. Stop scanning.
+      break;
+    }
     const params = matchConfigPattern(pathname, redirect.source);
     if (params) {
       if (redirect.has || redirect.missing) {
@@ -566,7 +843,9 @@ export function matchRedirect(
       return { destination: dest, permanent: redirect.permanent };
     }
   }
-  return null;
+
+  // Return the locale-static match if found (no earlier linear rule matched).
+  return localeMatch;
 }
 
 /**
@@ -752,8 +1031,14 @@ export function matchHeaders(
 ): Array<{ key: string; value: string }> {
   const result: Array<{ key: string; value: string }> = [];
   for (const rule of headers) {
-    const escaped = escapeHeaderSource(rule.source);
-    const sourceRegex = safeRegExp("^" + escaped + "$");
+    // Cache the compiled source regex — escapeHeaderSource() + safeRegExp() are
+    // pure functions of rule.source and the result never changes between requests.
+    let sourceRegex = _compiledHeaderSourceCache.get(rule.source);
+    if (sourceRegex === undefined) {
+      const escaped = escapeHeaderSource(rule.source);
+      sourceRegex = safeRegExp("^" + escaped + "$");
+      _compiledHeaderSourceCache.set(rule.source, sourceRegex);
+    }
     if (sourceRegex && sourceRegex.test(pathname)) {
       if (rule.has || rule.missing) {
         if (!checkHasConditions(rule.has, rule.missing, ctx)) {

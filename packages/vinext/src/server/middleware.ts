@@ -303,11 +303,12 @@ export async function runMiddleware(
   // Check for x-middleware-next header (NextResponse.next())
   if (response.headers.get("x-middleware-next") === "1") {
     // Continue to the route, but apply any headers the middleware set.
-    // Strip ALL x-middleware-* headers (including x-middleware-request-*)
-    // so they never leak to the client — they are internal routing signals.
+    // Keep x-middleware-request-* headers so the caller can unpack them
+    // into actual request headers (e.g. middleware-modified cookies).
+    // Strip all other x-middleware-* internal routing signals.
     const responseHeaders = new Headers();
     for (const [key, value] of response.headers) {
-      if (!key.startsWith("x-middleware-")) {
+      if (!key.startsWith("x-middleware-") || key.startsWith("x-middleware-request-")) {
         responseHeaders.append(key, value);
       }
     }
@@ -337,10 +338,11 @@ export async function runMiddleware(
   // Check for rewrite (x-middleware-rewrite header)
   const rewriteUrl = response.headers.get("x-middleware-rewrite");
   if (rewriteUrl) {
-    // Continue to the route but with a rewritten URL
+    // Continue to the route but with a rewritten URL.
+    // Keep x-middleware-request-* headers (same rationale as next() above).
     const responseHeaders = new Headers();
     for (const [key, value] of response.headers) {
-      if (!key.startsWith("x-middleware-")) {
+      if (!key.startsWith("x-middleware-") || key.startsWith("x-middleware-request-")) {
         responseHeaders.append(key, value);
       }
     }
