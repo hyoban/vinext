@@ -1068,24 +1068,29 @@ describe("App Router integration", () => {
     expect(html).not.toContain("Enter a search term");
   });
 
-  it("sets optimizeDeps.entries for rsc and ssr environments so deps are discovered at startup", () => {
+  it("sets optimizeDeps.entries for rsc, ssr, and client environments so deps are discovered at startup", () => {
     // Without optimizeDeps.entries, Vite only crawls build.rollupOptions.input
     // for dependency discovery — but those are virtual modules that don't
     // import user dependencies. This causes lazy discovery, re-optimisation
     // cascades, and "Invalid hook call" errors on first load.
     const rscEntries = server.config.environments.rsc?.optimizeDeps?.entries;
     const ssrEntries = server.config.environments.ssr?.optimizeDeps?.entries;
+    const clientEntries = server.config.environments.client?.optimizeDeps?.entries;
 
     expect(rscEntries).toBeDefined();
     expect(ssrEntries).toBeDefined();
+    expect(clientEntries).toBeDefined();
     expect(Array.isArray(rscEntries)).toBe(true);
     expect(Array.isArray(ssrEntries)).toBe(true);
+    expect(Array.isArray(clientEntries)).toBe(true);
 
     // Entries should include a glob pattern that covers app/ source files
     const rscGlob = (rscEntries as string[]).join(",");
     const ssrGlob = (ssrEntries as string[]).join(",");
+    const clientGlob = (clientEntries as string[]).join(",");
     expect(rscGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
     expect(ssrGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
+    expect(clientGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
   });
 
   it("pre-includes framework dependencies in optimizeDeps.include to avoid late discovery", () => {

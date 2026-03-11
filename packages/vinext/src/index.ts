@@ -1305,6 +1305,10 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
               consumer: "client",
               optimizeDeps: {
                 exclude: ["vinext"],
+                // Crawl app/ source files up front so client-only deps imported
+                // by user components are discovered during startup instead of
+                // triggering a late re-optimisation + full page reload.
+                entries: appEntries,
                 // React packages aren't crawled from app/ source files,
                 // so must be pre-included to avoid late discovery (#25).
                 include: [
