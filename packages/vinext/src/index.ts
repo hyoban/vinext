@@ -953,9 +953,10 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // previous deploy are never served by the new one.
         defines["process.env.__VINEXT_BUILD_ID"] = JSON.stringify(nextConfig.buildId);
 
-        // Build the shim alias map — used by both resolve.alias and resolveId
-        // (resolveId handles .js extension variants for libraries like nuqs)
-        nextShimMap = {
+        // Build the shim alias map. We include exact `.js` variants up front so
+        // optimizeDeps/esbuild can also resolve package imports like
+        // `next/navigation.js` through vinext shims instead of bundling real Next.
+        const nextShimBaseMap = {
           ...nextConfig.aliases,
           "next/link": path.join(shimsDir, "link"),
           "next/head": path.join(shimsDir, "head"),
@@ -1037,6 +1038,15 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           "vinext/head-state": path.join(shimsDir, "head-state"),
           "vinext/instrumentation": path.resolve(__dirname, "server", "instrumentation"),
           "vinext/html": path.resolve(__dirname, "server", "html"),
+        };
+        const nextShimJsVariants = Object.fromEntries(
+          Object.entries(nextShimBaseMap)
+            .filter(([key]) => key.startsWith("next/") && !key.endsWith(".js"))
+            .map(([key, value]) => [`${key}.js`, value]),
+        );
+        nextShimMap = {
+          ...nextShimBaseMap,
+          ...nextShimJsVariants,
         };
 
         // Detect if Cloudflare's vite plugin is present — if so, skip
