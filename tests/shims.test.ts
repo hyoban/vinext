@@ -189,13 +189,34 @@ describe("next/navigation shim", () => {
     expect(typeof nav.useSelectedLayoutSegments).toBe("function");
   });
 
-  it("shares the layout segment context across multiple module instances", async () => {
-    const instanceAPath = "../packages/vinext/src/shims/layout-segment-context-shared.js?instance=a";
-    const instanceBPath = "../packages/vinext/src/shims/layout-segment-context-shared.js?instance=b";
-    const modA = await import(instanceAPath);
-    const modB = await import(instanceBPath);
+  it("useSelectedLayoutSegment still works when provider and hook are loaded from different module instances", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const hookPath = "../packages/vinext/src/shims/navigation.js?hook-instance=a";
+    const providerPath = "../packages/vinext/src/shims/layout-segment-context.tsx?provider-instance=b";
+    const hookMod: typeof import("../packages/vinext/src/shims/navigation.js") = await import(
+      hookPath
+    );
+    const providerMod: typeof import(
+      "../packages/vinext/src/shims/layout-segment-context.tsx"
+    ) = await import(providerPath);
 
-    expect(modA.getLayoutSegmentContext()).toBe(modB.getLayoutSegmentContext());
+    function Probe() {
+      const segment = hookMod.useSelectedLayoutSegment();
+      return React.createElement("span", { "data-testid": "segment" }, segment ?? "null");
+    }
+
+    const html = renderToStaticMarkup(
+      React.createElement(
+        providerMod.LayoutSegmentProvider,
+        {
+          childSegments: ["explore"],
+          children: React.createElement(Probe),
+        },
+      ),
+    );
+
+    expect(html).toContain(">explore<");
   });
 
   it("useSelectedLayoutSegments returns empty array outside React context", async () => {
