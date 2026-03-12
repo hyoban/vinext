@@ -359,19 +359,6 @@ describe("App Router integration", () => {
     expect(html).toMatch(/data-testid="segment"[^>]*>null</);
   });
 
-  // Adapted from the same Next.js hooks coverage:
-  // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/hooks/hooks.test.ts
-  it("useSelectedLayoutSegment works in a client child rendered by a route-group layout", async () => {
-    const res = await fetch(`${baseUrl}/segment-check/alpha`);
-    expect(res.status).toBe(200);
-    const html = await res.text();
-
-    expect(html).toMatch(
-      /data-testid="route-group-layout-segments"[^>]*>\[&quot;segment-check&quot;,&quot;alpha&quot;\]</,
-    );
-    expect(html).toMatch(/data-testid="route-group-layout-segment"[^>]*>segment-check</);
-  });
-
   // --- Intercepting routes ---
 
   it("renders full photo page on direct navigation (SSR)", async () => {

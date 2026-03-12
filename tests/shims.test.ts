@@ -189,6 +189,15 @@ describe("next/navigation shim", () => {
     expect(typeof nav.useSelectedLayoutSegments).toBe("function");
   });
 
+  it("shares the layout segment context across multiple module instances", async () => {
+    const instanceAPath = "../packages/vinext/src/shims/layout-segment-context-shared.js?instance=a";
+    const instanceBPath = "../packages/vinext/src/shims/layout-segment-context-shared.js?instance=b";
+    const modA = await import(instanceAPath);
+    const modB = await import(instanceBPath);
+
+    expect(modA.getLayoutSegmentContext()).toBe(modB.getLayoutSegmentContext());
+  });
+
   it("useSelectedLayoutSegments returns empty array outside React context", async () => {
     const { useSelectedLayoutSegments } =
       await import("../packages/vinext/src/shims/navigation.js");
