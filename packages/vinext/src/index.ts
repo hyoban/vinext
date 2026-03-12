@@ -1039,6 +1039,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           "vinext/instrumentation": path.resolve(__dirname, "server", "instrumentation"),
           "vinext/html": path.resolve(__dirname, "server", "html"),
         };
+        // Mirrors the public `*.js` entrypoints published by Next in
+        // `next/package.json` (`files` field).
         const nextFileBackedJsAliasKeys = [
           "next/app",
           "next/cache",
