@@ -19,6 +19,8 @@ import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
 // Stores the child segments below the current layout. Each layout wraps its
 // children with a provider whose value is the remaining route tree segments
 // (including route groups, with dynamic params resolved to actual values).
+// Created lazily because `React.createContext` is NOT available in the
+// react-server condition of React. In the RSC environment, this remains null.
 // The shared context lives behind a global singleton so provider/hook pairs
 // still line up if Vite loads this shim through multiple resolved module IDs.
 const _LAYOUT_SEGMENT_CTX_KEY = Symbol.for("vinext.layoutSegmentContext");
