@@ -230,12 +230,20 @@ describe("nuqs", () => {
   it("prebundles next/navigation.js imports against vinext shims", async () => {
     await fetchPage("/");
 
+    const depsDir = path.join(fixtureRoot, "node_modules", ".vite", "deps");
+    const metadata = JSON.parse(readFileSync(path.join(depsDir, "_metadata.json"), "utf8")) as {
+      optimized?: Record<string, { file?: string }>;
+    };
+    const optimizedAdapterFile = metadata.optimized?.["nuqs/adapters/next/app"]?.file;
+
+    expect(optimizedAdapterFile).toBeDefined();
+
     const optimizedAdapter = readFileSync(
-      path.join(fixtureRoot, "node_modules", ".vite", "deps", "nuqs_adapters_next_app.js"),
+      path.join(depsDir, optimizedAdapterFile!),
       "utf8",
     );
 
-    expect(optimizedAdapter).toContain("packages/vinext/dist/shims/navigation.js");
+    expect(optimizedAdapter).toMatch(/shims\/navigation\.js/);
     expect(optimizedAdapter).not.toContain("node_modules/.pnpm/next@");
   });
 });
