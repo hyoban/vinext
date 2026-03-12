@@ -1462,19 +1462,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           // environment's import-analysis can find it.
           const cleanId = id.startsWith("\0") ? id.slice(1) : id;
 
-          // Handle next/* imports with .js extension (e.g. "next/navigation.js")
-          // Libraries like nuqs import "next/navigation.js" which doesn't match
-          // our resolve.alias for "next/navigation". Strip the .js and resolve
-          // through our shim map, appending .js to the resolved path.
-          if (cleanId.startsWith("next/") && cleanId.endsWith(".js")) {
-            const withoutExt = cleanId.slice(0, -3);
-            if (nextShimMap[withoutExt]) {
-              const shimPath = nextShimMap[withoutExt];
-              // Alias values don't include .js — append it for resolveId
-              return shimPath.endsWith(".js") ? shimPath : shimPath + ".js";
-            }
-          }
-
           // Pages Router virtual modules
           if (cleanId === VIRTUAL_SERVER_ENTRY) return RESOLVED_SERVER_ENTRY;
           if (cleanId === VIRTUAL_CLIENT_ENTRY) return RESOLVED_CLIENT_ENTRY;
