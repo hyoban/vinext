@@ -250,6 +250,10 @@ function getViteMajorVersion(): number {
   }
 }
 
+type UserResolveConfigWithTsconfigPaths = NonNullable<UserConfig["resolve"]> & {
+  tsconfigPaths?: boolean;
+};
+
 /**
  * PostCSS config file names to search for, in priority order.
  * Matches the same search order as postcss-load-config / lilconfig.
@@ -704,6 +708,7 @@ export interface VinextOptions {
 }
 
 export default function vinext(options: VinextOptions = {}): PluginOption[] {
+  const viteMajorVersion = getViteMajorVersion();
   let root: string;
   let pagesDir: string;
   let appDir: string;
@@ -824,7 +829,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   const plugins: PluginOption[] = [
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
-    tsconfigPaths(),
+    // Vite 8+ supports this natively via resolve.tsconfigPaths.
+    ...(viteMajorVersion >= 8 ? [] : [tsconfigPaths()]),
     // React Fast Refresh + JSX transform for client components.
     reactPlugin,
     // Transform CJS require()/module.exports to ESM before other plugins
@@ -836,6 +842,9 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
 
       async config(config, env) {
         root = config.root ?? process.cwd();
+        const userResolve = config.resolve as UserResolveConfigWithTsconfigPaths | undefined;
+        const shouldEnableNativeTsconfigPaths =
+          viteMajorVersion >= 8 && userResolve?.tsconfigPaths === undefined;
 
         // Load .env files into process.env before anything else.
         // Next.js loads .env files before evaluating next.config.js, so
@@ -1238,6 +1247,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             // causing cryptic "Invalid hook call" errors. This is a no-op
             // when only one copy exists.
             dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
+            ...(shouldEnableNativeTsconfigPaths ? { tsconfigPaths: true } : {}),
           },
           // Exclude vinext from dependency optimization so esbuild doesn't
           // scan dist files containing virtual module imports (virtual:vinext-*)
@@ -1250,7 +1260,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           },
           // Enable JSX in .tsx/.jsx files
           // Vite 7 uses `esbuild` for transforms, Vite 8+ uses `oxc`
-          ...(getViteMajorVersion() >= 8
+          ...(viteMajorVersion >= 8
             ? { oxc: { jsx: { runtime: "automatic" } } }
             : { esbuild: { jsx: "automatic" } }),
           // Define env vars for client bundle
