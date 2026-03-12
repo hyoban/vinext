@@ -216,6 +216,35 @@ describe("next/navigation shim", () => {
     expect(html).toContain(">explore<");
   });
 
+  it("ServerInsertedHTMLContext stays shared across multiple module instances", async () => {
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const providerPath = "../packages/vinext/src/shims/navigation.js?inserted-html-provider=a";
+    const consumerPath = "../packages/vinext/src/shims/navigation.js?inserted-html-consumer=b";
+    const [providerMod, consumerMod]: [
+      typeof import("../packages/vinext/src/shims/navigation.js"),
+      typeof import("../packages/vinext/src/shims/navigation.js"),
+    ] = await Promise.all([import(providerPath), import(consumerPath)]);
+    const providerCtx = providerMod.ServerInsertedHTMLContext;
+    const consumerCtx = consumerMod.ServerInsertedHTMLContext;
+    expect(providerCtx).toBeTruthy();
+    expect(consumerCtx).toBeTruthy();
+
+    const register = () => {};
+    let received: unknown = undefined;
+
+    function Probe() {
+      received = React.useContext(consumerCtx!);
+      return null;
+    }
+
+    renderToStaticMarkup(
+      React.createElement(providerCtx!.Provider, { value: register }, React.createElement(Probe)),
+    );
+
+    expect(received).toBe(register);
+  });
+
   it("useSelectedLayoutSegments returns empty array outside React context", async () => {
     const { useSelectedLayoutSegments } =
       await import("../packages/vinext/src/shims/navigation.js");
