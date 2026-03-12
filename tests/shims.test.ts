@@ -193,13 +193,13 @@ describe("next/navigation shim", () => {
     const React = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const hookPath = "../packages/vinext/src/shims/navigation.js?hook-instance=a";
-    const providerPath = "../packages/vinext/src/shims/layout-segment-context.tsx?provider-instance=b";
+    const providerPath =
+      "../packages/vinext/src/shims/layout-segment-context.tsx?provider-instance=b";
     const hookMod: typeof import("../packages/vinext/src/shims/navigation.js") = await import(
       hookPath
     );
-    const providerMod: typeof import(
-      "../packages/vinext/src/shims/layout-segment-context.tsx"
-    ) = await import(providerPath);
+    const providerMod: typeof import("../packages/vinext/src/shims/layout-segment-context.tsx") =
+      await import(providerPath);
 
     function Probe() {
       const segment = hookMod.useSelectedLayoutSegment();
@@ -207,13 +207,10 @@ describe("next/navigation shim", () => {
     }
 
     const html = renderToStaticMarkup(
-      React.createElement(
-        providerMod.LayoutSegmentProvider,
-        {
-          childSegments: ["explore"],
-          children: React.createElement(Probe),
-        },
-      ),
+      React.createElement(providerMod.LayoutSegmentProvider, {
+        childSegments: ["explore"],
+        children: React.createElement(Probe),
+      }),
     );
 
     expect(html).toContain(">explore<");
