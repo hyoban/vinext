@@ -14,14 +14,15 @@ import * as React from "react";
 import { toBrowserNavigationHref, toSameOriginAppPath } from "./url-utils.js";
 import { stripBasePath } from "../utils/base-path.js";
 import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
-import { getLayoutSegmentContext } from "./layout-segment-context-shared.js";
 
 // ─── Layout segment context ───────────────────────────────────────────────────
 // Stores the child segments below the current layout. Each layout wraps its
 // children with a provider whose value is the remaining route tree segments
 // (including route groups, with dynamic params resolved to actual values).
-// The shared context lives behind a global singleton so provider/hook pairs
-// still line up if bundling creates multiple navigation module instances.
+// Created lazily because `React.createContext` is NOT available in the
+// react-server condition of React. In the RSC environment, this remains null.
+
+let _LayoutSegmentCtx: React.Context<string[]> | null = null;
 
 // ─── ServerInsertedHTML context ────────────────────────────────────────────────
 // Used by CSS-in-JS libraries (Apollo Client, styled-components, emotion) to
@@ -43,6 +44,17 @@ export const ServerInsertedHTMLContext: React.Context<
   typeof React.createContext === "function"
     ? React.createContext<((callback: () => unknown) => void) | null>(null)
     : null;
+
+/**
+ * Get or create the layout segment context.
+ * Returns null in the RSC environment (createContext unavailable).
+ */
+export function getLayoutSegmentContext(): React.Context<string[]> | null {
+  if (_LayoutSegmentCtx === null && typeof React.createContext === "function") {
+    _LayoutSegmentCtx = React.createContext<string[]>([]);
+  }
+  return _LayoutSegmentCtx;
+}
 
 /**
  * Read the child segments below the current layout from context.

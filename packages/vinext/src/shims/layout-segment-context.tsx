@@ -11,7 +11,7 @@
  * to avoid creating separate contexts in different modules.
  */
 import { createElement, type ReactNode } from "react";
-import { getLayoutSegmentContext } from "./layout-segment-context-shared.js";
+import { getLayoutSegmentContext } from "./navigation.js";
 
 /**
  * Wraps children with the layout segment context.
