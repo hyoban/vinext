@@ -2,19 +2,15 @@ name: Preview Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [fork]
 
 permissions: {}
 
 jobs:
   publish:
-    # Skip for forks — they don't have write access needed by pkg-pr-new.
-    if: github.repository_owner == 'cloudflare'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-node-pnpm
       - run: pnpm run build
-      - run: pnpm dlx pkg-pr-new publish --pnpm './packages/vinext'
+      - run: pnpm dlx pkg-pr-new publish --pnpm './packages/vinext' --no-compact
