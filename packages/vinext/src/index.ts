@@ -1039,10 +1039,33 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           "vinext/instrumentation": path.resolve(__dirname, "server", "instrumentation"),
           "vinext/html": path.resolve(__dirname, "server", "html"),
         };
+        const nextFileBackedJsAliasKeys = [
+          "next/app",
+          "next/cache",
+          "next/compat/router",
+          "next/constants",
+          "next/document",
+          "next/dynamic",
+          "next/error",
+          "next/font/google",
+          "next/font/local",
+          "next/form",
+          "next/head",
+          "next/headers",
+          "next/image",
+          "next/legacy/image",
+          "next/link",
+          "next/navigation",
+          "next/og",
+          "next/router",
+          "next/script",
+          "next/server",
+          "next/web-vitals",
+        ] as const;
         const nextShimJsVariants = Object.fromEntries(
-          Object.entries(nextShimBaseMap)
-            .filter(([key]) => key.startsWith("next/") && !key.endsWith(".js"))
-            .map(([key, value]) => [`${key}.js`, value]),
+          nextFileBackedJsAliasKeys
+            .filter((key) => key in nextShimBaseMap)
+            .map((key) => [`${key}.js`, nextShimBaseMap[key]]),
         );
         nextShimMap = {
           ...nextShimBaseMap,
