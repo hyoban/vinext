@@ -955,6 +955,9 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
 
         // Build the shim alias map. Exact `.js` variants are included for the
         // public Next entrypoints that are file-backed in `next/package.json`.
+        // Some libraries (for example `nuqs`) import `next/navigation.js`
+        // directly; aliasing the `.js` form ensures optimizeDeps pre-bundles
+        // vinext's shim instead of real Next.
         nextShimMap = {
           ...nextConfig.aliases,
           "next/link": path.join(shimsDir, "link"),
