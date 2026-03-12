@@ -238,10 +238,7 @@ describe("nuqs", () => {
 
     expect(optimizedAdapterFile).toBeDefined();
 
-    const optimizedAdapter = readFileSync(
-      path.join(depsDir, optimizedAdapterFile!),
-      "utf8",
-    );
+    const optimizedAdapter = readFileSync(path.join(depsDir, optimizedAdapterFile!), "utf8");
 
     expect(optimizedAdapter).toMatch(/shims\/navigation\.js/);
     expect(optimizedAdapter).not.toContain("node_modules/.pnpm/next@");
