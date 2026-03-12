@@ -75,4 +75,27 @@ describe("Vite tsconfig paths support", () => {
 
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it("does not override user-defined resolve.tsconfigPaths on Vite 8", async () => {
+    const root = setupProject("8.0.0-beta.18");
+    process.chdir(root);
+
+    const plugins = vinext({ appDir: root });
+    const configPlugin = findNamedPlugin(plugins, "vinext:config") as {
+      config?: (
+        config: { root: string; resolve?: Record<string, unknown> },
+        env: { command: "serve"; mode: string },
+      ) => Promise<{
+        resolve?: Record<string, unknown>;
+      }>;
+    };
+    const resolvedConfig = await configPlugin.config?.(
+      { root, resolve: { tsconfigPaths: false } },
+      { command: "serve", mode: "development" },
+    );
+
+    expect(resolvedConfig?.resolve?.tsconfigPaths).toBeUndefined();
+
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });

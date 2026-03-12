@@ -250,6 +250,10 @@ function getViteMajorVersion(): number {
   }
 }
 
+type UserResolveConfigWithTsconfigPaths = NonNullable<UserConfig["resolve"]> & {
+  tsconfigPaths?: boolean;
+};
+
 /**
  * PostCSS config file names to search for, in priority order.
  * Matches the same search order as postcss-load-config / lilconfig.
@@ -838,6 +842,9 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
 
       async config(config, env) {
         root = config.root ?? process.cwd();
+        const userResolve = config.resolve as UserResolveConfigWithTsconfigPaths | undefined;
+        const shouldEnableNativeTsconfigPaths =
+          viteMajorVersion >= 8 && userResolve?.tsconfigPaths === undefined;
 
         // Load .env files into process.env before anything else.
         // Next.js loads .env files before evaluating next.config.js, so
@@ -1240,7 +1247,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             // causing cryptic "Invalid hook call" errors. This is a no-op
             // when only one copy exists.
             dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
-            ...(viteMajorVersion >= 8 ? { tsconfigPaths: true } : {}),
+            ...(shouldEnableNativeTsconfigPaths ? { tsconfigPaths: true } : {}),
           },
           // Exclude vinext from dependency optimization so esbuild doesn't
           // scan dist files containing virtual module imports (virtual:vinext-*)
