@@ -14,14 +14,17 @@ import * as React from "react";
 import { toBrowserNavigationHref, toSameOriginAppPath } from "./url-utils.js";
 import { stripBasePath } from "../utils/base-path.js";
 import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
-import { getLayoutSegmentContext } from "./layout-segment-context-shared.js";
 
 // ─── Layout segment context ───────────────────────────────────────────────────
 // Stores the child segments below the current layout. Each layout wraps its
 // children with a provider whose value is the remaining route tree segments
 // (including route groups, with dynamic params resolved to actual values).
 // The shared context lives behind a global singleton so provider/hook pairs
-// still line up if bundling creates multiple navigation module instances.
+// still line up if Vite loads this shim through multiple resolved module IDs.
+const _LAYOUT_SEGMENT_CTX_KEY = Symbol.for("vinext.layoutSegmentContext");
+type _LayoutSegmentGlobal = typeof globalThis & {
+  [_LAYOUT_SEGMENT_CTX_KEY]?: React.Context<string[]> | null;
+};
 
 // ─── ServerInsertedHTML context ────────────────────────────────────────────────
 // Used by CSS-in-JS libraries (Apollo Client, styled-components, emotion) to
@@ -43,6 +46,21 @@ export const ServerInsertedHTMLContext: React.Context<
   typeof React.createContext === "function"
     ? React.createContext<((callback: () => unknown) => void) | null>(null)
     : null;
+
+/**
+ * Get or create the layout segment context.
+ * Returns null in the RSC environment (createContext unavailable).
+ */
+export function getLayoutSegmentContext(): React.Context<string[]> | null {
+  if (typeof React.createContext !== "function") return null;
+
+  const globalState = globalThis as _LayoutSegmentGlobal;
+  if (!globalState[_LAYOUT_SEGMENT_CTX_KEY]) {
+    globalState[_LAYOUT_SEGMENT_CTX_KEY] = React.createContext<string[]>([]);
+  }
+
+  return globalState[_LAYOUT_SEGMENT_CTX_KEY] ?? null;
+}
 
 /**
  * Read the child segments below the current layout from context.
