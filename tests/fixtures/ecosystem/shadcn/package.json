@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "@radix-ui/react-slot": "catalog:",
     "@radix-ui/react-dialog": "catalog:",
     "@radix-ui/react-dropdown-menu": "catalog:",
@@ -16,6 +16,6 @@
     "react-server-dom-webpack": "catalog:"
   },
   "devDependencies": {
-    "vite": "^7.3.1"
+    "vite": "catalog:"
   }
 }

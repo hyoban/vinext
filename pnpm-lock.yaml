@@ -722,10 +722,10 @@ importers:
         specifier: file:./__test_packages__/fake-css-module-lib
         version: file:tests/fixtures/app-basic/__test_packages__/fake-css-module-lib
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -734,7 +734,7 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/vinext
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/app-cjs-violation:
@@ -743,10 +743,10 @@ importers:
         specifier: 'catalog:'
         version: 0.5.20(react-dom@19.2.4(react@19.2.4))(react-server-dom-webpack@19.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(vite@7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1))
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -755,7 +755,7 @@ importers:
         specifier: workspace:*
         version: link:../../../packages/vinext
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/better-auth:
@@ -770,10 +770,10 @@ importers:
         specifier: 'catalog:'
         version: 12.6.2
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -783,7 +783,7 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/next-intl:
@@ -795,10 +795,10 @@ importers:
         specifier: 'catalog:'
         version: 4.8.3(next@16.1.6(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -808,7 +808,7 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/next-themes:
@@ -820,10 +820,10 @@ importers:
         specifier: 'catalog:'
         version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -833,7 +833,7 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/next-view-transitions:
@@ -845,10 +845,10 @@ importers:
         specifier: 'catalog:'
         version: 0.3.5(next@16.1.6(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -858,7 +858,7 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/nuqs:
@@ -870,10 +870,10 @@ importers:
         specifier: 'catalog:'
         version: 2.8.8(next@16.1.6(@playwright/test@1.58.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -883,7 +883,7 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/shadcn:
@@ -907,10 +907,10 @@ importers:
         specifier: 'catalog:'
         version: 2.1.1
       react:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.2.4
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       react-server-dom-webpack:
         specifier: 'catalog:'
@@ -923,16 +923,16 @@ importers:
         version: link:../../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/ecosystem/validator:
     dependencies:
       react:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       validator:
         specifier: 'catalog:'
@@ -942,23 +942,23 @@ importers:
         specifier: workspace:*
         version: link:../../../../packages/vinext
       vite:
-        specifier: ^7.3.1
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
   tests/fixtures/pages-basic:
     dependencies:
       react:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.2.4
       react-dom:
-        specifier: ^19.0.0
+        specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       vinext:
         specifier: workspace:*
         version: link:../../../packages/vinext
     devDependencies:
       vite:
-        specifier: ^7.0.0
+        specifier: 'catalog:'
         version: 7.3.1(@types/node@25.2.3)(jiti@2.6.1)(lightningcss@1.31.1)
 
 packages:
