@@ -1461,6 +1461,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // @vitejs/plugin-react AND the user also registers it manually, the
         // React transform / refresh pipeline runs twice.
         if (reactPluginPromise) {
+          // Assumes @vitejs/plugin-react top-level plugin names continue to use
+          // the vite:react* prefix across supported versions.
           const reactRootPlugins = config.plugins.filter(
             (p: any) => p && typeof p.name === "string" && p.name.startsWith("vite:react"),
           );

@@ -10,6 +10,7 @@
   "dependencies": {
     "@heroicons/react": "2.2.0",
     "@types/mdx": "2.0.13",
+    "@vitejs/plugin-react": "^5.1.4",
     "clsx": "2.1.1",
     "codehike": "1.0.7",
     "date-fns": "4.1.0",
