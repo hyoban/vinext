@@ -58,7 +58,6 @@
   "dependencies": {
     "@unpic/react": "^1.0.2",
     "@vercel/og": "^0.8.6",
-    "@vitejs/plugin-react": "^5.1.4",
     "magic-string": "^0.30.21",
     "rsc-html-stream": "^0.0.7",
     "vite-plugin-commonjs": "^0.10.4",
@@ -68,12 +67,14 @@
     "@types/node": "^25.2.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
     "@vitejs/plugin-rsc": "^0.5.19",
     "react-server-dom-webpack": "^19.2.4",
     "vite": "^7.3.1"
   },
   "peerDependencies": {
     "@mdx-js/rollup": "^3.0.0",
+    "@vitejs/plugin-react": "^5.0.0 || ^6.0.0",
     "@vitejs/plugin-rsc": "^0.5.19",
     "react": ">=19.2.0",
     "react-dom": ">=19.2.0",

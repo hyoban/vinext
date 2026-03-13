@@ -695,7 +695,7 @@ export function formatReport(result: CheckResult, opts?: { calledFromInit?: bool
     lines.push("  Or manually:");
     lines.push(`    1. Add \x1b[36m"type": "module"\x1b[0m to package.json`);
     lines.push(
-      `    2. Install: \x1b[36m${detectPackageManager(process.cwd())} vinext vite @vitejs/plugin-rsc\x1b[0m`,
+      `    2. Install: \x1b[36m${detectPackageManager(process.cwd())} vinext vite @vitejs/plugin-react @vitejs/plugin-rsc\x1b[0m`,
     );
     lines.push(`    3. Create vite.config.ts (see docs)`);
     lines.push(`    4. Run: \x1b[36mnpx vite dev\x1b[0m`);

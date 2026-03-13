@@ -865,6 +865,7 @@ describe("formatReport", () => {
     expect(report).toContain("vinext init");
     expect(report).toContain("Or manually");
     expect(report).toContain('"type": "module"');
+    expect(report).toContain("@vitejs/plugin-react");
     expect(report).toContain("vite.config.ts");
     expect(report).toContain("npx vite dev");
   });

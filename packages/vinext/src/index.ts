@@ -56,7 +56,7 @@ import { asyncHooksStubPlugin } from "./plugins/async-hooks-stub.js";
 import { clientReferenceDedupPlugin } from "./plugins/client-reference-dedup.js";
 import { hasWranglerConfig, formatMissingCloudflarePluginError } from "./deploy.js";
 import tsconfigPaths from "vite-tsconfig-paths";
-import react, { Options as VitePluginReactOptions } from "@vitejs/plugin-react";
+import type { Options as VitePluginReactOptions } from "@vitejs/plugin-react";
 import MagicString from "magic-string";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -65,6 +65,38 @@ import fs from "node:fs";
 import commonjs from "vite-plugin-commonjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+type VitePluginReactModule = typeof import("@vitejs/plugin-react");
+
+async function loadReactPlugin(root: string): Promise<VitePluginReactModule> {
+  try {
+    const require = createRequire(path.join(root, "package.json"));
+    const resolved = require.resolve("@vitejs/plugin-react");
+    return (await import(pathToFileURL(resolved).href)) as VitePluginReactModule;
+  } catch {
+    try {
+      return (await import("@vitejs/plugin-react")) as VitePluginReactModule;
+    } catch {
+      throw new Error(
+        "vinext: @vitejs/plugin-react is not installed.\n" +
+          "Run: " +
+          detectPackageManager(root) +
+          " @vitejs/plugin-react",
+      );
+    }
+  }
+}
+
+function flattenPluginOptions(plugin: PluginOption): PluginOption[] {
+  if (!plugin) return [];
+  if (Array.isArray(plugin)) {
+    const flattened: PluginOption[] = [];
+    for (const item of plugin) {
+      flattened.push(...flattenPluginOptions(item));
+    }
+    return flattened;
+  }
+  return [plugin];
+}
 
 /**
  * Fetch Google Fonts CSS, download .woff2 files, cache locally, and return
@@ -699,9 +731,9 @@ export interface VinextOptions {
   rsc?: boolean;
   /**
    * Options passed to @vitejs/plugin-react (React Fast Refresh + JSX transform).
-   * Enabled by default. Set to `false` to disable (e.g. if you already have
-   * @vitejs/plugin-react in your vite.config.ts), or pass an options object
-   * to customize the Babel transform.
+   * Enabled by default. vinext auto-registers it unless your Vite config
+   * already includes a `vite:react*` plugin. Set to `false` to disable, or
+   * pass an options object to customize the Babel transform.
    * @default true
    */
   react?: VitePluginReactOptions | boolean;
@@ -823,16 +855,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   // files are detected and @mdx-js/rollup is installed.
   let mdxDelegate: Plugin | null = null;
 
-  const reactPlugin =
-    options.react === false ? false : react(options.react === true ? undefined : options.react);
+  const reactOptions = options.react && options.react !== true ? options.react : undefined;
 
   const plugins: PluginOption[] = [
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
     // Vite 8+ supports this natively via resolve.tsconfigPaths.
     ...(viteMajorVersion >= 8 ? [] : [tsconfigPaths()]),
-    // React Fast Refresh + JSX transform for client components.
-    reactPlugin,
     // Transform CJS require()/module.exports to ESM before other plugins
     // analyze imports (RSC directive scanning, shim resolution, etc.)
     commonjs(),
@@ -1101,6 +1130,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             typeof p.name === "string" &&
             (p.name === "nitro" || p.name.startsWith("nitro:")),
         );
+        const hasUserReactPlugin = pluginsFlat.some(
+          (p: any) =>
+            p &&
+            typeof p === "object" &&
+            typeof p.name === "string" &&
+            p.name.startsWith("vite:react"),
+        );
 
         // Resolve PostCSS string plugin names that Vite can't handle.
         // Next.js projects commonly use array-form plugins like
@@ -1277,6 +1313,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           // Inject resolved PostCSS plugins if string names were found
           ...(postcssOverride ? { css: { postcss: postcssOverride } } : {}),
         };
+
+        if (options.react !== false && !hasUserReactPlugin) {
+          const reactPlugin = await loadReactPlugin(root).then((mod) => mod.default(reactOptions));
+          viteConfig.plugins = flattenPluginOptions(reactPlugin);
+        }
 
         // Collect user-provided ssr.external so we can propagate it into
         // both the RSC and SSR environment configs. Vite's `ssr.*` config
