@@ -3257,7 +3257,7 @@ describe("RSC plugin auto-registration", () => {
     ).rejects.toThrow("Duplicate @vitejs/plugin-rsc detected");
   }, 30000);
 
-  it("auto-injects RSC plugin when src/app exists but root-level app/ does not", () => {
+  it("auto-injects RSC plugin when src/app exists but root-level app/ does not", async () => {
     // Regression test: the early detection path (before config()) must check
     // both {base}/app and {base}/src/app to match the full config() logic.
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-src-app-"));
@@ -3278,23 +3278,43 @@ describe("RSC plugin auto-registration", () => {
 
       const plugins = vinext({ appDir: tmpDir });
 
-      // When auto-RSC fires, the returned array includes a Promise<Plugin[]>
-      // for the lazily-loaded @vitejs/plugin-rsc. Verify it's present.
-      const hasRscPromise = plugins.some((p) => p && typeof (p as any).then === "function");
-      expect(hasRscPromise).toBe(true);
+      const resolvedPlugins = (
+        await Promise.all(
+          plugins.map(async (plugin) => {
+            if (plugin && typeof (plugin as any).then === "function") {
+              return await (plugin as Promise<any>);
+            }
+            return plugin;
+          }),
+        )
+      ).flat();
+
+      const hasRscPlugin = resolvedPlugins.some((p) => p && (p as any).name === "rsc");
+      expect(hasRscPlugin).toBe(true);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
-  it("does NOT auto-inject RSC plugin when neither app/ nor src/app/ exists", () => {
+  it("does NOT auto-inject RSC plugin when neither app/ nor src/app/ exists", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-no-app-"));
     try {
       // Empty directory — no app/ or src/app/.
       const plugins = vinext({ appDir: tmpDir });
 
-      const hasRscPromise = plugins.some((p) => p && typeof (p as any).then === "function");
-      expect(hasRscPromise).toBe(false);
+      const resolvedPlugins = (
+        await Promise.all(
+          plugins.map(async (plugin) => {
+            if (plugin && typeof (plugin as any).then === "function") {
+              return await (plugin as Promise<any>);
+            }
+            return plugin;
+          }),
+        )
+      ).flat();
+
+      const hasRscPlugin = resolvedPlugins.some((p) => p && (p as any).name === "rsc");
+      expect(hasRscPlugin).toBe(false);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
