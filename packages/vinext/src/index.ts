@@ -67,37 +67,6 @@ import commonjs from "vite-plugin-commonjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 type VitePluginReactModule = typeof import("@vitejs/plugin-react");
 
-async function loadReactPlugin(root: string): Promise<VitePluginReactModule> {
-  try {
-    const require = createRequire(path.join(root, "package.json"));
-    const resolved = require.resolve("@vitejs/plugin-react");
-    return (await import(pathToFileURL(resolved).href)) as VitePluginReactModule;
-  } catch {
-    try {
-      return (await import("@vitejs/plugin-react")) as VitePluginReactModule;
-    } catch {
-      throw new Error(
-        "vinext: @vitejs/plugin-react is not installed.\n" +
-          "Run: " +
-          detectPackageManager(root) +
-          " @vitejs/plugin-react",
-      );
-    }
-  }
-}
-
-function flattenPluginOptions(plugin: PluginOption): PluginOption[] {
-  if (!plugin) return [];
-  if (Array.isArray(plugin)) {
-    const flattened: PluginOption[] = [];
-    for (const item of plugin) {
-      flattened.push(...flattenPluginOptions(item));
-    }
-    return flattened;
-  }
-  return [plugin];
-}
-
 /**
  * Fetch Google Fonts CSS, download .woff2 files, cache locally, and return
  * @font-face CSS with local file references.
@@ -731,9 +700,9 @@ export interface VinextOptions {
   rsc?: boolean;
   /**
    * Options passed to @vitejs/plugin-react (React Fast Refresh + JSX transform).
-   * Enabled by default. vinext auto-registers it unless your Vite config
-   * already includes a `vite:react*` plugin. Set to `false` to disable, or
-   * pass an options object to customize the Babel transform.
+   * Enabled by default. Set to `false` to disable (e.g. if you configure
+   * @vitejs/plugin-react manually in your vite.config.ts), or pass an options
+   * object to customize the Babel transform.
    * @default true
    */
   react?: VitePluginReactOptions | boolean;
@@ -813,8 +782,14 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   // Pre-resolve both the main plugin and the /transforms subpath eagerly
   // so all import() calls in this module use consistent resolution.
   const earlyRequire = createRequire(path.join(earlyBaseDir, "package.json"));
+  let resolvedReactPath: string | null = null;
   let resolvedRscPath: string | null = null;
   let resolvedRscTransformsPath: string | null = null;
+  try {
+    resolvedReactPath = earlyRequire.resolve("@vitejs/plugin-react");
+  } catch {
+    // Only needed if vinext ends up auto-injecting the React plugin.
+  }
   try {
     resolvedRscPath = earlyRequire.resolve("@vitejs/plugin-rsc");
     resolvedRscTransformsPath = earlyRequire.resolve("@vitejs/plugin-rsc/transforms");
@@ -849,19 +824,37 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     });
   }
 
+  const reactOptions = options.react && options.react !== true ? options.react : undefined;
+
+  let reactPluginPromise: Promise<PluginOption[]> | null = null;
+  if (options.react !== false) {
+    if (!resolvedReactPath) {
+      throw new Error(
+        "vinext: @vitejs/plugin-react is not installed.\n" +
+          "Run: " +
+          detectPackageManager(process.cwd()) +
+          " @vitejs/plugin-react",
+      );
+    }
+    const reactImport = import(pathToFileURL(resolvedReactPath).href);
+    reactPluginPromise = reactImport.then((mod) =>
+      (mod as VitePluginReactModule).default(reactOptions),
+    );
+  }
+
   const imageImportDimCache = new Map<string, { width: number; height: number }>();
 
   // Shared state for the MDX proxy plugin. Populated during config() if MDX
   // files are detected and @mdx-js/rollup is installed.
   let mdxDelegate: Plugin | null = null;
 
-  const reactOptions = options.react && options.react !== true ? options.react : undefined;
-
   const plugins: PluginOption[] = [
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
     // Vite 8+ supports this natively via resolve.tsconfigPaths.
     ...(viteMajorVersion >= 8 ? [] : [tsconfigPaths()]),
+    // React Fast Refresh + JSX transform for client components.
+    reactPluginPromise,
     // Transform CJS require()/module.exports to ESM before other plugins
     // analyze imports (RSC directive scanning, shim resolution, etc.)
     commonjs(),
@@ -1130,14 +1123,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             typeof p.name === "string" &&
             (p.name === "nitro" || p.name.startsWith("nitro:")),
         );
-        const hasUserReactPlugin = pluginsFlat.some(
-          (p: any) =>
-            p &&
-            typeof p === "object" &&
-            typeof p.name === "string" &&
-            p.name.startsWith("vite:react"),
-        );
-
         // Resolve PostCSS string plugin names that Vite can't handle.
         // Next.js projects commonly use array-form plugins like
         // `plugins: ["@tailwindcss/postcss"]` which postcss-load-config
@@ -1314,11 +1299,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           ...(postcssOverride ? { css: { postcss: postcssOverride } } : {}),
         };
 
-        if (options.react !== false && !hasUserReactPlugin) {
-          const reactPlugin = await loadReactPlugin(root).then((mod) => mod.default(reactOptions));
-          viteConfig.plugins = flattenPluginOptions(reactPlugin);
-        }
-
         // Collect user-provided ssr.external so we can propagate it into
         // both the RSC and SSR environment configs. Vite's `ssr.*` config
         // only applies to the default `ssr` environment, not custom ones
@@ -1469,6 +1449,29 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
       },
 
       configResolved(config) {
+        // Detect double React plugin registration. When vinext auto-injects
+        // @vitejs/plugin-react AND the user also registers it manually, the
+        // React transform / refresh pipeline runs twice.
+        if (reactPluginPromise) {
+          const reactRootPlugins = config.plugins.filter(
+            (p: any) => p && typeof p.name === "string" && p.name.startsWith("vite:react"),
+          );
+          const counts = new Map<string, number>();
+          for (const plugin of reactRootPlugins) {
+            counts.set(plugin.name, (counts.get(plugin.name) ?? 0) + 1);
+          }
+          const hasDuplicateReactPlugin = [...counts.values()].some((count) => count > 1);
+          if (hasDuplicateReactPlugin) {
+            throw new Error(
+              "[vinext] Duplicate @vitejs/plugin-react detected.\n" +
+                "         vinext auto-registers @vitejs/plugin-react by default.\n" +
+                "         Your config also registers it manually, which duplicates React transforms.\n\n" +
+                "         Fix: remove the explicit react() call from your plugins array.\n" +
+                "         Or: pass react: false to vinext() if you want to configure react() yourself.",
+            );
+          }
+        }
+
         // Detect double RSC plugin registration. When vinext auto-injects
         // @vitejs/plugin-rsc AND the user also registers it manually, the
         // RSC transform pipeline runs twice — doubling build time.

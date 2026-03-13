@@ -1027,37 +1027,34 @@ describe("Virtual server entry generation", () => {
 });
 
 describe("Plugin config", () => {
-  it("auto-injects @vitejs/plugin-react when the user has no vite:react plugin", async () => {
+  it("auto-injects @vitejs/plugin-react as a top-level async plugin", () => {
     const plugins = vinext() as any[];
-    const configPlugin = plugins.find((p) => p.name === "vinext:config");
-    expect(configPlugin).toBeDefined();
-
-    const result = await configPlugin.config({ root: FIXTURE_DIR, plugins: [] });
-
-    const injectedPlugins = Array.isArray(result.plugins) ? result.plugins : [result.plugins];
-    expect(
-      injectedPlugins.some(
-        (plugin: any) =>
-          plugin &&
-          typeof plugin === "object" &&
-          typeof plugin.name === "string" &&
-          plugin.name.startsWith("vite:react"),
-      ),
-    ).toBe(true);
+    const hasReactPromise = plugins.some((p) => p && typeof p.then === "function");
+    expect(hasReactPromise).toBe(true);
   });
 
-  it("does not auto-inject @vitejs/plugin-react when the user already configured vite:react", async () => {
+  it("throws when user double-registers react() alongside auto-registration", async () => {
     const plugins = vinext() as any[];
     const configPlugin = plugins.find((p) => p.name === "vinext:config");
     expect(configPlugin).toBeDefined();
 
-    const userReactPlugin = { name: "vite:react" };
-    const result = await configPlugin.config({
-      root: FIXTURE_DIR,
-      plugins: [userReactPlugin],
-    });
+    await configPlugin.config(
+      { root: FIXTURE_DIR, plugins: [] },
+      { command: "serve", mode: "development" },
+    );
 
-    expect(result.plugins).toBeUndefined();
+    expect(() =>
+      configPlugin.configResolved({
+        command: "serve",
+        configFile: false,
+        plugins: [
+          { name: "vite:react-babel" },
+          { name: "vite:react-refresh" },
+          { name: "vite:react-babel" },
+          { name: "vite:react-refresh" },
+        ],
+      }),
+    ).toThrow("Duplicate @vitejs/plugin-react detected");
   });
 
   it("adds resolve.dedupe for React packages to prevent dual instance errors", async () => {
