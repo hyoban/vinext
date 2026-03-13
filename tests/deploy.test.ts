@@ -1519,6 +1519,18 @@ describe("getMissingDeps — MDX", () => {
     const missing = getMissingDeps(info, (root, pkg) => pkg !== "@mdx-js/rollup");
     expect(missing).toContainEqual(expect.objectContaining({ name: "@mdx-js/rollup" }));
   });
+
+  it("does not report @mdx-js/rollup when it is resolvable", () => {
+    mkdir(tmpDir, "app");
+    writeFile(tmpDir, "app/about/page.mdx", "# About");
+    const info = detectProject(tmpDir);
+    info.hasCloudflarePlugin = true;
+    info.hasWrangler = true;
+    info.hasRscPlugin = true;
+
+    const missing = getMissingDeps(info, () => true);
+    expect(missing).not.toContainEqual(expect.objectContaining({ name: "@mdx-js/rollup" }));
+  });
 });
 
 // ─── Integration: Full Detection of Real Fixtures ────────────────────────────

@@ -970,9 +970,8 @@ export function getMissingDeps(
     }
   }
   if (info.hasMDX) {
-    // Check if @mdx-js/rollup is already installed (walk up for monorepo hoisting)
-    const hasMdxRollup = _findInNodeModules(info.root, "@mdx-js/rollup") !== null;
-    if (!hasMdxRollup) {
+    // @mdx-js/rollup must be resolvable from the project root for Vite.
+    if (!_isResolvable(info.root, "@mdx-js/rollup")) {
       missing.push({ name: "@mdx-js/rollup", version: "latest" });
     }
   }
