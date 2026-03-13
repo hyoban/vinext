@@ -14,6 +14,7 @@
     "vinext": "file:../../packages/vinext"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.4",
     "@vitejs/plugin-rsc": "0.5.19",
     "vite": "^8.0.0"
   }
