@@ -1027,10 +1027,23 @@ describe("Virtual server entry generation", () => {
 });
 
 describe("Plugin config", () => {
-  it("auto-injects @vitejs/plugin-react as a top-level async plugin", () => {
+  it("auto-injects @vitejs/plugin-react as a top-level async plugin", async () => {
     const plugins = vinext() as any[];
-    const hasReactPromise = plugins.some((p) => p && typeof p.then === "function");
-    expect(hasReactPromise).toBe(true);
+    const resolvedPlugins = (
+      await Promise.all(
+        plugins.map(async (plugin) => {
+          if (plugin && typeof plugin.then === "function") {
+            return await plugin;
+          }
+          return plugin;
+        }),
+      )
+    ).flat();
+
+    const hasReactPlugin = resolvedPlugins.some(
+      (plugin) => plugin && typeof plugin.name === "string" && plugin.name.startsWith("vite:react"),
+    );
+    expect(hasReactPlugin).toBe(true);
   });
 
   it("throws when user double-registers react() alongside auto-registration", async () => {
