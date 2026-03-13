@@ -8,18 +8,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "vite": "catalog:prod",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vite": "catalog:",
     "vinext": "workspace:*",
-    "@vitejs/plugin-rsc": "catalog:prod",
-    "react-server-dom-webpack": "catalog:prod",
-    "@cloudflare/vite-plugin": "catalog:prod",
-    "@cloudflare/kumo": "catalog:prod",
-    "@phosphor-icons/react": "catalog:prod",
-    "@vitejs/plugin-react": "catalog:prod",
-    "wrangler": "catalog:prod",
-    "tailwindcss": "catalog:prod",
-    "@tailwindcss/vite": "catalog:prod"
+    "@vitejs/plugin-rsc": "catalog:",
+    "react-server-dom-webpack": "catalog:",
+    "@cloudflare/vite-plugin": "catalog:",
+    "@cloudflare/kumo": "catalog:",
+    "@phosphor-icons/react": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "wrangler": "catalog:",
+    "tailwindcss": "catalog:",
+    "@tailwindcss/vite": "catalog:"
   }
 }

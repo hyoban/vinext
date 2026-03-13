@@ -8,21 +8,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "catalog:prod",
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "react-server-dom-webpack": "catalog:prod",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-server-dom-webpack": "catalog:",
     "vinext": "workspace:*"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "catalog:dev",
-    "@mdx-js/rollup": "catalog:dev",
-    "@types/node": "catalog:dev",
-    "@types/react": "catalog:dev",
-    "@types/react-dom": "catalog:dev",
-    "@vitejs/plugin-rsc": "catalog:dev",
-    "typescript": "catalog:dev",
-    "vite": "catalog:dev",
-    "wrangler": "catalog:dev"
+    "@cloudflare/vite-plugin": "catalog:",
+    "@mdx-js/rollup": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-rsc": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "wrangler": "catalog:"
   }
 }

@@ -8,12 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "catalog:prod",
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "vite": "catalog:prod",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vite": "catalog:",
     "vinext": "workspace:*",
-    "@cloudflare/vite-plugin": "catalog:prod",
-    "wrangler": "catalog:prod"
+    "@cloudflare/vite-plugin": "catalog:",
+    "wrangler": "catalog:"
   }
 }

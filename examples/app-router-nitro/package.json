@@ -8,11 +8,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "catalog:prod",
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "vite": "catalog:prod",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vite": "catalog:",
     "vinext": "workspace:*",
-    "nitro": "catalog:prod"
+    "nitro": "catalog:"
   }
 }

@@ -56,21 +56,21 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@unpic/react": "catalog:prod",
-    "@vercel/og": "catalog:prod",
-    "magic-string": "catalog:prod",
-    "rsc-html-stream": "catalog:prod",
-    "vite-plugin-commonjs": "catalog:prod",
-    "vite-tsconfig-paths": "catalog:prod"
+    "@unpic/react": "catalog:",
+    "@vercel/og": "catalog:",
+    "magic-string": "catalog:",
+    "rsc-html-stream": "catalog:",
+    "vite-plugin-commonjs": "catalog:",
+    "vite-tsconfig-paths": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "catalog:dev",
-    "@types/react": "catalog:dev",
-    "@types/react-dom": "catalog:dev",
-    "@vitejs/plugin-react": "catalog:dev",
-    "@vitejs/plugin-rsc": "catalog:dev",
-    "react-server-dom-webpack": "catalog:dev",
-    "vite": "catalog:dev"
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@vitejs/plugin-rsc": "catalog:",
+    "react-server-dom-webpack": "catalog:",
+    "vite": "catalog:"
   },
   "peerDependencies": {
     "@mdx-js/rollup": "^3.0.0",

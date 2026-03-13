@@ -9,18 +9,18 @@
     "simulate-traffic": "node scripts/simulate-traffic.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "catalog:prod",
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "react-server-dom-webpack": "catalog:prod",
-    "vite": "catalog:prod",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-server-dom-webpack": "catalog:",
+    "vite": "catalog:",
     "vinext": "workspace:*",
-    "@vitejs/plugin-rsc": "catalog:prod"
+    "@vitejs/plugin-rsc": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "catalog:dev",
-    "@types/react": "catalog:dev",
-    "@types/react-dom": "catalog:dev",
-    "typescript": "catalog:dev"
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:"
   }
 }

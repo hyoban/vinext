@@ -13,27 +13,27 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@mdx-js/react": "catalog:prod",
-    "@mdx-js/rollup": "catalog:prod",
-    "@unpic/react": "catalog:prod"
+    "@mdx-js/react": "catalog:",
+    "@mdx-js/rollup": "catalog:",
+    "@unpic/react": "catalog:"
   },
   "devDependencies": {
-    "@playwright/test": "catalog:dev",
-    "@types/node": "catalog:dev",
-    "@types/react": "catalog:dev",
-    "@types/react-dom": "catalog:dev",
-    "@typescript/native-preview": "catalog:dev",
-    "@vitejs/plugin-rsc": "catalog:dev",
-    "image-size": "catalog:dev",
-    "next": "catalog:dev",
-    "oxfmt": "catalog:dev",
-    "oxlint": "catalog:dev",
-    "playwright": "catalog:dev",
-    "react": "catalog:dev",
-    "react-dom": "catalog:dev",
-    "typescript": "catalog:dev",
-    "vite": "catalog:dev",
-    "vitest": "catalog:dev"
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "@vitejs/plugin-rsc": "catalog:",
+    "image-size": "catalog:",
+    "next": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "playwright": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   },
   "packageManager": "pnpm@10.30.0",
   "pnpm": {

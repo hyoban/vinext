@@ -8,14 +8,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "catalog:prod",
-    "react": "catalog:prod",
-    "react-dom": "catalog:prod",
-    "react-server-dom-webpack": "catalog:prod",
+    "@vitejs/plugin-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-server-dom-webpack": "catalog:",
     "vinext": "workspace:*"
   },
   "devDependencies": {
-    "@vitejs/plugin-rsc": "catalog:dev",
-    "vite": "catalog:dev"
+    "@vitejs/plugin-rsc": "catalog:",
+    "vite": "catalog:"
   }
 }
