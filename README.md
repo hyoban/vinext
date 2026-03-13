@@ -25,7 +25,7 @@ The skill handles compatibility checking, dependency installation, config genera
 ### Or do it manually
 
 ```bash
-npm install vinext vite @vitejs/plugin-react
+npm install -D vinext vite @vitejs/plugin-react
 ```
 
 If you're using the App Router, also install:
