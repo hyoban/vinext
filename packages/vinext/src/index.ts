@@ -1124,6 +1124,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             typeof p.name === "string" &&
             (p.name === "nitro" || p.name.startsWith("nitro:")),
         );
+
         // Resolve PostCSS string plugin names that Vite can't handle.
         // Next.js projects commonly use array-form plugins like
         // `plugins: ["@tailwindcss/postcss"]` which postcss-load-config
