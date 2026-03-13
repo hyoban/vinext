@@ -3276,7 +3276,7 @@ describe("RSC plugin auto-registration", () => {
         "junction",
       );
 
-      const plugins = vinext({ appDir: tmpDir });
+      const plugins = vinext({ appDir: tmpDir, react: false });
 
       const resolvedPlugins = (
         await Promise.all(
