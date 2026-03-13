@@ -9,19 +9,19 @@
  */
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AppRoute } from "../routing/app-router.js";
-import type { MetadataFileRoute } from "../server/metadata-routes.js";
 import type {
-  NextRedirect,
-  NextRewrite,
   NextHeader,
   NextI18nConfig,
+  NextRedirect,
+  NextRewrite,
 } from "../config/next-config.js";
+import type { AppRoute } from "../routing/app-router.js";
 import { generateDevOriginCheckCode } from "../server/dev-origin-check.js";
+import type { MetadataFileRoute } from "../server/metadata-routes.js";
 import {
-  generateSafeRegExpCode,
   generateMiddlewareMatcherCode,
   generateNormalizePathCode,
+  generateSafeRegExpCode,
   generateRouteMatchNormalizationCode,
 } from "../server/middleware-codegen.js";
 import { isProxyFile } from "../server/middleware.js";
@@ -42,6 +42,30 @@ const routeTriePath = fileURLToPath(new URL("../routing/route-trie.js", import.m
   /\\/g,
   "/",
 );
+
+// Canonical order of HTTP method handlers supported by route.ts modules.
+const ROUTE_HANDLER_HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"];
+
+// Runtime helpers injected into the generated RSC entry so OPTIONS/Allow handling
+// logic stays alongside the route handler pipeline.
+const routeHandlerHelperCode = String.raw`
+// Duplicated from the build-time constant above via JSON.stringify.
+const ROUTE_HANDLER_HTTP_METHODS = ${JSON.stringify(ROUTE_HANDLER_HTTP_METHODS)};
+
+function collectRouteHandlerMethods(handler) {
+  const methods = ROUTE_HANDLER_HTTP_METHODS.filter((method) => typeof handler[method] === "function");
+  if (methods.includes("GET") && !methods.includes("HEAD")) {
+    methods.push("HEAD");
+  }
+  return methods;
+}
+
+function buildRouteHandlerAllowHeader(exportedMethods) {
+  const allow = new Set(exportedMethods);
+  allow.add("OPTIONS");
+  return Array.from(allow).sort().join(", ");
+}
+`;
 
 /**
  * Resolved config options relevant to App Router request handling.
@@ -300,6 +324,7 @@ import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontSty
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
+${routeHandlerHelperCode}
 
 // ALS used to suppress the expected "Invalid hook call" dev warning when
 // layout/page components are probed outside React's render cycle. Patching
@@ -1964,15 +1989,15 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     const handler = route.routeHandler;
     const method = request.method.toUpperCase();
     const revalidateSeconds = typeof handler.revalidate === "number" && handler.revalidate > 0 ? handler.revalidate : null;
+    if (typeof handler["default"] === "function" && process.env.NODE_ENV === "development") {
+      console.error(
+        "[vinext] Detected default export in route handler " + route.pattern + ". Export a named export for each HTTP method instead.",
+      );
+    }
 
     // Collect exported HTTP methods for OPTIONS auto-response and Allow header
-    const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"];
-    const exportedMethods = HTTP_METHODS.filter((m) => typeof handler[m] === "function");
-    // If GET is exported, HEAD is implicitly supported
-    if (exportedMethods.includes("GET") && !exportedMethods.includes("HEAD")) {
-      exportedMethods.push("HEAD");
-    }
-    const hasDefault = typeof handler["default"] === "function";
+    const exportedMethods = collectRouteHandlerMethods(handler);
+    const allowHeaderForOptions = buildRouteHandlerAllowHeader(exportedMethods);
 
     // Route handlers need the same middleware header/status merge behavior as
     // page responses. This keeps middleware response headers visible on API
@@ -1999,18 +2024,16 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
     // OPTIONS auto-implementation: respond with Allow header and 204
     if (method === "OPTIONS" && typeof handler["OPTIONS"] !== "function") {
-      const allowMethods = hasDefault ? HTTP_METHODS : exportedMethods;
-      if (!allowMethods.includes("OPTIONS")) allowMethods.push("OPTIONS");
       setHeadersContext(null);
       setNavigationContext(null);
       return attachRouteHandlerMiddlewareContext(new Response(null, {
         status: 204,
-        headers: { "Allow": allowMethods.join(", ") },
+        headers: { "Allow": allowHeaderForOptions },
       }));
     }
 
     // HEAD auto-implementation: run GET handler and strip body
-    let handlerFn = handler[method] || handler["default"];
+    let handlerFn = handler[method];
     let isAutoHead = false;
     if (method === "HEAD" && typeof handler["HEAD"] !== "function" && typeof handler["GET"] === "function") {
       handlerFn = handler["GET"];
@@ -2112,7 +2135,6 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     setNavigationContext(null);
     return attachRouteHandlerMiddlewareContext(new Response(null, {
       status: 405,
-      headers: { Allow: exportedMethods.join(", ") },
     }));
   }
 
