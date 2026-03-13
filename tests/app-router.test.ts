@@ -3300,7 +3300,7 @@ describe("RSC plugin auto-registration", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-no-app-"));
     try {
       // Empty directory — no app/ or src/app/.
-      const plugins = vinext({ appDir: tmpDir });
+      const plugins = vinext({ appDir: tmpDir, react: false });
 
       const resolvedPlugins = (
         await Promise.all(
