@@ -788,7 +788,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   try {
     resolvedReactPath = earlyRequire.resolve("@vitejs/plugin-react");
   } catch {
-    // Only needed if vinext ends up auto-injecting the React plugin.
+    // vinext auto-injects the React plugin by default, so this will usually
+    // surface as an error below. Only react: false skips that follow-up throw.
   }
   try {
     resolvedRscPath = earlyRequire.resolve("@vitejs/plugin-rsc");
