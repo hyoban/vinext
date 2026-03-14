@@ -93,7 +93,7 @@ describe("optimizeDeps.exclude for vinext", () => {
     const plugins = vinext();
 
     const mainPlugin = plugins.find(
-      (p: any) => p && p.name === "vinext:config" && typeof p.config === "function",
+      (p: any) => p.name === "vinext:config" && typeof p.config === "function",
     );
     expect(mainPlugin).toBeDefined();
 
@@ -127,7 +127,7 @@ describe("optimizeDeps.exclude for vinext", () => {
     const plugins = vinext();
 
     const mainPlugin = plugins.find(
-      (p: any) => p && p.name === "vinext:config" && typeof p.config === "function",
+      (p: any) => p.name === "vinext:config" && typeof p.config === "function",
     );
     expect(mainPlugin).toBeDefined();
 

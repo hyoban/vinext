@@ -19,7 +19,7 @@ function unwrapHook(hook: any): Function {
  */
 function createOgInlinePlugin(command: "serve" | "build" = "serve"): Plugin {
   const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p && p.name === "vinext:og-inline-fetch-assets");
+  const plugin = plugins.find((p) => p.name === "vinext:og-inline-fetch-assets");
   if (!plugin) throw new Error("vinext:og-inline-fetch-assets plugin not found");
   const configResolved = unwrapHook(plugin.configResolved);
   configResolved?.call(plugin, { command });

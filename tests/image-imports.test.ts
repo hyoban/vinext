@@ -16,7 +16,7 @@ function unwrapHook(hook: any): Function {
 /** Extract the vinext:image-imports plugin from the plugin array */
 function getImagePlugin(): Plugin & { _dimCache: Map<string, { width: number; height: number }> } {
   const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p && p.name === "vinext:image-imports");
+  const plugin = plugins.find((p) => p.name === "vinext:image-imports");
   if (!plugin) throw new Error("vinext:image-imports plugin not found");
   return plugin as any;
 }

@@ -20,7 +20,7 @@ function getGoogleFontsPlugin(): Plugin & {
   _cacheDir: string;
 } {
   const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p && p.name === "vinext:google-fonts");
+  const plugin = plugins.find((p) => p.name === "vinext:google-fonts");
   if (!plugin) throw new Error("vinext:google-fonts plugin not found");
   return plugin as any;
 }
