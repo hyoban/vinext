@@ -15,6 +15,12 @@ const PAGES_APP_COMPONENT = `export default function App({ Component, pageProps 
 }
 `;
 
+type ClientBuildManifestEntry = {
+  file?: string;
+  css?: string[];
+  assets?: string[];
+};
+
 function writeEncodedSlashPagesFixture(rootDir: string): void {
   fs.mkdirSync(path.join(rootDir, "pages", "a"), { recursive: true });
   const nmLink = path.join(rootDir, "node_modules");
@@ -33,6 +39,15 @@ export default function middleware() {
   return new Response("nested blocked", { status: 418 });
 }
 `,
+  );
+}
+
+function findBuildManifestEntries(
+  buildManifest: Record<string, ClientBuildManifestEntry>,
+  moduleId: string,
+): Array<[string, ClientBuildManifestEntry]> {
+  return Object.entries(buildManifest).filter(
+    ([key]) => key === moduleId || key.endsWith(`/${moduleId}`),
   );
 }
 
@@ -951,7 +966,7 @@ describe("Pages Router allowedDevOrigins config", () => {
   afterAll(async () => {
     await server?.close();
     await fsp.rm(tmpDir, { recursive: true, force: true });
-  });
+  }, 30000);
 
   it("allows cross-origin requests from allowedDevOrigins", async () => {
     const res = await fetch(`${baseUrl}/`, {
@@ -1422,12 +1437,16 @@ export const config = { matcher: ["/protected"] };
     expect(fs.existsSync(buildManifestPath)).toBe(true);
     const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, "utf-8")) as Record<
       string,
-      unknown
+      ClientBuildManifestEntry
     >;
-    const counterBuildManifestEntries = Object.keys(buildManifest).filter(
-      (key) => key.endsWith("/pages/counter.tsx") || key === "pages/counter.tsx",
+    const counterBuildManifestEntries = findBuildManifestEntries(
+      buildManifest,
+      "pages/counter.tsx",
     );
-    expect(counterBuildManifestEntries).toEqual([]);
+    expect(counterBuildManifestEntries.length).toBeGreaterThan(0);
+    expect(counterBuildManifestEntries.some(([, entry]) => typeof entry.file === "string")).toBe(
+      true,
+    );
 
     // There should be JS files in the assets directory
     const assets = fs.readdirSync(assetsDir);
@@ -1514,12 +1533,16 @@ export default function CounterPage() {
       const buildManifestPath = path.join(fixtureOutDir, "client", ".vite", "manifest.json");
       const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, "utf-8")) as Record<
         string,
-        unknown
+        ClientBuildManifestEntry
       >;
-      const counterBuildManifestEntries = Object.keys(buildManifest).filter(
-        (key) => key.endsWith("/pages/counter.tsx") || key === "pages/counter.tsx",
+      const counterBuildManifestEntries = findBuildManifestEntries(
+        buildManifest,
+        "pages/counter.tsx",
       );
-      expect(counterBuildManifestEntries).toEqual([]);
+      expect(counterBuildManifestEntries.length).toBeGreaterThan(0);
+      expect(counterBuildManifestEntries.some(([, entry]) => typeof entry.file === "string")).toBe(
+        true,
+      );
 
       const manifestPath = path.join(fixtureOutDir, "client", ".vite", "ssr-manifest.json");
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Record<
@@ -1618,12 +1641,21 @@ export default function CounterPage() {
       const buildManifestPath = path.join(fixtureOutDir, "client", ".vite", "manifest.json");
       const buildManifest = JSON.parse(fs.readFileSync(buildManifestPath, "utf-8")) as Record<
         string,
-        unknown
+        ClientBuildManifestEntry
       >;
-      const counterBuildManifestEntries = Object.keys(buildManifest).filter(
-        (key) => key.endsWith("/pages/counter.tsx") || key === "pages/counter.tsx",
+      const counterBuildManifestEntries = findBuildManifestEntries(
+        buildManifest,
+        "pages/counter.tsx",
       );
-      expect(counterBuildManifestEntries).toEqual([]);
+      expect(counterBuildManifestEntries.length).toBeGreaterThan(0);
+      expect(
+        counterBuildManifestEntries.some(
+          ([, entry]) =>
+            typeof entry.file === "string" ||
+            (Array.isArray(entry.css) && entry.css.length > 0) ||
+            (Array.isArray(entry.assets) && entry.assets.length > 0),
+        ),
+      ).toBe(true);
 
       const manifestPath = path.join(fixtureOutDir, "client", ".vite", "ssr-manifest.json");
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Record<

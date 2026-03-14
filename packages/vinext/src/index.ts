@@ -646,20 +646,64 @@ type BundleBackfillChunk = {
   };
 };
 
+function tryRealpathSync(candidate: string): string | null {
+  try {
+    return fs.realpathSync.native(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function isWindowsAbsolutePath(candidate: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(candidate) || candidate.startsWith("\\\\");
+}
+
+function relativeWithinRoot(root: string, moduleId: string): string | null {
+  const useWindowsPath = isWindowsAbsolutePath(root) || isWindowsAbsolutePath(moduleId);
+  const relativeId = (
+    useWindowsPath ? path.win32.relative(root, moduleId) : path.relative(root, moduleId)
+  ).replace(/\\/g, "/");
+  if (!relativeId || relativeId === ".." || relativeId.startsWith("../")) return null;
+  return relativeId;
+}
+
 function normalizeManifestModuleId(moduleId: string, root: string): string {
   const normalizedId = moduleId.replace(/\\/g, "/");
-  const isWindowsAbsolute = /^[a-zA-Z]:[\\/]/.test(moduleId) || moduleId.startsWith("\\\\");
-  if (isWindowsAbsolute) {
-    const relativeId = path.win32.relative(root, moduleId).replace(/\\/g, "/");
-    if (!relativeId || relativeId.startsWith("../")) return normalizedId;
-    return relativeId;
+  if (normalizedId.startsWith("\0")) return normalizedId;
+  if (normalizedId.startsWith("node_modules/") || normalizedId.includes("/node_modules/")) {
+    return normalizedId;
   }
 
-  if (!path.isAbsolute(moduleId)) return normalizedId;
+  if (!isWindowsAbsolutePath(moduleId) && !path.isAbsolute(moduleId)) {
+    if (!normalizedId.startsWith(".") && !normalizedId.includes("../")) {
+      return normalizedId;
+    }
+  }
 
-  const relativeId = path.relative(root, moduleId).replace(/\\/g, "/");
-  if (!relativeId || relativeId.startsWith("../")) return normalizedId;
-  return relativeId;
+  const rootCandidates = new Set<string>([root]);
+  const realRoot = tryRealpathSync(root);
+  if (realRoot) rootCandidates.add(realRoot);
+
+  const moduleCandidates = new Set<string>();
+  if (isWindowsAbsolutePath(moduleId) || path.isAbsolute(moduleId)) {
+    moduleCandidates.add(moduleId);
+  } else {
+    moduleCandidates.add(path.resolve(root, moduleId));
+  }
+
+  for (const candidate of moduleCandidates) {
+    const realCandidate = tryRealpathSync(candidate);
+    if (realCandidate) moduleCandidates.add(realCandidate);
+  }
+
+  for (const rootCandidate of rootCandidates) {
+    for (const moduleCandidate of moduleCandidates) {
+      const relativeId = relativeWithinRoot(rootCandidate, moduleCandidate);
+      if (relativeId) return relativeId;
+    }
+  }
+
+  return normalizedId;
 }
 
 function augmentSsrManifestFromBundle(
@@ -668,12 +712,15 @@ function augmentSsrManifestFromBundle(
   root: string,
   base = "/",
 ): Record<string, string[]> {
-  const nextManifest = Object.fromEntries(
-    Object.entries(ssrManifest).map(([key, files]) => [
-      key,
-      new Set(files.map((file) => normalizeManifestFile(file))),
-    ]),
-  ) as Record<string, Set<string>>;
+  const nextManifest = {} as Record<string, Set<string>>;
+
+  for (const [key, files] of Object.entries(ssrManifest)) {
+    const normalizedKey = normalizeManifestModuleId(key, root);
+    if (!nextManifest[normalizedKey]) nextManifest[normalizedKey] = new Set<string>();
+    for (const file of files) {
+      nextManifest[normalizedKey].add(normalizeManifestFile(file));
+    }
+  }
 
   for (const item of Object.values(bundle)) {
     if (item.type !== "chunk") continue;
