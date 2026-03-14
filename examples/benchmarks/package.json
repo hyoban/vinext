@@ -3,9 +3,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
-    "preview": "vp preview"
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "react": "catalog:",
@@ -21,8 +21,5 @@
     "wrangler": "catalog:",
     "tailwindcss": "catalog:",
     "@tailwindcss/vite": "catalog:"
-  },
-  "devDependencies": {
-    "vite-plus": "catalog:"
   }
 }

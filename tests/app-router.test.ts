@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
-import { createBuilder, createServer, type ViteDevServer } from "vite-plus";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { createBuilder, createServer, type ViteDevServer } from "vite";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { generateRscEntry } from "../packages/vinext/src/entries/app-rsc-entry.js";
 import vinext from "../packages/vinext/src/index.js";
 import { APP_FIXTURE_DIR, fetchHtml, RSC_ENTRIES, startFixtureServer } from "./helpers.js";
@@ -3385,7 +3385,7 @@ describe("RSC plugin auto-registration", () => {
         "junction",
       );
 
-      const plugins = vinext({ appDir: tmpDir });
+      const plugins = vinext({ appDir: tmpDir, react: false });
 
       const resolvedPlugins = (
         await Promise.all(
@@ -3409,7 +3409,7 @@ describe("RSC plugin auto-registration", () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-no-app-"));
     try {
       // Empty directory — no app/ or src/app/.
-      const plugins = vinext({ appDir: tmpDir });
+      const plugins = vinext({ appDir: tmpDir, react: false });
 
       const resolvedPlugins = (
         await Promise.all(

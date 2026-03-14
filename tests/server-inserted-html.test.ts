@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vite-plus/test";
+import { describe, it, expect, beforeEach } from "vitest";
 
 describe("useServerInsertedHTML", () => {
   beforeEach(async () => {

@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
+    "dev": "vite",
+    "build": "vite build",
     "start": "node dist/server/entry.js"
   },
   "dependencies": {
@@ -21,7 +21,6 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "typescript": "catalog:",
-    "wrangler": "catalog:",
-    "vite-plus": "catalog:"
+    "wrangler": "catalog:"
   }
 }

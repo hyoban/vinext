@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vite-plus/test";
+import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 import vinext from "../packages/vinext/src/index.js";
-import type { Plugin } from "vite-plus";
+import type { Plugin } from "vite";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";

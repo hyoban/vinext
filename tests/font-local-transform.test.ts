@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vite-plus/test";
+import { describe, it, expect } from "vitest";
 import vinext from "../packages/vinext/src/index.js";
 import localFont, { getSSRFontStyles } from "../packages/vinext/src/shims/font-local.js";
-import type { Plugin } from "vite-plus";
+import type { Plugin } from "vite";
 
 // ── Helpers ───────────────────────────────────────────────────
 

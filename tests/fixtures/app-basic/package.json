@@ -12,8 +12,5 @@
     "react-server-dom-webpack": "catalog:",
     "vinext": "workspace:*",
     "vite": "catalog:"
-  },
-  "devDependencies": {
-    "vite-plus": "catalog:"
   }
 }

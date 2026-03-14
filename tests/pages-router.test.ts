@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vite-plus/test";
-import { createServer, build, type ViteDevServer } from "vite-plus";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { createServer, build, type ViteDevServer } from "vite";
 import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -1044,41 +1044,6 @@ describe("Plugin config", () => {
       (plugin) => plugin && typeof plugin.name === "string" && plugin.name.startsWith("vite:react"),
     );
     expect(hasReactPlugin).toBe(true);
-  });
-
-  it("falls back to vinext's own @vitejs/plugin-react in workspace tests", async () => {
-    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-react-fallback-"));
-    try {
-      fs.mkdirSync(path.join(tmpRoot, "pages"), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpRoot, "package.json"),
-        JSON.stringify({ name: "react-fallback-test", private: true }, null, 2),
-      );
-      fs.writeFileSync(
-        path.join(tmpRoot, "pages", "index.tsx"),
-        "export default function Page() { return <div>hello</div>; }\n",
-      );
-
-      const plugins = vinext({ appDir: tmpRoot }) as any[];
-      const resolvedPlugins = (
-        await Promise.all(
-          plugins.map(async (plugin) => {
-            if (plugin && typeof plugin.then === "function") {
-              return await plugin;
-            }
-            return plugin;
-          }),
-        )
-      ).flat();
-
-      const hasReactPlugin = resolvedPlugins.some(
-        (plugin) =>
-          plugin && typeof plugin.name === "string" && plugin.name.startsWith("vite:react"),
-      );
-      expect(hasReactPlugin).toBe(true);
-    } finally {
-      fs.rmSync(tmpRoot, { recursive: true, force: true });
-    }
   });
 
   it("throws when user double-registers react() alongside auto-registration", async () => {

@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
-    "preview": "vp preview"
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@heroicons/react": "catalog:",
@@ -36,7 +36,6 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "wrangler": "catalog:",
-    "vite-plus": "catalog:"
+    "wrangler": "catalog:"
   }
 }

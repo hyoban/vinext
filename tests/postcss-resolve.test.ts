@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import path from "node:path";
 import os from "node:os";
 

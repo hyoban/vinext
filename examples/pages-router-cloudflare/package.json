@@ -3,9 +3,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vp dev",
-    "build": "vp build",
-    "preview": "vp preview"
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@vitejs/plugin-react": "catalog:",
@@ -15,8 +15,5 @@
     "vinext": "workspace:*",
     "@cloudflare/vite-plugin": "catalog:",
     "wrangler": "catalog:"
-  },
-  "devDependencies": {
-    "vite-plus": "catalog:"
   }
 }

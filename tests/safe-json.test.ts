@@ -5,7 +5,7 @@
  * JSON data inside <script> tags during SSR. Every test here represents
  * a real attack vector that has been exploited in production SSR frameworks.
  */
-import { describe, it, expect } from "vite-plus/test";
+import { describe, it, expect } from "vitest";
 import { safeJsonStringify } from "../packages/vinext/src/server/html.js";
 
 // ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
-import type { ViteDevServer } from "vite-plus";
+import type { ViteDevServer } from "vite";
 import { APP_FIXTURE_DIR, PAGES_FIXTURE_DIR, startFixtureServer } from "./helpers.js";
 
 const PNG_1X1 = Buffer.from(

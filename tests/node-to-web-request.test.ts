@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vite-plus/test";
+import { describe, it, expect, beforeAll } from "vitest";
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 

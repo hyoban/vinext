@@ -8,7 +8,7 @@
  * - Valid entries round-trip correctly
  */
 
-import { describe, it, expect, beforeEach, vi } from "vite-plus/test";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { KVCacheHandler } from "../packages/vinext/src/cloudflare/kv-cache-handler.js";
 
 // ---------------------------------------------------------------------------

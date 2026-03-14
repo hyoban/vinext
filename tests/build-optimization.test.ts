@@ -5,7 +5,7 @@
  * Tests the treeshake config, manualChunks function, and experimentalMinChunkSize
  * to ensure large barrel-exporting libraries (e.g. mermaid) produce smaller bundles.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   clientManualChunks,
   clientTreeshakeConfig,
