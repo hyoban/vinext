@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const FIXTURES_DIR = path.resolve(__dirname, "fixtures", "ecosystem");
+const STARTUP_TIMEOUT_MS = process.env.CI ? 90_000 : 30_000;
 
 /**
  * Start a Vite dev server as a child process and wait for it to be ready.
@@ -40,8 +41,8 @@ async function startFixture(
   // Wait for the server to be ready
   await new Promise<void>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      reject(new Error(`Fixture "${name}" did not start within 30s`));
-    }, 30000);
+      reject(new Error(`Fixture "${name}" did not start within ${STARTUP_TIMEOUT_MS}ms`));
+    }, STARTUP_TIMEOUT_MS);
 
     let output = "";
     const onData = (data: Buffer) => {
@@ -119,7 +120,7 @@ describe("next-themes", () => {
     const fixture = await startFixture("next-themes", 4400);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -157,7 +158,7 @@ describe("next-view-transitions", () => {
     const fixture = await startFixture("next-view-transitions", 4401);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -198,7 +199,7 @@ describe("nuqs", () => {
     const fixture = await startFixture("nuqs", 4402);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -255,7 +256,7 @@ describe("next-intl", () => {
     const fixture = await startFixture("next-intl", 4403);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -309,7 +310,7 @@ describe("better-auth", () => {
     proc = fixture.process;
     baseUrl = fixture.baseUrl;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -412,7 +413,7 @@ describe("shadcn", () => {
     const fixture = await startFixture("shadcn", 4405);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
@@ -467,7 +468,7 @@ describe("validator", () => {
     const fixture = await startFixture("validator", 4405);
     proc = fixture.process;
     fetchPage = fixture.fetchPage;
-  }, 30000);
+  }, STARTUP_TIMEOUT_MS);
 
   afterAll(() => killProcess(proc));
 
