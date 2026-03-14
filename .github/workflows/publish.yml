@@ -36,10 +36,12 @@ jobs:
         with:
           fetch-depth: 0 # full history for changelog generation
 
-      - uses: ./.github/actions/setup-vp
+      - uses: ./.github/actions/setup-node-pnpm
+        with:
+          registry-url: https://registry.npmjs.org
 
       - name: Build
-        run: vp run build
+        run: pnpm run build
 
       - name: Bump version
         id: version
@@ -71,9 +73,7 @@ jobs:
 
       - name: Publish (OIDC trusted publishing)
         working-directory: packages/vinext
-        env:
-          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
-        run: vp pm publish --access public --provenance
+        run: pnpm publish --access public --provenance
 
       - name: Tag release
         run: |

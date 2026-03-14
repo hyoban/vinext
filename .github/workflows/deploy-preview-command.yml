@@ -87,13 +87,13 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.sha }}
 
-      - uses: ./.github/actions/setup-vp
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Build vinext plugin
-        run: vp run build
+        run: pnpm run build
 
       - name: Build example
-        run: vp exec vite build
+        run: pnpm exec vite build
         working-directory: examples/${{ matrix.example.name }}
 
       - name: Deploy Preview Version

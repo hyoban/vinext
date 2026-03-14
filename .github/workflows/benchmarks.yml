@@ -20,10 +20,10 @@ jobs:
         with:
           fetch-depth: 0 # Need full history for commit info
 
-      - uses: ./.github/actions/setup-vp
+      - uses: ./.github/actions/setup-node-pnpm
 
       - name: Build vinext plugin
-        run: vp run build
+        run: pnpm run build
 
       - name: Install hyperfine
         run: |
@@ -35,9 +35,13 @@ jobs:
       - name: Generate benchmark app
         run: node benchmarks/generate-app.mjs
 
-      - name: Install Next.js benchmark dependencies
-        working-directory: benchmarks/nextjs
-        run: vp install
+      # Install benchmark-specific deps.
+      # The vinext benchmark apps are workspace packages, so they are already
+      # installed by the shared setup-node-pnpm action above. Only the Next.js
+      # benchmark app lives outside the workspace and needs its own install.
+      - name: Install benchmark dependencies
+        run: |
+          npm install --prefix benchmarks/nextjs
 
       # Run the benchmarks
       - name: Run benchmarks
