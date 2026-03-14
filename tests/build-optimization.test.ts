@@ -90,10 +90,10 @@ describe("clientManualChunks", () => {
 describe("optimizeDeps.exclude for vinext", () => {
   it("excludes vinext at top level for Pages Router builds", async () => {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
-      (p: any) => p.name === "vinext:config" && typeof p.config === "function",
+      (p: any) => p && p.name === "vinext:config" && typeof p.config === "function",
     );
     expect(mainPlugin).toBeDefined();
 
@@ -124,10 +124,10 @@ describe("optimizeDeps.exclude for vinext", () => {
 
   it("excludes vinext in all environments for App Router builds", async () => {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
-      (p: any) => p.name === "vinext:config" && typeof p.config === "function",
+      (p: any) => p && p.name === "vinext:config" && typeof p.config === "function",
     );
     expect(mainPlugin).toBeDefined();
 
@@ -174,7 +174,7 @@ describe("process.env.NODE_ENV define", () => {
   // Helper: create a temp Pages Router project and return the vinext:config plugin
   async function setupTmpProject() {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",
     );
@@ -261,7 +261,7 @@ describe("process.env.NODE_ENV define", () => {
 describe("treeshake config integration", () => {
   it("plugin config hook applies treeshake to non-SSR builds", async () => {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     // Find the main vinext plugin (has a config hook)
     const mainPlugin = plugins.find(
@@ -305,7 +305,7 @@ describe("treeshake config integration", () => {
 
   it("plugin config hook does NOT apply treeshake to SSR builds", async () => {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",
@@ -347,7 +347,7 @@ describe("treeshake config integration", () => {
     // (which would leak into RSC/SSR) — it should only appear on the client
     // environment's rollupOptions.
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",
@@ -401,7 +401,7 @@ describe("treeshake config integration", () => {
 
   it("client output config includes experimentalMinChunkSize", async () => {
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",
@@ -448,7 +448,7 @@ describe("treeshake config integration", () => {
     // modulepreloaded on every page, defeating code-splitting for React.lazy()
     // and next/dynamic boundaries.
     const vinext = (await import("../packages/vinext/src/index.js")).default;
-    const plugins = vinext();
+    const plugins = vinext({ react: false });
 
     const mainPlugin = plugins.find(
       (p: any) => p.name === "vinext:config" && typeof p.config === "function",

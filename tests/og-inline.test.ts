@@ -18,8 +18,8 @@ function unwrapHook(hook: any): Function {
  * Each call gets an independent cache so tests do not share state.
  */
 function createOgInlinePlugin(command: "serve" | "build" = "serve"): Plugin {
-  const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p.name === "vinext:og-inline-fetch-assets");
+  const plugins = vinext({ react: false }) as Plugin[];
+  const plugin = plugins.find((p) => p && p.name === "vinext:og-inline-fetch-assets");
   if (!plugin) throw new Error("vinext:og-inline-fetch-assets plugin not found");
   const configResolved = unwrapHook(plugin.configResolved);
   configResolved?.call(plugin, { command });

@@ -19,8 +19,8 @@ function getGoogleFontsPlugin(): Plugin & {
   _fontCache: Map<string, string>;
   _cacheDir: string;
 } {
-  const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p.name === "vinext:google-fonts");
+  const plugins = vinext({ react: false }) as Plugin[];
+  const plugin = plugins.find((p) => p && p.name === "vinext:google-fonts");
   if (!plugin) throw new Error("vinext:google-fonts plugin not found");
   return plugin as any;
 }

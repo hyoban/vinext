@@ -12,8 +12,8 @@ function unwrapHook(hook: any): Function {
 
 /** Extract the vinext:local-fonts plugin from the plugin array */
 function getLocalFontsPlugin(): Plugin {
-  const plugins = vinext() as Plugin[];
-  const plugin = plugins.find((p) => p.name === "vinext:local-fonts");
+  const plugins = vinext({ react: false }) as Plugin[];
+  const plugin = plugins.find((p) => p && p.name === "vinext:local-fonts");
   if (!plugin) throw new Error("vinext:local-fonts plugin not found");
   return plugin;
 }
