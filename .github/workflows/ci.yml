@@ -72,7 +72,7 @@ jobs:
       - name: Install vinext from local tarball
         working-directory: ${{ runner.temp }}/cna-test
         shell: bash
-        run: vp pm install "${{ runner.temp }}"/vinext-*.tgz
+        run: vp add "${{ runner.temp }}"/vinext-*.tgz
 
       - name: Run vinext init
         working-directory: ${{ runner.temp }}/cna-test
