@@ -10117,7 +10117,7 @@ describe("cache scope guards for dynamic APIs", () => {
 
 describe("shim alias map .js variants", () => {
   it("every top-level next/* alias has a corresponding .js variant", async () => {
-    const plugins = vinext({ react: false }) as Plugin[];
+    const plugins = vinext() as Plugin[];
     const configPlugin = plugins.find((p) => p && p.name === "vinext:config");
     if (!configPlugin?.config) throw new Error("vinext:config plugin not found");
 
