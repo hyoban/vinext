@@ -35,8 +35,6 @@ jobs:
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-vp
-        with:
-          node-version: "24"
 
       - name: Run Bonk
         uses: ask-bonk/ask-bonk/github@main

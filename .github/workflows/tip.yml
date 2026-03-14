@@ -46,7 +46,6 @@ jobs:
       - name: Setup Vite+
         uses: ./.github/actions/setup-vp
         with:
-          node-version: "24"
           cache: "false"
           run-install: false
 
