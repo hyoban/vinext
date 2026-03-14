@@ -7,7 +7,7 @@
  * This approach is necessary because the RSC module runner in programmatic
  * createServer() bypasses Vite's resolveId for `next` package resolution.
  *
- * Run with: npx vitest run tests/ecosystem.test.ts
+ * Run with: vp test tests/ecosystem.test.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from "vite-plus/test";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -30,7 +30,7 @@ async function startFixture(
   const root = path.join(FIXTURES_DIR, name);
   const baseUrl = `http://localhost:${port}`;
 
-  const proc = spawn("npx", ["vite", "--port", String(port), "--strictPort"], {
+  const proc = spawn("vp", ["dev", "--port", String(port), "--strictPort"], {
     cwd: root,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env },
@@ -240,7 +240,8 @@ describe("nuqs", () => {
 
     const optimizedAdapter = readFileSync(path.join(depsDir, optimizedAdapterFile!), "utf8");
 
-    expect(optimizedAdapter).toMatch(/shims\/navigation\.js/);
+    expect(optimizedAdapter).toContain("vinext.navigation.readonlySearchParams");
+    expect(optimizedAdapter).toContain("__VINEXT_RSC_NAVIGATE__");
     expect(optimizedAdapter).not.toContain("node_modules/.pnpm/next@");
   });
 });
