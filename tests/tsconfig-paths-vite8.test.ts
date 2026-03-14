@@ -43,7 +43,7 @@ describe("Vite tsconfig paths support", () => {
     const root = setupProject("7.3.1");
     process.chdir(root);
 
-    const plugins = vinext({ appDir: root });
+    const plugins = vinext({ appDir: root, react: false });
 
     expect(findNamedPlugin(plugins, "vite-tsconfig-paths")).toBeDefined();
 
@@ -54,7 +54,7 @@ describe("Vite tsconfig paths support", () => {
     const root = setupProject("8.0.0-beta.18");
     process.chdir(root);
 
-    const plugins = vinext({ appDir: root });
+    const plugins = vinext({ appDir: root, react: false });
 
     expect(findNamedPlugin(plugins, "vite-tsconfig-paths")).toBeUndefined();
 
@@ -80,7 +80,7 @@ describe("Vite tsconfig paths support", () => {
     const root = setupProject("8.0.0-beta.18");
     process.chdir(root);
 
-    const plugins = vinext({ appDir: root });
+    const plugins = vinext({ appDir: root, react: false });
     const configPlugin = findNamedPlugin(plugins, "vinext:config") as {
       config?: (
         config: { root: string; resolve?: Record<string, unknown> },
