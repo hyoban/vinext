@@ -17,13 +17,6 @@ import path from "node:path";
 const FIXTURES_DIR = path.resolve(__dirname, "fixtures", "ecosystem");
 const STARTUP_TIMEOUT_MS = process.env.CI ? 90_000 : 30_000;
 const READY_POLL_INTERVAL_MS = 250;
-const REPO_ROOT = path.resolve(__dirname, "..");
-const VP_BIN = path.join(
-  REPO_ROOT,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "vp.cmd" : "vp",
-);
 
 /**
  * Start a Vite dev server as a child process and wait for it to be ready.
@@ -39,7 +32,7 @@ async function startFixture(
   const root = path.join(FIXTURES_DIR, name);
   const baseUrl = `http://localhost:${port}`;
 
-  const proc = spawn(VP_BIN, ["dev", "--port", String(port), "--strictPort"], {
+  const proc = spawn("npx", ["vp", "dev", "--port", String(port), "--strictPort"], {
     cwd: root,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env },
