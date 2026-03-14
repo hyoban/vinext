@@ -30,7 +30,7 @@ async function startFixture(
   const root = path.join(FIXTURES_DIR, name);
   const baseUrl = `http://localhost:${port}`;
 
-  const proc = spawn("npx", ["vite", "--port", String(port), "--strictPort"], {
+  const proc = spawn("npx", ["vp", "dev", "--port", String(port), "--strictPort"], {
     cwd: root,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env },
