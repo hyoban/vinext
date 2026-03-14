@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { createServer, build, type ViteDevServer } from "vite";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vite-plus/test";
+import { createServer, build, type ViteDevServer } from "vite-plus";
 import path from "node:path";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
