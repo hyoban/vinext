@@ -35,12 +35,13 @@ jobs:
       - name: Generate benchmark app
         run: node benchmarks/generate-app.mjs
 
-      # Install benchmark-specific deps (outside pnpm workspace)
+      # Install benchmark-specific deps.
+      # The vinext benchmark apps are workspace packages, so they are already
+      # installed by the shared setup-node-pnpm action above. Only the Next.js
+      # benchmark app lives outside the workspace and needs its own install.
       - name: Install benchmark dependencies
         run: |
           npm install --prefix benchmarks/nextjs
-          npm install --prefix benchmarks/vinext
-          npm install --prefix benchmarks/vinext-rolldown
 
       # Run the benchmarks
       - name: Run benchmarks
