@@ -381,4 +381,16 @@ describe("Next.js compat: app-routes", () => {
   // N/A: 'permanentRedirect' — Would need fixture, minor variant of redirect
   //
   // N/A: 'catch-all routes' — Would need fixture with [...slug] route handler
+
+  // ── ISR caching (dev mode) ─────────────────────────────────
+  // In dev mode, ISR caching is disabled. Route handlers should NOT emit
+  // X-Vinext-Cache headers — every request re-executes the handler fresh.
+  // Production ISR behavioral tests are in app-router.test.ts's production server section.
+
+  it("dev mode: route handler with revalidate does not emit X-Vinext-Cache header", async () => {
+    const res = await fetch(`${baseUrl}/api/static-data`);
+    expect(res.status).toBe(200);
+    // Dev mode should not set X-Vinext-Cache (ISR is production-only)
+    expect(res.headers.get("x-vinext-cache")).toBeNull();
+  });
 });
