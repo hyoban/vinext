@@ -1,0 +1,25 @@
+name: Setup Vite+
+description: Install Vite+, set up Node.js, restore dependency cache, and install dependencies. Requires the repo to already be checked out.
+
+inputs:
+  node-version:
+    description: Node.js version to use
+    required: false
+    default: "24"
+  run-install:
+    description: Whether to run vp install after setup
+    required: false
+    default: "true"
+  cache:
+    description: Whether to restore/save the package-manager cache
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: ${{ inputs.node-version }}
+        run-install: ${{ inputs.run-install }}
+        cache: ${{ inputs.cache }}

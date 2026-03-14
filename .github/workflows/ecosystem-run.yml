@@ -25,12 +25,12 @@ jobs:
       - name: Checkout vinext
         uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-vp
         with:
           node-version: ${{ inputs.node_version }}
 
       - name: Build vinext plugin
-        run: pnpm run build
+        run: vp run build
 
       - name: Read vinext versions
         id: versions
