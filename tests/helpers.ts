@@ -10,7 +10,7 @@
 import http, { type IncomingHttpHeaders } from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
-import { createServer, type ViteDevServer } from "vite";
+import { createServer, type ViteDevServer } from "vite-plus";
 import vinext from "../packages/vinext/src/index.js";
 import path from "node:path";
 
