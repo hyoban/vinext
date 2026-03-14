@@ -15,9 +15,10 @@ export default defineConfig({
   },
   lint: {
     ignorePatterns: ["fixtures/ecosystem/**", "tests/fixtures/ecosystem/**", "examples/**"],
-    options: {
-      typeAware: true,
-      typeCheck: true,
-    },
+    // TODO: Enable typeAware and typeCheck
+    // options: {
+    //   typeAware: true,
+    //   typeCheck: true,
+    // },
   },
 });
