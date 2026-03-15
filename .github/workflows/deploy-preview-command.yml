@@ -93,7 +93,7 @@ jobs:
         run: vp run build
 
       - name: Build example
-        run: vp exec vite build
+        run: vp build
         working-directory: examples/${{ matrix.example.name }}
 
       - name: Deploy Preview Version
