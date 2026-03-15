@@ -45,6 +45,8 @@ jobs:
         id: version
         working-directory: packages/vinext
         run: |
+          # vp wraps package-manager subcommands, but versioning still needs the real npm CLI
+          # because we are mutating package.json in place before the publish step.
           LATEST=$(npm view vinext version 2>/dev/null || echo "0.0.0")
           IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
 

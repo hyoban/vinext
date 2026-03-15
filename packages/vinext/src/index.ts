@@ -665,6 +665,8 @@ function relativeWithinRoot(root: string, moduleId: string): string | null {
   const relativeId = (
     useWindowsPath ? path.win32.relative(root, moduleId) : path.relative(root, moduleId)
   ).replace(/\\/g, "/");
+  // path.relative(root, root) returns "", which is not a usable manifest key and should be
+  // treated the same as "outside root" for this helper.
   if (!relativeId || relativeId === ".." || relativeId.startsWith("../")) return null;
   return relativeId;
 }
