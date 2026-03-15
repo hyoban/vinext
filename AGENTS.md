@@ -25,7 +25,7 @@ pnpm run typecheck                               # TypeScript via tsgo (fast)
 pnpm run lint                                    # oxlint
 pnpm run fmt                                     # oxfmt (format)
 pnpm run fmt:check                               # oxfmt (check only, no writes)
-pnpm run build                                   # Build the vinext package
+pnpm run build                                   # Build the vinext package (via vp pack)
 ```
 
 ### Project Structure

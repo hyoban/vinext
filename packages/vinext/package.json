@@ -51,9 +51,9 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "vp pack",
     "prepack": "cp ../../README.md README.md && vp run build",
-    "dev": "tsc --watch"
+    "dev": "vp pack --watch"
   },
   "dependencies": {
     "@unpic/react": "catalog:",
