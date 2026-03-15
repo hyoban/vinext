@@ -37,7 +37,7 @@ jobs:
 
       - name: Install Next.js benchmark dependencies
         working-directory: benchmarks/nextjs
-        run: vp install
+        run: npm install
 
       # Run the benchmarks
       - name: Run benchmarks

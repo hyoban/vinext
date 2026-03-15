@@ -163,19 +163,19 @@ catalogs:
       specifier: ^13.15.26
       version: 13.15.26
     vite:
-      specifier: npm:@voidzero-dev/vite-plus-core@latest
+      specifier: npm:@voidzero-dev/vite-plus-core@0.1.11
       version: 0.1.11
     vite-plugin-commonjs:
       specifier: ^0.10.4
       version: 0.10.4
     vite-plus:
-      specifier: latest
+      specifier: 0.1.11
       version: 0.1.11
     vite-tsconfig-paths:
       specifier: ^6.1.1
       version: 6.1.1
     vitest:
-      specifier: npm:@voidzero-dev/vite-plus-test@latest
+      specifier: npm:@voidzero-dev/vite-plus-test@0.1.11
       version: 0.1.11
     wrangler:
       specifier: ^4.65.0

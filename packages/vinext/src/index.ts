@@ -82,7 +82,9 @@ function resolveOptionalDependency(projectRoot: string, specifier: string): stri
 }
 
 function resolveShimModulePath(shimsDir: string, moduleName: string): string {
-  const candidates = [".js", ".ts"];
+  // Source checkouts only ship TypeScript shims, while built packages only ship
+  // JavaScript. Check .ts first to avoid an extra stat in development.
+  const candidates = [".ts", ".js"];
   for (const ext of candidates) {
     const candidate = path.join(shimsDir, `${moduleName}${ext}`);
     if (fs.existsSync(candidate)) {
@@ -676,6 +678,9 @@ function normalizeManifestModuleId(moduleId: string, root: string): string {
 
   if (!isWindowsAbsolutePath(moduleId) && !path.isAbsolute(moduleId)) {
     if (!normalizedId.startsWith(".") && !normalizedId.includes("../")) {
+      // Preserve bare specifiers like "pages/counter.tsx". These are already
+      // stable manifest keys and resolving them against root would rewrite them
+      // into filesystem paths that no longer match the bundle/module graph.
       return normalizedId;
     }
   }
@@ -693,6 +698,8 @@ function normalizeManifestModuleId(moduleId: string, root: string): string {
 
   for (const candidate of moduleCandidates) {
     const realCandidate = tryRealpathSync(candidate);
+    // Set iteration stays live as entries are appended, so this also checks the
+    // realpath variant without needing a second pass or an intermediate array.
     if (realCandidate) moduleCandidates.add(realCandidate);
   }
 
