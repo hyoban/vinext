@@ -243,9 +243,9 @@ export function sitemapToXml(entries: SitemapEntry[]): string {
           video.tag && `<video:tag>${escapeXml(String(video.tag))}</video:tag>`,
           video.rating && `<video:rating>${video.rating}</video:rating>`,
           video.expiration_date &&
-            `<video:expiration_date>${video.expiration_date}</video:expiration_date>`,
+            `<video:expiration_date>${serializeDate(video.expiration_date)}</video:expiration_date>`,
           video.publication_date &&
-            `<video:publication_date>${video.publication_date}</video:publication_date>`,
+            `<video:publication_date>${serializeDate(video.publication_date)}</video:publication_date>`,
           video.family_friendly &&
             `<video:family_friendly>${video.family_friendly}</video:family_friendly>`,
           video.requires_subscription &&

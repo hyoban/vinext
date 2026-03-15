@@ -15,12 +15,16 @@ export default defineConfig({
     ignorePatterns: ["tests/fixtures/ecosystem/**", "examples/**"],
   },
   lint: {
-    ignorePatterns: ["fixtures/ecosystem/**", "tests/fixtures/ecosystem/**", "examples/**"],
-    // TODO: Enable typeAware and typeCheck later
-    // options: {
-    //   typeAware: true,
-    //   typeCheck: true,
-    // },
+    ignorePatterns: [
+      "fixtures/ecosystem/**",
+      "tests/fixtures/**",
+      "tests/fixtures/ecosystem/**",
+      "examples/**",
+    ],
+    options: {
+      typeAware: true,
+      typeCheck: true,
+    },
   },
   test: {
     include: ["tests/**/*.test.ts"],

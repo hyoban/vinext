@@ -3013,8 +3013,9 @@ describe("Pages Router dev ISR regeneration", () => {
       if (!regenPromise) {
         throw new Error("expected stale ISR request to start background regeneration");
       }
+      const pendingRegen = regenPromise;
 
-      await regenPromise;
+      await Promise.resolve(pendingRegen);
 
       expect(regenSawUnifiedScope).toBe(true);
       expect(regenTags).toEqual([]);
