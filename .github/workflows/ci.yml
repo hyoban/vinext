@@ -82,7 +82,7 @@ jobs:
         working-directory: ${{ runner.temp }}/cna-test
         shell: bash
         run: |
-          vp exec vite dev --port 3099 &
+          vp dev --port 3099 &
           SERVER_PID=$!
 
           for i in $(seq 1 30); do
