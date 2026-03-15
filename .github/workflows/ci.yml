@@ -21,8 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: voidzero-dev/setup-vp@v1
-        with:
-          cache: false
       - name: Build plugin (needed for benchmark workspace type resolution)
         run: vp run build
       - run: vp run check
