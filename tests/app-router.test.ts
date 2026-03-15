@@ -3636,6 +3636,29 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("rscData: __freshRscData");
   });
 
+  it("ISR background regeneration uses empty searchParams, not the triggering user's", () => {
+    const code = generateRscEntry("/tmp/test/app", minimalRoutes);
+
+    // Find the __triggerBackgroundRegeneration callback for stale cache hits
+    const regenIdx = code.indexOf("__triggerBackgroundRegeneration(cleanPathname,");
+    expect(regenIdx).toBeGreaterThan(-1);
+
+    // Extract the regeneration callback body — needs enough chars to cover
+    // the setNavigationContext + buildPageElement calls past the unified
+    // context setup boilerplate.
+    const regenBody = code.slice(regenIdx, regenIdx + 1200);
+
+    // The regeneration must NOT use url.searchParams — that leaks the triggering
+    // user's query params into cached content served to all subsequent users.
+    // Headers are already correctly emptied (new Headers()), searchParams must
+    // get the same treatment.
+    expect(regenBody).not.toContain("url.searchParams");
+
+    // Instead it should use empty URLSearchParams for both setNavigationContext
+    // and buildPageElement
+    expect(regenBody).toContain("new URLSearchParams()");
+  });
+
   it("generated code writes RSC-first partial cache entry on RSC MISS", () => {
     const code = generateRscEntry("/tmp/test/app", minimalRoutes);
     // The RSC-path cache write must store rscData with html:"" as a partial entry.

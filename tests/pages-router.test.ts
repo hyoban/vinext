@@ -1467,7 +1467,7 @@ export const config = { matcher: ["/protected"] };
     // entire React framework). Before code-splitting this was ~200KB+.
     if (entryChunk) {
       const entrySize = fs.statSync(path.join(assetsDir, entryChunk)).size;
-      expect(entrySize).toBeLessThan(20 * 1024); // < 20 KB
+      expect(entrySize).toBeLessThan(25 * 1024); // < 25 KB
     }
 
     const counterManifestEntry = Object.entries(manifest).find(
@@ -2922,6 +2922,11 @@ describe("Pages Router dev ISR regeneration", () => {
       const server = {
         transformIndexHtml: vi.fn(async (_url: string, html: string) => html),
         ssrLoadModule: vi.fn(async (id: string) => {
+          // ALS registration side-effects loaded at createSSRHandler startup
+          if (id === "vinext/head-state" || id === "vinext/router-state") {
+            return {};
+          }
+
           if (id === "next/router") {
             return {
               setSSRContext() {

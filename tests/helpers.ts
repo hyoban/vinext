@@ -133,9 +133,13 @@ export interface NodeHttpResponse {
   body: string;
 }
 
-export async function createIsolatedFixture(fixtureDir: string, prefix: string): Promise<string> {
+export async function createIsolatedFixture(
+  fixtureDir: string,
+  prefix: string,
+  filter?: (src: string, dest: string) => boolean,
+): Promise<string> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  await fs.cp(fixtureDir, tmpDir, { recursive: true });
+  await fs.cp(fixtureDir, tmpDir, { recursive: true, filter });
 
   const rootNodeModules = path.resolve(import.meta.dirname, "../node_modules");
   await fs.symlink(rootNodeModules, path.join(tmpDir, "node_modules"), "junction");
