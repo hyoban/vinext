@@ -23,12 +23,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
       - name: Build plugin (needed for benchmark workspace type resolution)
         run: vp run build
-      - name: Run check
-        shell: bash
-        run: |
-          # Work around a Vite+ check bug triggered by the GitHub Actions env var.
-          unset GITHUB_ACTIONS
-          vp run check
+      - run: vp run check
 
   test:
     name: Vitest
