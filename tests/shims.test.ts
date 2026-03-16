@@ -313,16 +313,16 @@ describe("next/headers shim", () => {
     });
 
     const syncHeaders = headers();
-    expect(() => syncHeaders.set).toThrow(/Headers cannot be modified/);
-    expect(() => syncHeaders.append).toThrow(/Headers cannot be modified/);
-    expect(() => syncHeaders.delete).toThrow(/Headers cannot be modified/);
+    expect(() => Reflect.get(syncHeaders, "set")).toThrow(/Headers cannot be modified/);
+    expect(() => Reflect.get(syncHeaders, "append")).toThrow(/Headers cannot be modified/);
+    expect(() => Reflect.get(syncHeaders, "delete")).toThrow(/Headers cannot be modified/);
     expect(() => syncHeaders.set("foo", "mutated")).toThrow(/Headers cannot be modified/);
     expect(() => syncHeaders.append("foo", "mutated")).toThrow(/Headers cannot be modified/);
     expect(() => syncHeaders.delete("foo")).toThrow(/Headers cannot be modified/);
     expect(syncHeaders.get("foo")).toBe("original");
 
     const awaitedHeaders = await headers();
-    expect(() => awaitedHeaders.set).toThrow(/Headers cannot be modified/);
+    expect(() => Reflect.get(awaitedHeaders, "set")).toThrow(/Headers cannot be modified/);
     expect(() => awaitedHeaders.set("foo", "mutated")).toThrow(/Headers cannot be modified/);
     expect(awaitedHeaders.get("foo")).toBe("original");
     expect((await headers()).get("foo")).toBe("original");
@@ -377,10 +377,10 @@ describe("next/headers shim", () => {
     });
 
     const syncCookies = cookies();
-    expect(() => syncCookies.set).toThrow(
+    expect(() => Reflect.get(syncCookies, "set")).toThrow(
       /Cookies can only be modified in a Server Action or Route Handler/,
     );
-    expect(() => syncCookies.delete).toThrow(
+    expect(() => Reflect.get(syncCookies, "delete")).toThrow(
       /Cookies can only be modified in a Server Action or Route Handler/,
     );
     expect(() => syncCookies.set("session", "mutated")).toThrow(
@@ -392,7 +392,7 @@ describe("next/headers shim", () => {
     expect(syncCookies.get("session")).toEqual({ name: "session", value: "abc123" });
 
     const awaitedCookies = await cookies();
-    expect(() => awaitedCookies.set).toThrow(
+    expect(() => Reflect.get(awaitedCookies, "set")).toThrow(
       /Cookies can only be modified in a Server Action or Route Handler/,
     );
     expect(() => awaitedCookies.set("session", "mutated")).toThrow(
@@ -892,7 +892,7 @@ describe("next/headers phase-aware cookies", () => {
     const previousPhase = setHeadersAccessPhase("route-handler");
     try {
       const cookieStore = cookies();
-      cookieStore.set("token", "sync-token", { httpOnly: true });
+      void cookieStore.set("token", "sync-token", { httpOnly: true });
 
       expect(cookieStore.get("token")).toEqual({ name: "token", value: "sync-token" });
       expect(getAndClearPendingCookies()).toEqual([expect.stringContaining("token=sync-token")]);
