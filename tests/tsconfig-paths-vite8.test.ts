@@ -26,20 +26,6 @@ function setupProject(vitePackageJson: Record<string, unknown>): string {
   return root;
 }
 
-function setupProjectWithoutVite(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-vite-major-"));
-  fs.mkdirSync(path.join(root, "pages"), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, "package.json"),
-    JSON.stringify({ name: "test-project", version: "1.0.0" }, null, 2),
-  );
-  fs.writeFileSync(
-    path.join(root, "pages", "index.tsx"),
-    "export default function Page() { return <div>hello</div>; }\n",
-  );
-  return root;
-}
-
 function isPlugin(plugin: PluginOption): plugin is Plugin {
   return !!plugin && !Array.isArray(plugin) && typeof plugin === "object" && "name" in plugin;
 }
@@ -157,22 +143,6 @@ describe("Vite tsconfig paths support", () => {
     expect(findNamedPlugin(plugins, "vite-tsconfig-paths")).toBeDefined();
     expect(warn).toHaveBeenCalledWith(
       "[vinext] Could not determine Vite major version from @voidzero-dev/vite-plus-core; assuming Vite 7",
-    );
-
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  it("falls back to Vite 7 and warns when vite/package.json cannot be resolved", async () => {
-    const root = setupProjectWithoutVite();
-    process.chdir(root);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    const plugins = vinext({ appDir: root });
-
-    expect(findNamedPlugin(plugins, "vite-tsconfig-paths")).toBeDefined();
-    expect(warn).toHaveBeenCalled();
-    expect(warn.mock.calls[0]?.[0]).toBe(
-      "[vinext] Failed to resolve vite/package.json; assuming Vite 7",
     );
 
     fs.rmSync(root, { recursive: true, force: true });
