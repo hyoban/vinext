@@ -7,7 +7,7 @@ import os from "node:os";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import vinext from "../packages/vinext/src/index.js";
-import { PAGES_FIXTURE_DIR, startFixtureServer } from "./helpers.js";
+import { PAGES_FIXTURE_DIR, buildPagesFixture, startFixtureServer } from "./helpers.js";
 
 const FIXTURE_DIR = PAGES_FIXTURE_DIR;
 const PAGES_APP_COMPONENT = `export default function App({ Component, pageProps }) {
@@ -2562,22 +2562,14 @@ describe("Production server next.config.js features (Pages Router)", () => {
 });
 
 describe("Static export (Pages Router)", () => {
-  let server: ViteDevServer;
+  let pagesBundlePath: string;
   const exportDir = path.resolve(FIXTURE_DIR, "out");
 
   beforeAll(async () => {
-    server = await createServer({
-      root: FIXTURE_DIR,
-      configFile: false,
-      plugins: [vinext()],
-      server: { port: 0 },
-      logLevel: "silent",
-    });
-    // Don't need to listen — just need the SSR module loader
-  });
+    pagesBundlePath = await buildPagesFixture(FIXTURE_DIR);
+  }, 60_000);
 
-  afterAll(async () => {
-    await server.close();
+  afterAll(() => {
     fs.rmSync(exportDir, { recursive: true, force: true });
   });
 
@@ -2593,7 +2585,7 @@ describe("Static export (Pages Router)", () => {
     const config = await resolveNextConfig({ output: "export" });
 
     const result = await staticExportPages({
-      server,
+      pagesBundlePath,
       routes,
       apiRoutes,
       pagesDir,
@@ -2656,7 +2648,7 @@ describe("Static export (Pages Router)", () => {
     const tempDir = path.resolve(FIXTURE_DIR, "out-temp");
     try {
       const result = await staticExportPages({
-        server,
+        pagesBundlePath,
         routes,
         apiRoutes,
         pagesDir,
@@ -2697,7 +2689,7 @@ describe("Static export (Pages Router)", () => {
     const trailingDir = path.resolve(FIXTURE_DIR, "out-trailing");
     try {
       const result = await staticExportPages({
-        server,
+        pagesBundlePath,
         routes,
         apiRoutes,
         pagesDir,

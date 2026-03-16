@@ -241,6 +241,7 @@ const CONTENT_TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".avif": "image/avif",
   ".map": "application/json",
+  ".rsc": "text/x-component",
 };
 
 /**
@@ -275,11 +276,34 @@ function tryServeStatic(
   if (!staticFile.startsWith(resolvedClient + path.sep) && staticFile !== resolvedClient) {
     return false;
   }
-  if (pathname === "/" || !fs.existsSync(staticFile) || !fs.statSync(staticFile).isFile()) {
+
+  // Resolve the actual file to serve. For extension-less paths (prerendered
+  // pages like /about → about.html, /blog/post → blog/post.html), try:
+  //   1. The exact path (e.g. /about.css, /assets/foo.js)
+  //   2. <path>.html (e.g. /about → about.html)
+  //   3. <path>/index.html (e.g. /about/ → about/index.html)
+  // Pathname "/" is always skipped — the index.html is served by SSR/RSC.
+  let resolvedStaticFile = staticFile;
+  if (pathname === "/") {
     return false;
   }
+  if (!fs.existsSync(resolvedStaticFile) || !fs.statSync(resolvedStaticFile).isFile()) {
+    // Try .html extension fallback for prerendered pages
+    const htmlFallback = staticFile + ".html";
+    if (fs.existsSync(htmlFallback) && fs.statSync(htmlFallback).isFile()) {
+      resolvedStaticFile = htmlFallback;
+    } else {
+      // Try index.html inside directory (trailing-slash variant)
+      const indexFallback = path.join(staticFile, "index.html");
+      if (fs.existsSync(indexFallback) && fs.statSync(indexFallback).isFile()) {
+        resolvedStaticFile = indexFallback;
+      } else {
+        return false;
+      }
+    }
+  }
 
-  const ext = path.extname(staticFile);
+  const ext = path.extname(resolvedStaticFile);
   const ct = CONTENT_TYPES[ext] ?? "application/octet-stream";
   const isHashed = pathname.startsWith("/assets/");
   const cacheControl = isHashed ? "public, max-age=31536000, immutable" : "public, max-age=3600";
@@ -294,7 +318,7 @@ function tryServeStatic(
   if (compress && COMPRESSIBLE_TYPES.has(baseType)) {
     const encoding = negotiateEncoding(req);
     if (encoding) {
-      const fileStream = fs.createReadStream(staticFile);
+      const fileStream = fs.createReadStream(resolvedStaticFile);
       const compressor = createCompressor(encoding);
       res.writeHead(200, {
         ...baseHeaders,
@@ -309,7 +333,7 @@ function tryServeStatic(
   }
 
   res.writeHead(200, baseHeaders);
-  fs.createReadStream(staticFile).pipe(res);
+  fs.createReadStream(resolvedStaticFile).pipe(res);
   return true;
 }
 
@@ -603,8 +627,12 @@ async function startAppRouterServer(options: AppRouterServerOptions) {
     }
   }
 
-  // Import the RSC handler (use file:// URL for reliable dynamic import)
-  const rscModule = await import(pathToFileURL(rscEntryPath).href);
+  // Import the RSC handler (use file:// URL for reliable dynamic import).
+  // Cache-bust with mtime so that if this function is called multiple times
+  // (e.g. across test describe blocks that rebuild to the same path) Node's
+  // module cache does not return the stale module from a previous build.
+  const rscMtime = fs.statSync(rscEntryPath).mtimeMs;
+  const rscModule = await import(`${pathToFileURL(rscEntryPath).href}?t=${rscMtime}`);
   const rscHandler = resolveAppRouterHandler(rscModule.default);
 
   const server = createServer(async (req, res) => {
@@ -726,8 +754,11 @@ interface PagesRouterServerOptions {
 async function startPagesRouterServer(options: PagesRouterServerOptions) {
   const { port, host, clientDir, serverEntryPath, compress } = options;
 
-  // Import the server entry module (use file:// URL for reliable dynamic import)
-  const serverEntry = await import(pathToFileURL(serverEntryPath).href);
+  // Import the server entry module (use file:// URL for reliable dynamic import).
+  // Cache-bust with mtime so that rebuilds to the same output path always load
+  // the freshly built module rather than a stale cached copy.
+  const serverMtime = fs.statSync(serverEntryPath).mtimeMs;
+  const serverEntry = await import(`${pathToFileURL(serverEntryPath).href}?t=${serverMtime}`);
   const { renderPage, handleApiRoute: handleApi, runMiddleware, vinextConfig } = serverEntry;
 
   // Extract config values (embedded at build time in the server entry)

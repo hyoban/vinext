@@ -367,6 +367,7 @@ import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getS
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
 
+
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
 
@@ -1679,6 +1680,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   
   // Wrap the entire request in a single unified ALS scope for per-request
@@ -1756,6 +1769,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     return new Response("Bad Request", { status: 400 });
   }
   let pathname = __normalizePath(decodedUrlPathname);
+
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   
 
@@ -2102,6 +2147,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -3255,6 +3301,7 @@ import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontSty
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
+
 
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
@@ -4568,6 +4615,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   
   // Wrap the entire request in a single unified ALS scope for per-request
@@ -4649,6 +4708,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   
   // Strip basePath prefix
   pathname = stripBasePath(pathname, __basePath);
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
+
   
 
   // Trailing slash normalization (redirect to canonical form)
@@ -4994,6 +5085,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -6147,6 +6239,7 @@ import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontSty
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
+
 
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
@@ -7490,6 +7583,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   
   // Wrap the entire request in a single unified ALS scope for per-request
@@ -7567,6 +7672,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     return new Response("Bad Request", { status: 400 });
   }
   let pathname = __normalizePath(decodedUrlPathname);
+
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   
 
@@ -7913,6 +8050,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -9075,6 +9213,7 @@ import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getS
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
 
+
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
 
@@ -9405,6 +9544,7 @@ import * as mod_10 from "/tmp/test/app/dashboard/not-found.tsx";
 let __instrumentationInitialized = false;
 let __instrumentationInitPromise = null;
 async function __ensureInstrumentation() {
+  if (process.env.VINEXT_PRERENDER === "1") return;
   if (__instrumentationInitialized) return;
   if (__instrumentationInitPromise) return __instrumentationInitPromise;
   __instrumentationInitPromise = (async () => {
@@ -10416,6 +10556,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   // Ensure instrumentation.register() has run before handling the first request.
   // This is a no-op after the first call (guarded by __instrumentationInitialized).
@@ -10496,6 +10648,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     return new Response("Bad Request", { status: 400 });
   }
   let pathname = __normalizePath(decodedUrlPathname);
+
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   
 
@@ -10842,6 +11026,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -11995,6 +12180,7 @@ import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontSty
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
+
 
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
@@ -13315,6 +13501,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   
   // Wrap the entire request in a single unified ALS scope for per-request
@@ -13392,6 +13590,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     return new Response("Bad Request", { status: 400 });
   }
   let pathname = __normalizePath(decodedUrlPathname);
+
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   
 
@@ -13738,6 +13968,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -14891,6 +15122,7 @@ import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontSty
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
 function _getSSRFontPreloads() { return [..._getSSRFontPreloadsGoogle(), ..._getSSRFontPreloadsLocal()]; }
+
 
 // Duplicated from the build-time constant above via JSON.stringify.
 const ROUTE_HANDLER_HTTP_METHODS = ["GET","HEAD","POST","PUT","DELETE","PATCH","OPTIONS"];
@@ -16433,6 +16665,18 @@ async function __readFormDataWithLimit(request, maxBytes) {
   return new Response(combined, { headers: { "Content-Type": contentType } }).formData();
 }
 
+// Map from route pattern to generateStaticParams function.
+// Used by the prerender phase to enumerate dynamic route URLs without
+// loading route modules via the dev server.
+export const generateStaticParamsMap = {
+// TODO: layout-level generateStaticParams — this map only includes routes that
+// have a pagePath (leaf pages). Layout segments can also export generateStaticParams
+// to provide parent params for nested dynamic routes, but they don't have a pagePath
+// so they are excluded here. Supporting layout-level generateStaticParams requires
+// scanning layout.tsx files separately and including them in this map.
+  "/blog/:slug": mod_3?.generateStaticParams ?? null,
+};
+
 export default async function handler(request, ctx) {
   
   // Wrap the entire request in a single unified ALS scope for per-request
@@ -16510,6 +16754,38 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     return new Response("Bad Request", { status: 400 });
   }
   let pathname = __normalizePath(decodedUrlPathname);
+
+  
+
+  // ── Prerender: static-params endpoint ────────────────────────────────
+  // Internal endpoint used by prerenderApp() during build to fetch
+  // generateStaticParams results via wrangler unstable_dev.
+  // Gated on VINEXT_PRERENDER=1 to prevent exposure in normal deployments.
+  // For Node builds, process.env.VINEXT_PRERENDER is set directly by the
+  // prerender orchestrator. For CF Workers builds, wrangler unstable_dev injects
+  // VINEXT_PRERENDER as a var which Miniflare exposes via process.env in bundled
+  // workers. The /__vinext/ prefix ensures no user route ever conflicts.
+  if (pathname === "/__vinext/prerender/static-params") {
+    if (process.env.VINEXT_PRERENDER !== "1") {
+      return new Response("Not Found", { status: 404 });
+    }
+    const pattern = url.searchParams.get("pattern");
+    if (!pattern) return new Response("missing pattern", { status: 400 });
+    const fn = generateStaticParamsMap[pattern];
+    if (typeof fn !== "function") return new Response("null", { status: 200, headers: { "content-type": "application/json" } });
+    try {
+      const parentParams = url.searchParams.get("parentParams");
+      const raw = parentParams ? JSON.parse(parentParams) : {};
+      // Ensure params is a plain object — reject primitives, arrays, and null
+      // so user-authored generateStaticParams always receives { params: {} }
+      // rather than { params: 5 } or similar if input is malformed.
+      const params = (typeof raw === "object" && raw !== null && !Array.isArray(raw)) ? raw : {};
+      const result = await fn({ params });
+      return new Response(JSON.stringify(result), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   
 
@@ -16986,6 +17262,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   if (!match) {
+    
     // Render custom not-found page if available, otherwise plain 404
     const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request);
     if (notFoundResponse) return notFoundResponse;
@@ -18693,7 +18970,7 @@ import { safeJsonStringify } from "vinext/html";
 import { decode as decodeQueryString } from "node:querystring";
 import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontStylesGoogle, getSSRFontPreloads as _getSSRFontPreloadsGoogle } from "next/font/google";
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
-import { parseCookies } from "<ROOT>/packages/vinext/src/config/config-matchers.js";
+import { parseCookies, sanitizeDestination as sanitizeDestinationLocal } from "<ROOT>/packages/vinext/src/config/config-matchers.js";
 import { runWithExecutionContext as _runWithExecutionContext, getRequestExecutionContext as _getRequestExecutionContext } from "<ROOT>/packages/vinext/src/shims/request-context.js";
 import { buildRouteTrie as _buildRouteTrie, trieMatch as _trieMatch } from "<ROOT>/packages/vinext/src/routing/route-trie.js";
 import { reportRequestError as _reportRequestError } from "vinext/instrumentation";
@@ -18858,7 +19135,7 @@ import * as api_9 from "<ROOT>/tests/fixtures/pages-basic/pages/api/users/[id].t
 import { default as AppComponent } from "<ROOT>/tests/fixtures/pages-basic/pages/_app.tsx";
 import { default as DocumentComponent } from "<ROOT>/tests/fixtures/pages-basic/pages/_document.tsx";
 
-const pageRoutes = [
+export const pageRoutes = [
   { pattern: "/", patternParts: [], isDynamic: false, params: [], module: page_0, filePath: "<ROOT>/tests/fixtures/pages-basic/pages/index.tsx" },
   { pattern: "/404", patternParts: ["404"], isDynamic: false, params: [], module: page_1, filePath: "<ROOT>/tests/fixtures/pages-basic/pages/404.tsx" },
   { pattern: "/about", patternParts: ["about"], isDynamic: false, params: [], module: page_2, filePath: "<ROOT>/tests/fixtures/pages-basic/pages/about.tsx" },
