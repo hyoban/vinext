@@ -272,7 +272,20 @@ function getViteMajorVersion(): number {
   try {
     const require = createRequire(path.join(process.cwd(), "package.json"));
     const vitePkg = require("vite/package.json");
-    return parseInt(vitePkg.version, 10);
+
+    const viteMajor = parseInt(vitePkg?.version, 10);
+    if (vitePkg?.name === "vite" && Number.isFinite(viteMajor)) {
+      return viteMajor;
+    }
+
+    const bundledViteMajor = parseInt(vitePkg?.bundledVersions?.vite, 10);
+    if (Number.isFinite(bundledViteMajor)) {
+      return bundledViteMajor;
+    }
+
+    // npm aliases like `vite: npm:@voidzero-dev/vite-plus-core@...` expose the
+    // aliased package.json, whose own version is not Vite's version.
+    return 8;
   } catch {
     return 7; // default to Vite 7
   }
