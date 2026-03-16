@@ -1105,9 +1105,79 @@ describe("next/server shim", () => {
     after(() => {
       throw new Error("task failed");
     });
-    await new Promise((r) => setTimeout(r, 10));
+    // after() wraps function tasks in Promise.resolve().then(task) — two microtask
+    // ticks are sufficient and more deterministic than a setTimeout.
+    await Promise.resolve();
+    await Promise.resolve();
     expect(consoleError).toHaveBeenCalledWith("[vinext] after() task failed:", expect.any(Error));
     consoleError.mockRestore();
+  });
+
+  it("after() calls waitUntil on the execution context when one exists", async () => {
+    const { after } = await import("../packages/vinext/src/shims/server.js");
+    const { runWithExecutionContext } =
+      await import("../packages/vinext/src/shims/request-context.js");
+
+    const waitUntilCalls: Promise<unknown>[] = [];
+    const mockCtx = {
+      waitUntil: (p: Promise<unknown>) => {
+        waitUntilCalls.push(p);
+      },
+    };
+
+    let called = false;
+    await runWithExecutionContext(mockCtx, () => {
+      after(() => {
+        called = true;
+      });
+    });
+
+    // waitUntil is called synchronously — no microtask delay needed
+    expect(waitUntilCalls).toHaveLength(1);
+    // Await the guarded promise to verify the callback ran
+    await waitUntilCalls[0];
+    expect(called).toBe(true);
+  });
+
+  it("after() falls back to fire-and-forget when no execution context exists", async () => {
+    const { after } = await import("../packages/vinext/src/shims/server.js");
+
+    // Outside any execution context scope — should still run the task
+    let called = false;
+    after(() => {
+      called = true;
+    });
+    // after() wraps function tasks in Promise.resolve().then(task) — two microtask
+    // ticks are sufficient and more deterministic than a setTimeout.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(called).toBe(true);
+  });
+
+  it('after() throws inside "use cache" scope', async () => {
+    const { after } = await import("../packages/vinext/src/shims/server.js");
+    const { cacheContextStorage } = await import("../packages/vinext/src/shims/cache-runtime.js");
+
+    cacheContextStorage.run({ tags: [], lifeConfigs: [], variant: "default" }, () => {
+      expect(() => after(() => {})).toThrow(/cannot be called inside "use cache"/);
+    });
+  });
+
+  it("after() throws inside unstable_cache() scope", async () => {
+    const { after } = await import("../packages/vinext/src/shims/server.js");
+    const { AsyncLocalStorage } = await import("node:async_hooks");
+    const key = Symbol.for("vinext.unstableCache.als");
+    const g = globalThis as unknown as Record<symbol, unknown>;
+    // Lazily register an ALS on globalThis if cache.ts hasn't been imported yet.
+    // This test is intentionally isolated from the real cache.ts registration path —
+    // it only validates that server.ts reads from the same Symbol key to detect the
+    // unstable_cache scope. If cache.ts was already imported, the existing instance is
+    // reused; if not, this standalone ALS is sufficient for the guard to work.
+    if (!g[key]) g[key] = new AsyncLocalStorage();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (g[key] as any).run(true, () => {
+      expect(() => after(() => {})).toThrow(/unstable_cache/);
+    });
   });
 
   it("connection() returns a resolved promise", async () => {
@@ -3457,6 +3527,17 @@ describe("ResponseCookies API", () => {
     expect(all).toContainEqual({ name: "a", value: "1" });
     expect(all).toContainEqual({ name: "b", value: "2" });
     expect(all).toContainEqual({ name: "c", value: "3" });
+  });
+
+  it("has() checks whether a response cookie exists", async () => {
+    const { ResponseCookies } = await import("../packages/vinext/src/shims/server.js");
+    const headers = new Headers();
+    const cookies = new ResponseCookies(headers);
+
+    cookies.set("session", "abc");
+
+    expect(cookies.has("session")).toBe(true);
+    expect(cookies.has("missing")).toBe(false);
   });
 
   it("delete() sets Max-Age=0", async () => {
