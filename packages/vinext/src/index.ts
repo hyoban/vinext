@@ -285,9 +285,13 @@ function getViteMajorVersion(): number {
 
     // npm aliases like `vite: npm:@voidzero-dev/vite-plus-core@...` expose the
     // aliased package.json, whose own version is not Vite's version.
-    return 8;
-  } catch {
-    return 7; // default to Vite 7
+    console.warn(
+      `[vinext] Could not determine Vite major version from ${vitePkg?.name ?? "vite/package.json"}; assuming Vite 7`,
+    );
+    return 7;
+  } catch (error) {
+    console.warn("[vinext] Failed to resolve vite/package.json; assuming Vite 7", error);
+    return 7;
   }
 }
 
