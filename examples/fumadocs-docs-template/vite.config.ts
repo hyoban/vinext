@@ -1,15 +1,13 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vite-plus";
 import vinext from "vinext";
-import { cloudflare } from "@cloudflare/vite-plugin";
+import tailwindcss from "@tailwindcss/vite";
+import fumadocsMdx from "fumadocs-mdx/vite";
+import * as sourceConfig from "./source.config";
 
-export default defineConfig({
+export default defineConfig(async () => ({
   plugins: [
+    tailwindcss(),
+    await fumadocsMdx(sourceConfig),
     vinext(),
-    cloudflare({
-      viteEnvironment: {
-        name: "rsc",
-        childEnvironments: ["ssr"],
-      },
-    }),
   ],
-});
+}));

@@ -1911,8 +1911,18 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // Merge incoming excludes into the top-level optimizeDeps so
         // Pages Router builds (which don't set per-environment configs)
         // also preserve entries from earlier plugins.
+        const sharedClientShimExcludes = [
+          "next/navigation",
+          "next/navigation.js",
+          "next/link",
+          "next/link.js",
+          "next/image",
+          "next/image.js",
+        ];
         viteConfig.optimizeDeps = {
-          exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
+          exclude: [
+            ...new Set([...incomingExclude, "vinext", "@vercel/og", ...sharedClientShimExcludes]),
+          ],
           ...(incomingInclude.length > 0 ? { include: incomingInclude } : {}),
         };
 
@@ -1953,7 +1963,14 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                     },
                   }),
               optimizeDeps: {
-                exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
+                exclude: [
+                  ...new Set([
+                    ...incomingExclude,
+                    "vinext",
+                    "@vercel/og",
+                    ...sharedClientShimExcludes,
+                  ]),
+                ],
                 entries: appEntries,
               },
               build: {
@@ -1978,7 +1995,14 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                     },
                   }),
               optimizeDeps: {
-                exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
+                exclude: [
+                  ...new Set([
+                    ...incomingExclude,
+                    "vinext",
+                    "@vercel/og",
+                    ...sharedClientShimExcludes,
+                  ]),
+                ],
                 entries: appEntries,
               },
               build: {
@@ -2006,7 +2030,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                 // but the browser optimizer resolves to `core.js` which lacks it,
                 // causing MISSING_EXPORT build failures).
                 exclude: [
-                  ...new Set([...incomingExclude, "vinext", "@vercel/og", ...nextServerExternal]),
+                  ...new Set([
+                    ...incomingExclude,
+                    "vinext",
+                    "@vercel/og",
+                    ...sharedClientShimExcludes,
+                    ...nextServerExternal,
+                  ]),
                 ],
                 // Crawl app/ source files up front so client-only deps imported
                 // by user components are discovered during startup instead of

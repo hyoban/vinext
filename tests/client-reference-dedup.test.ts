@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, it, expect } from "vite-plus/test";
 import {
   extractPackageName,
@@ -44,11 +45,20 @@ describe("extractPackageName", () => {
 
 describe("clientReferenceDedupPlugin", () => {
   const plugin = clientReferenceDedupPlugin();
-  const resolveId = (plugin.resolveId as any).handler;
-  const load = (plugin.load as any).handler;
+  const resolveId = plugin.resolveId as any;
+  const load = plugin.load as any;
 
-  function createContext(envName: string) {
-    return { environment: { name: envName } };
+  function createContext(
+    envName: string,
+    depsOptimizer?: {
+      registerMissingImport: (
+        id: string,
+        resolved: string,
+      ) => { file: string; browserHash: string };
+      getOptimizedDepId: (depInfo: { file: string; browserHash: string }) => string;
+    },
+  ) {
+    return { environment: { name: envName, depsOptimizer } };
   }
 
   describe("resolveId", () => {
@@ -117,7 +127,7 @@ describe("clientReferenceDedupPlugin", () => {
         },
         optimizeDeps: {},
       });
-      const excludeResolveId = (excludePlugin.resolveId as any).handler;
+      const excludeResolveId = excludePlugin.resolveId as any;
       const ctx = createContext("client");
       const result = excludeResolveId.call(
         ctx,
@@ -132,7 +142,7 @@ describe("clientReferenceDedupPlugin", () => {
       (excludePlugin.configResolved as any)({
         optimizeDeps: { exclude: ["some-pkg"] },
       });
-      const excludeResolveId = (excludePlugin.resolveId as any).handler;
+      const excludeResolveId = excludePlugin.resolveId as any;
       const ctx = createContext("client");
       const result = excludeResolveId.call(
         ctx,
@@ -140,6 +150,31 @@ describe("clientReferenceDedupPlugin", () => {
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
       );
       expect(result).toBeUndefined();
+    });
+
+    it("registers an exact-file optimized dep when the package has no root export", () => {
+      const registerMissingImport = (id: string, resolved: string) => ({
+        file: `/project/node_modules/.vite/deps/${id}.js`,
+        browserHash: "abc123",
+        id,
+        resolved,
+      });
+      const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
+        `${depInfo.file}?v=${depInfo.browserHash}`;
+      const ctx = createContext("client", { registerMissingImport, getOptimizedDepId });
+      const rawClientFile = path.join(
+        process.cwd(),
+        "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/client.js",
+      );
+
+      const result = resolveId.call(
+        ctx,
+        rawClientFile,
+        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+      );
+
+      expect(result).toContain("/node_modules/.vite/deps/vinext-client-ref-");
+      expect(result).toMatch(/vinext-client-ref-[a-f0-9]{40}\.js\?v=abc123$/);
     });
   });
 
