@@ -2,32 +2,43 @@
   "name": "fumadocs-docs-template",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
     "start": "next start",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
-    "postinstall": "fumadocs-mdx"
+    "postinstall": "fumadocs-mdx",
+    "dev:vinext": "vp dev --port 3001",
+    "build:vinext": "vp build"
   },
   "dependencies": {
-    "fumadocs-core": "16.6.17",
-    "fumadocs-mdx": "14.2.10",
-    "fumadocs-ui": "16.6.17",
-    "lucide-react": "^0.577.0",
-    "next": "16.1.6",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.5.0",
-    "@takumi-rs/image-response": "^0.72.0"
+    "@takumi-rs/image-response": "catalog:",
+    "fumadocs-core": "catalog:",
+    "fumadocs-mdx": "catalog:",
+    "fumadocs-ui": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tailwind-merge": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.1",
-    "@types/mdx": "^2.0.13",
-    "@types/node": "^25.5.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.1",
-    "typescript": "^5.9.3"
+    "@cloudflare/vite-plugin": "catalog:",
+    "@mdx-js/rollup": "catalog:",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/mdx": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@vitejs/plugin-rsc": "catalog:",
+    "postcss": "catalog:",
+    "react-server-dom-webpack": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vinext": "workspace:*",
+    "vite": "catalog:",
+    "wrangler": "catalog:"
   }
 }
