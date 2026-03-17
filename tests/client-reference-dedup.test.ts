@@ -86,32 +86,40 @@ describe("clientReferenceDedupPlugin", () => {
   }
 
   describe("resolveId", () => {
-    it("skips when the client environment has no deps optimizer", async () => {
+    it("uses the resolved canonical id even when the client environment has no deps optimizer", async () => {
       const ctx = createContext("client");
       const result = await resolveId.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
       );
-      expect(result).toBeUndefined();
+      expect(result).toBe("@mantine/core");
     });
 
     it("falls back to the package root optimized dep when no exact export matches", async () => {
-      const registerMissingImport = (id: string) => ({
-        file: `/project/node_modules/.vite/deps/${id}.js`,
-        browserHash: "abc123",
-      });
+      let resolvedId = "";
+      const registerMissingImport = (id: string, resolved: string) => {
+        resolvedId = resolved;
+        return {
+          file: `/project/node_modules/.vite/deps/${id}.js`,
+          browserHash: "abc123",
+        };
+      };
       const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
         `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext("client", { registerMissingImport, getOptimizedDepId });
+      const ctx = createContext(
+        "client",
+        { registerMissingImport, getOptimizedDepId },
+        async () => ({ id: "/@fs/project/node_modules/@mantine/core/index.js?v=abc123" }),
+      );
 
       const result = await resolveId.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
       );
-
       expect(result).toBe("/project/node_modules/.vite/deps/@mantine/core.js?v=abc123");
+      expect(resolvedId).toBe("/project/node_modules/@mantine/core/index.js");
     });
 
     it("skips non-client environments", async () => {
@@ -238,13 +246,23 @@ describe("clientReferenceDedupPlugin", () => {
     });
 
     it("prefers an exact exported subpath when the file matches a static export target", async () => {
-      const registerMissingImport = (id: string) => ({
-        file: `/project/node_modules/.vite/deps/${id}.js`,
-        browserHash: "abc123",
-      });
+      let resolvedId = "";
+      const registerMissingImport = (id: string, resolved: string) => {
+        resolvedId = resolved;
+        return {
+          file: `/project/node_modules/.vite/deps/${id}.js`,
+          browserHash: "abc123",
+        };
+      };
       const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
         `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext("client", { registerMissingImport, getOptimizedDepId });
+      const ctx = createContext(
+        "client",
+        { registerMissingImport, getOptimizedDepId },
+        async () => ({
+          id: "/@fs/project/node_modules/fumadocs-ui/dist/layouts/home/index.js?v=abc123",
+        }),
+      );
       const exportedFile = path.join(
         process.cwd(),
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/index.js",
@@ -255,18 +273,28 @@ describe("clientReferenceDedupPlugin", () => {
         exportedFile,
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
       );
-
       expect(result).toBe("/project/node_modules/.vite/deps/fumadocs-ui/layouts/home.js?v=abc123");
+      expect(resolvedId).toBe("/project/node_modules/fumadocs-ui/dist/layouts/home/index.js");
     });
 
     it("prefers an exact exported subpath when the file matches a pattern export target", async () => {
-      const registerMissingImport = (id: string) => ({
-        file: `/project/node_modules/.vite/deps/${id}.js`,
-        browserHash: "abc123",
-      });
+      let resolvedId = "";
+      const registerMissingImport = (id: string, resolved: string) => {
+        resolvedId = resolved;
+        return {
+          file: `/project/node_modules/.vite/deps/${id}.js`,
+          browserHash: "abc123",
+        };
+      };
       const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
         `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext("client", { registerMissingImport, getOptimizedDepId });
+      const ctx = createContext(
+        "client",
+        { registerMissingImport, getOptimizedDepId },
+        async () => ({
+          id: "/@fs/project/node_modules/fumadocs-ui/dist/provider/next.js?v=abc123",
+        }),
+      );
       const exportedFile = path.join(
         process.cwd(),
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/provider/next.js",
@@ -277,8 +305,8 @@ describe("clientReferenceDedupPlugin", () => {
         exportedFile,
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
       );
-
       expect(result).toBe("/project/node_modules/.vite/deps/fumadocs-ui/provider/next.js?v=abc123");
+      expect(resolvedId).toBe("/project/node_modules/fumadocs-ui/dist/provider/next.js");
     });
 
     it("declares a node_modules filter", () => {

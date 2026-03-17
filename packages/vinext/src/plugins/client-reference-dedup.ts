@@ -3,6 +3,20 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { DevEnvironment, Environment, Plugin } from "vite";
 
+const NODE_MODULES_SEGMENT = "/node_modules/";
+const NODE_MODULES_FILTER = /node_modules/;
+const PROXY_MARKER = "virtual:vite-rsc/client-in-server-package-proxy/";
+
+type PackagePathInfo = {
+  packageName: string;
+  packageRoot: string;
+};
+
+type PackageMetadata = {
+  exports: unknown;
+  hasRootExport: boolean;
+};
+
 /**
  * Extract the bare package name from an absolute file path containing node_modules.
  *
@@ -10,55 +24,58 @@ import type { DevEnvironment, Environment, Plugin } from "vite";
  * Returns `null` if the path doesn't contain `/node_modules/`.
  */
 export function extractPackageName(absolutePath: string): string | null {
-  const marker = "/node_modules/";
-  const lastIdx = absolutePath.lastIndexOf(marker);
-  if (lastIdx === -1) return null;
-
-  const rest = absolutePath.slice(lastIdx + marker.length);
-  if (rest.startsWith("@")) {
-    // Scoped package: @org/name
-    const parts = rest.split("/");
-    if (parts.length < 2) return null;
-    return `${parts[0]}/${parts[1]}`;
-  }
-  // Regular package: name
-  const slashIdx = rest.indexOf("/");
-  return slashIdx === -1 ? rest : rest.slice(0, slashIdx);
+  return getPackagePathInfo(absolutePath)?.packageName ?? null;
 }
 
-/**
- * Extract the absolute package root directory from an absolute file path
- * containing node_modules.
- */
-function extractPackageRoot(absolutePath: string): string | null {
-  const marker = "/node_modules/";
-  const lastIdx = absolutePath.lastIndexOf(marker);
+function getPackagePathInfo(absolutePath: string): PackagePathInfo | null {
+  const lastIdx = absolutePath.lastIndexOf(NODE_MODULES_SEGMENT);
   if (lastIdx === -1) return null;
 
-  const rootPrefix = absolutePath.slice(0, lastIdx + marker.length);
-  const rest = absolutePath.slice(lastIdx + marker.length);
+  const packageRootPrefix = absolutePath.slice(0, lastIdx + NODE_MODULES_SEGMENT.length);
+  const rest = absolutePath.slice(lastIdx + NODE_MODULES_SEGMENT.length);
   const parts = rest.split("/");
-  if (parts.length === 0) return null;
+  const [firstPart, secondPart] = parts;
 
-  if (parts[0]?.startsWith("@")) {
-    if (parts.length < 2) return null;
-    return `${rootPrefix}${parts[0]}/${parts[1]}`;
+  if (!firstPart) return null;
+  if (firstPart.startsWith("@")) {
+    if (!secondPart) return null;
+    return {
+      packageName: `${firstPart}/${secondPart}`,
+      packageRoot: `${packageRootPrefix}${firstPart}/${secondPart}`,
+    };
   }
 
-  return `${rootPrefix}${parts[0]}`;
+  return {
+    packageName: firstPart,
+    packageRoot: `${packageRootPrefix}${firstPart}`,
+  };
 }
 
-function packageHasRootExport(packageRoot: string): boolean {
+function readPackageMetadata(packageRoot: string): PackageMetadata {
   try {
     const pkg = JSON.parse(readFileSync(`${packageRoot}/package.json`, "utf8")) as {
-      exports?: string | Record<string, unknown>;
+      exports?: unknown;
     };
 
-    if (!pkg.exports) return true;
-    if (typeof pkg.exports === "string") return true;
-    return "." in pkg.exports;
+    if (!pkg.exports) {
+      return {
+        exports: undefined,
+        hasRootExport: true,
+      };
+    }
+
+    return {
+      exports: pkg.exports,
+      hasRootExport:
+        typeof pkg.exports === "string" ||
+        Array.isArray(pkg.exports) ||
+        (typeof pkg.exports === "object" && pkg.exports !== null && "." in pkg.exports),
+    };
   } catch {
-    return true;
+    return {
+      exports: undefined,
+      hasRootExport: true,
+    };
   }
 }
 
@@ -75,19 +92,12 @@ function replaceWildcards(pattern: string, replacements: string[]): string {
   return pattern.replaceAll("*", () => replacements[index++] ?? "");
 }
 
-function exportKeyToSpecifier(pkgName: string, exportKey: string): string | null {
-  if (exportKey === ".") return pkgName;
-  if (!exportKey.startsWith("./")) return null;
-  return `${pkgName}/${exportKey.slice(2)}`;
-}
-
-function matchExportTarget(
-  pkgName: string,
+function resolveExportTargetMatch(
   exportKey: string,
   target: unknown,
   packageRoot: string,
   absolutePath: string,
-): string | null {
+): string[] | null {
   if (typeof target === "string") {
     if (!target.startsWith("./")) return null;
 
@@ -95,18 +105,15 @@ function matchExportTarget(
     const normalizedTarget = normalizeForComparison(path.resolve(packageRoot, target));
     if (exportKey.includes("*") && target.includes("*")) {
       const pattern = `^${escapeRegExp(normalizedTarget).replaceAll("\\*", "(.+?)")}$`;
-      const match = normalizedAbsolutePath.match(new RegExp(pattern));
-      if (!match) return null;
-      return exportKeyToSpecifier(pkgName, replaceWildcards(exportKey, match.slice(1)));
+      return normalizedAbsolutePath.match(new RegExp(pattern))?.slice(1) ?? null;
     }
 
-    if (normalizedTarget !== normalizedAbsolutePath) return null;
-    return exportKeyToSpecifier(pkgName, exportKey);
+    return normalizedTarget === normalizedAbsolutePath ? [] : null;
   }
 
   if (Array.isArray(target)) {
     for (const item of target) {
-      const matched = matchExportTarget(pkgName, exportKey, item, packageRoot, absolutePath);
+      const matched = resolveExportTargetMatch(exportKey, item, packageRoot, absolutePath);
       if (matched) return matched;
     }
     return null;
@@ -114,7 +121,7 @@ function matchExportTarget(
 
   if (typeof target === "object" && target !== null) {
     for (const item of Object.values(target)) {
-      const matched = matchExportTarget(pkgName, exportKey, item, packageRoot, absolutePath);
+      const matched = resolveExportTargetMatch(exportKey, item, packageRoot, absolutePath);
       if (matched) return matched;
     }
   }
@@ -123,61 +130,95 @@ function matchExportTarget(
 }
 
 function resolveSpecifierFromExports(
+  packageName: string,
   packageRoot: string,
-  pkgName: string,
+  packageExports: unknown,
   absolutePath: string,
 ): string | null {
-  try {
-    const pkg = JSON.parse(readFileSync(`${packageRoot}/package.json`, "utf8")) as {
-      exports?: unknown;
-    };
+  if (!packageExports) return null;
 
-    if (!pkg.exports) return null;
-    if (typeof pkg.exports === "string" || Array.isArray(pkg.exports)) {
-      return matchExportTarget(pkgName, ".", pkg.exports, packageRoot, absolutePath);
-    }
+  const entries =
+    typeof packageExports === "string" ||
+    Array.isArray(packageExports) ||
+    typeof packageExports !== "object" ||
+    packageExports === null
+      ? [[".", packageExports] satisfies [string, unknown]]
+      : Object.entries(packageExports as Record<string, unknown>);
 
-    if (typeof pkg.exports !== "object" || pkg.exports === null) return null;
+  const subpathEntries = entries.filter(([key]) => key.startsWith("."));
+  const candidates = (subpathEntries.length > 0 ? subpathEntries : entries).sort(([a], [b]) => {
+    const aScore = Number(a.includes("*"));
+    const bScore = Number(b.includes("*"));
+    if (aScore !== bScore) return aScore - bScore;
+    return b.length - a.length;
+  });
 
-    const entries = Object.entries(pkg.exports as Record<string, unknown>);
-    const subpathEntries = entries.filter(([key]) => key.startsWith("."));
-    const candidates = (subpathEntries.length > 0 ? subpathEntries : entries).sort(([a], [b]) => {
-      const aScore = Number(a.includes("*"));
-      const bScore = Number(b.includes("*"));
-      if (aScore !== bScore) return aScore - bScore;
-      return b.length - a.length;
-    });
-
-    for (const [exportKey, target] of candidates) {
-      const matched = matchExportTarget(pkgName, exportKey, target, packageRoot, absolutePath);
-      if (matched) return matched;
-    }
-  } catch {
-    return null;
+  for (const [exportKey, target] of candidates) {
+    const matched = resolveExportTargetMatch(exportKey, target, packageRoot, absolutePath);
+    if (!matched) continue;
+    if (exportKey === ".") return packageName;
+    if (!exportKey.startsWith("./")) continue;
+    return `${packageName}/${replaceWildcards(exportKey.slice(2), matched)}`;
   }
 
   return null;
 }
-
-const PROXY_MARKER = "virtual:vite-rsc/client-in-server-package-proxy/";
 
 function createExactFileDepId(absolutePath: string): string {
   const digest = createHash("sha1").update(absolutePath).digest("hex");
   return `vinext-client-ref-${digest}`;
 }
 
-async function getOptimizedDepIdForSpecifier(
+function normalizeResolvedFileId(id: string): string {
+  const withoutQuery = id.split("?")[0]?.split("#")[0] ?? id;
+  return withoutQuery.startsWith("/@fs/") ? withoutQuery.slice("/@fs".length) : withoutQuery;
+}
+
+function getCanonicalSpecifiers(
+  packageName: string,
+  packageRoot: string,
+  packageMetadata: PackageMetadata,
+  absolutePath: string,
+): string[] {
+  const specifiers: string[] = [];
+  const exportedSpecifier = resolveSpecifierFromExports(
+    packageName,
+    packageRoot,
+    packageMetadata.exports,
+    absolutePath,
+  );
+  if (exportedSpecifier) specifiers.push(exportedSpecifier);
+  if (packageMetadata.hasRootExport && exportedSpecifier !== packageName) {
+    specifiers.push(packageName);
+  }
+  return specifiers;
+}
+
+async function getCanonicalClientReferenceId(
   context: PluginContextLike,
-  specifier: string,
+  specifiers: readonly string[],
   importer: string,
+  absolutePath: string,
+  allowExactFileFallback: boolean,
 ): Promise<string | undefined> {
   const depsOptimizer = getDepsOptimizer(context.environment);
-  if (!depsOptimizer) return;
+  for (const specifier of specifiers) {
+    const resolved = await context.resolve(specifier, importer, { skipSelf: true });
+    if (!resolved?.id) continue;
+    if (!depsOptimizer) return resolved.id;
 
-  const resolved = await context.resolve(specifier, importer, { skipSelf: true });
-  if (!resolved?.id) return;
+    const depInfo = depsOptimizer.registerMissingImport(
+      specifier,
+      normalizeResolvedFileId(resolved.id),
+    );
+    return depsOptimizer.getOptimizedDepId(depInfo);
+  }
 
-  const depInfo = depsOptimizer.registerMissingImport(specifier, resolved.id);
+  if (!allowExactFileFallback || !depsOptimizer) return;
+  const depInfo = depsOptimizer.registerMissingImport(
+    createExactFileDepId(absolutePath),
+    absolutePath,
+  );
   return depsOptimizer.getOptimizedDepId(depInfo);
 }
 
@@ -206,7 +247,7 @@ type PluginContextLike = {
  */
 export function clientReferenceDedupPlugin(): Plugin {
   let excludeSet = new Set<string>();
-  const hasRootExportCache = new Map<string, boolean>();
+  const packageMetadataCache = new Map<string, PackageMetadata>();
 
   return {
     name: "vinext:client-reference-dedup",
@@ -222,7 +263,7 @@ export function clientReferenceDedupPlugin(): Plugin {
     },
 
     resolveId: {
-      filter: { id: /node_modules/ },
+      filter: { id: NODE_MODULES_FILTER },
       async handler(id, importer) {
         // Only operate in the client environment
         if (this.environment?.name !== "client") return;
@@ -241,41 +282,26 @@ export function clientReferenceDedupPlugin(): Plugin {
           });
         }
 
-        const pkgName = extractPackageName(id);
-        if (!pkgName) return;
+        const packageInfo = getPackagePathInfo(id);
+        if (!packageInfo) return;
+        const { packageName, packageRoot } = packageInfo;
 
         // Respect user's optimizeDeps.exclude
-        if (excludeSet.has(pkgName)) return;
+        if (excludeSet.has(packageName)) return;
 
-        const packageRoot = extractPackageRoot(id);
-        if (!packageRoot) return;
-
-        const exportedSpecifier = resolveSpecifierFromExports(packageRoot, pkgName, id);
-        if (exportedSpecifier) {
-          const optimizedId = await getOptimizedDepIdForSpecifier(
-            this as PluginContextLike,
-            exportedSpecifier,
-            importer,
-          );
-          if (optimizedId) return optimizedId;
+        let packageMetadata = packageMetadataCache.get(packageRoot);
+        if (!packageMetadata) {
+          packageMetadata = readPackageMetadata(packageRoot);
+          packageMetadataCache.set(packageRoot, packageMetadata);
         }
 
-        let hasRootExport = hasRootExportCache.get(packageRoot);
-        if (hasRootExport === undefined) {
-          hasRootExport = packageHasRootExport(packageRoot);
-          hasRootExportCache.set(packageRoot, hasRootExport);
-        }
-
-        if (!hasRootExport) {
-          const depsOptimizer = getDepsOptimizer(this.environment);
-          if (!depsOptimizer) return;
-
-          const depId = createExactFileDepId(id);
-          const depInfo = depsOptimizer.registerMissingImport(depId, id);
-          return depsOptimizer.getOptimizedDepId(depInfo);
-        }
-
-        return await getOptimizedDepIdForSpecifier(this as PluginContextLike, pkgName, importer);
+        return await getCanonicalClientReferenceId(
+          this as PluginContextLike,
+          getCanonicalSpecifiers(packageName, packageRoot, packageMetadata, id),
+          importer,
+          id,
+          !packageMetadata.hasRootExport,
+        );
       },
     },
   };
