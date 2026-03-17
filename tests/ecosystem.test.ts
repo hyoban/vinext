@@ -217,12 +217,14 @@ describe("next-view-transitions", () => {
 // ─── nuqs ─────────────────────────────────────────────────────────────────────
 describe("nuqs", () => {
   let proc: ChildProcess | null = null;
+  let baseUrl: string;
   let fetchPage: (path: string) => Promise<{ html: string; status: number }>;
   const fixtureRoot = path.join(FIXTURES_DIR, "nuqs");
 
   beforeAll(async () => {
     const fixture = await startFixture("nuqs", 4402);
     proc = fixture.process;
+    baseUrl = fixture.baseUrl;
     fetchPage = fixture.fetchPage;
   }, STARTUP_TIMEOUT_MS);
 
@@ -253,7 +255,7 @@ describe("nuqs", () => {
     expect(html).toContain('data-testid="next-page"');
   });
 
-  it("prebundles next/navigation.js imports against vinext shims", async () => {
+  it("serves optimized next/navigation.js imports against vinext shims", async () => {
     await fetchPage("/");
 
     const depsDir = path.join(fixtureRoot, "node_modules", ".vite", "deps");
@@ -264,10 +266,14 @@ describe("nuqs", () => {
 
     expect(optimizedAdapterFile).toBeDefined();
 
-    const optimizedAdapter = readFileSync(path.join(depsDir, optimizedAdapterFile!), "utf8");
+    const optimizedAdapter = await fetch(
+      `${baseUrl}/node_modules/.vite/deps/${optimizedAdapterFile!}`,
+      {
+        signal: AbortSignal.timeout(10000),
+      },
+    ).then((res) => res.text());
 
-    expect(optimizedAdapter).toContain("__VINEXT_RSC_NAVIGATE__");
-    expect(optimizedAdapter).toContain("vinext.navigation.readonlySearchParams");
+    expect(optimizedAdapter).toContain("/packages/vinext/dist/shims/navigation.js");
     expect(optimizedAdapter).not.toContain("node_modules/.pnpm/next@");
   });
 });
