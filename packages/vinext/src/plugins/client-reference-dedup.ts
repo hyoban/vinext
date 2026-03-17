@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { Plugin } from "vite";
+import type { DevEnvironment, Environment, Plugin } from "vite";
 
 /**
  * Extract the bare package name from an absolute file path containing node_modules.
@@ -69,19 +69,9 @@ function createExactFileDepId(absolutePath: string): string {
   return `vinext-client-ref-${digest}`;
 }
 
-interface DepsOptimizerLike {
-  registerMissingImport(
-    id: string,
-    resolved: string,
-  ): {
-    file: string;
-    browserHash: string;
-  };
-  getOptimizedDepId(depInfo: { file: string; browserHash: string }): string;
-}
-
-interface ClientEnvironmentWithDepsOptimizer {
-  depsOptimizer?: DepsOptimizerLike;
+function getDepsOptimizer(environment: Environment | undefined): DevEnvironment["depsOptimizer"] {
+  if (!environment || environment.mode !== "dev") return;
+  return environment.depsOptimizer;
 }
 
 /**
@@ -136,8 +126,7 @@ export function clientReferenceDedupPlugin(): Plugin {
       }
 
       if (!hasRootExport) {
-        const depsOptimizer = (this.environment as ClientEnvironmentWithDepsOptimizer)
-          .depsOptimizer;
+        const depsOptimizer = getDepsOptimizer(this.environment);
         if (!depsOptimizer) return;
 
         const depId = createExactFileDepId(id);
