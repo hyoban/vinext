@@ -5,6 +5,21 @@ import {
   clientReferenceDedupPlugin,
 } from "../packages/vinext/src/plugins/client-reference-dedup.js";
 
+type HookObject<T extends (...args: any[]) => any> = {
+  handler: T;
+  filter?: {
+    id?: RegExp;
+  };
+};
+
+function getHookObject<T extends (...args: any[]) => any>(hook: unknown): HookObject<T> {
+  if (typeof hook !== "object" || hook === null || !("handler" in hook)) {
+    throw new TypeError("expected object hook");
+  }
+
+  return hook as HookObject<T>;
+}
+
 describe("extractPackageName", () => {
   it("extracts a regular package name", () => {
     expect(extractPackageName("/project/node_modules/react/index.js")).toBe("react");
@@ -45,8 +60,10 @@ describe("extractPackageName", () => {
 
 describe("clientReferenceDedupPlugin", () => {
   const plugin = clientReferenceDedupPlugin();
-  const resolveId = plugin.resolveId as any;
-  const load = plugin.load as any;
+  const resolveId = getHookObject<(id: string, importer?: string) => string | undefined>(
+    plugin.resolveId,
+  );
+  const load = getHookObject<(id: string) => string | undefined>(plugin.load);
 
   function createContext(
     envName: string,
@@ -58,13 +75,13 @@ describe("clientReferenceDedupPlugin", () => {
       getOptimizedDepId: (depInfo: { file: string; browserHash: string }) => string;
     },
   ) {
-    return { environment: { name: envName, depsOptimizer } };
+    return { environment: { mode: "dev" as const, name: envName, depsOptimizer } };
   }
 
   describe("resolveId", () => {
     it("redirects absolute node_modules imports from proxy modules in client env", () => {
       const ctx = createContext("client");
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -74,7 +91,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips non-client environments", () => {
       const ctx = createContext("rsc");
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -84,7 +101,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips imports not from proxy modules", () => {
       const ctx = createContext("client");
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "/project/src/App.tsx",
@@ -94,7 +111,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips non-absolute paths", () => {
       const ctx = createContext("client");
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         "@mantine/core",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -104,7 +121,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips paths without node_modules", () => {
       const ctx = createContext("client");
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         "/project/src/components/Foo.tsx",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -114,7 +131,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips when importer is undefined", () => {
       const ctx = createContext("client");
-      const result = resolveId.call(ctx, "/project/node_modules/react/index.js", undefined);
+      const result = resolveId.handler.call(ctx, "/project/node_modules/react/index.js", undefined);
       expect(result).toBeUndefined();
     });
 
@@ -127,9 +144,14 @@ describe("clientReferenceDedupPlugin", () => {
         },
         optimizeDeps: {},
       });
-      const excludeResolveId = excludePlugin.resolveId as any;
+      const excludeResolveId = excludePlugin.resolveId as Extract<
+        NonNullable<typeof excludePlugin.resolveId>,
+        object
+      >;
+      const excludeResolveIdHook =
+        getHookObject<(id: string, importer?: string) => string | undefined>(excludeResolveId);
       const ctx = createContext("client");
-      const result = excludeResolveId.call(
+      const result = excludeResolveIdHook.handler.call(
         ctx,
         "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -142,9 +164,14 @@ describe("clientReferenceDedupPlugin", () => {
       (excludePlugin.configResolved as any)({
         optimizeDeps: { exclude: ["some-pkg"] },
       });
-      const excludeResolveId = excludePlugin.resolveId as any;
+      const excludeResolveId = excludePlugin.resolveId as Extract<
+        NonNullable<typeof excludePlugin.resolveId>,
+        object
+      >;
+      const excludeResolveIdHook =
+        getHookObject<(id: string, importer?: string) => string | undefined>(excludeResolveId);
       const ctx = createContext("client");
-      const result = excludeResolveId.call(
+      const result = excludeResolveIdHook.handler.call(
         ctx,
         "/project/node_modules/some-pkg/dist/index.mjs",
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -167,7 +194,7 @@ describe("clientReferenceDedupPlugin", () => {
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/client.js",
       );
 
-      const result = resolveId.call(
+      const result = resolveId.handler.call(
         ctx,
         rawClientFile,
         "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
@@ -176,12 +203,16 @@ describe("clientReferenceDedupPlugin", () => {
       expect(result).toContain("/node_modules/.vite/deps/vinext-client-ref-");
       expect(result).toMatch(/vinext-client-ref-[a-f0-9]{40}\.js\?v=abc123$/);
     });
+
+    it("declares a node_modules filter", () => {
+      expect(resolveId.filter?.id?.source).toBe("node_modules");
+    });
   });
 
   describe("load", () => {
     it("generates bare specifier re-exports for dedup modules", () => {
       const ctx = {};
-      const result = load.call(ctx, "\0vinext:dedup/@mantine/core");
+      const result = load.handler.call(ctx, "\0vinext:dedup/@mantine/core");
       expect(result).toContain('export * from "@mantine/core"');
       expect(result).toContain('import * as __all__ from "@mantine/core"');
       expect(result).toContain("export default __all__.default");
@@ -189,7 +220,7 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("generates correct output for unscoped packages", () => {
       const ctx = {};
-      const result = load.call(ctx, "\0vinext:dedup/react");
+      const result = load.handler.call(ctx, "\0vinext:dedup/react");
       expect(result).toContain('export * from "react"');
       expect(result).toContain('import * as __all__ from "react"');
       expect(result).toContain("export default __all__.default");
@@ -197,8 +228,12 @@ describe("clientReferenceDedupPlugin", () => {
 
     it("skips non-dedup module IDs", () => {
       const ctx = {};
-      const result = load.call(ctx, "\0some-other-virtual-module");
+      const result = load.handler.call(ctx, "\0some-other-virtual-module");
       expect(result).toBeUndefined();
+    });
+
+    it("declares a dedup prefix filter", () => {
+      expect(load.filter?.id?.source).toBe("^\\0vinext:dedup\\/");
     });
   });
 
