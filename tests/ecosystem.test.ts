@@ -273,7 +273,8 @@ describe("nuqs", () => {
       },
     ).then((res) => res.text());
 
-    expect(optimizedAdapter).toContain("/packages/vinext/dist/shims/navigation.js");
+    expect(optimizedAdapter).toContain("__VINEXT_RSC_NAVIGATE__");
+    expect(optimizedAdapter).toContain("vinext.navigation.readonlySearchParams");
     expect(optimizedAdapter).not.toContain("node_modules/.pnpm/next@");
   });
 });
