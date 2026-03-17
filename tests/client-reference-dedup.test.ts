@@ -204,6 +204,38 @@ describe("clientReferenceDedupPlugin", () => {
       expect(result).toMatch(/vinext-client-ref-[a-f0-9]{40}\.js\?v=abc123$/);
     });
 
+    it("prefers an exact exported subpath when the file matches a static export target", () => {
+      const ctx = createContext("client");
+      const exportedFile = path.join(
+        process.cwd(),
+        "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/index.js",
+      );
+
+      const result = resolveId.handler.call(
+        ctx,
+        exportedFile,
+        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+      );
+
+      expect(result).toBe("\0vinext:dedup/fumadocs-ui/layouts/home");
+    });
+
+    it("prefers an exact exported subpath when the file matches a pattern export target", () => {
+      const ctx = createContext("client");
+      const exportedFile = path.join(
+        process.cwd(),
+        "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/provider/next.js",
+      );
+
+      const result = resolveId.handler.call(
+        ctx,
+        exportedFile,
+        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+      );
+
+      expect(result).toBe("\0vinext:dedup/fumadocs-ui/provider/next");
+    });
+
     it("declares a node_modules filter", () => {
       expect(resolveId.filter?.id?.source).toBe("node_modules");
     });

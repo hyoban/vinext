@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { DevEnvironment, Environment, Plugin } from "vite";
 
 /**
@@ -59,6 +60,103 @@ function packageHasRootExport(packageRoot: string): boolean {
   } catch {
     return true;
   }
+}
+
+function normalizeForComparison(filePath: string): string {
+  return path.resolve(filePath).replaceAll("\\", "/");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceWildcards(pattern: string, replacements: string[]): string {
+  let index = 0;
+  return pattern.replaceAll("*", () => replacements[index++] ?? "");
+}
+
+function exportKeyToSpecifier(pkgName: string, exportKey: string): string | null {
+  if (exportKey === ".") return pkgName;
+  if (!exportKey.startsWith("./")) return null;
+  return `${pkgName}/${exportKey.slice(2)}`;
+}
+
+function matchExportTarget(
+  pkgName: string,
+  exportKey: string,
+  target: unknown,
+  packageRoot: string,
+  absolutePath: string,
+): string | null {
+  if (typeof target === "string") {
+    if (!target.startsWith("./")) return null;
+
+    const normalizedAbsolutePath = normalizeForComparison(absolutePath);
+    const normalizedTarget = normalizeForComparison(path.resolve(packageRoot, target));
+    if (exportKey.includes("*") && target.includes("*")) {
+      const pattern = `^${escapeRegExp(normalizedTarget).replaceAll("\\*", "(.+?)")}$`;
+      const match = normalizedAbsolutePath.match(new RegExp(pattern));
+      if (!match) return null;
+      return exportKeyToSpecifier(pkgName, replaceWildcards(exportKey, match.slice(1)));
+    }
+
+    if (normalizedTarget !== normalizedAbsolutePath) return null;
+    return exportKeyToSpecifier(pkgName, exportKey);
+  }
+
+  if (Array.isArray(target)) {
+    for (const item of target) {
+      const matched = matchExportTarget(pkgName, exportKey, item, packageRoot, absolutePath);
+      if (matched) return matched;
+    }
+    return null;
+  }
+
+  if (typeof target === "object" && target !== null) {
+    for (const item of Object.values(target)) {
+      const matched = matchExportTarget(pkgName, exportKey, item, packageRoot, absolutePath);
+      if (matched) return matched;
+    }
+  }
+
+  return null;
+}
+
+function resolveSpecifierFromExports(
+  packageRoot: string,
+  pkgName: string,
+  absolutePath: string,
+): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(`${packageRoot}/package.json`, "utf8")) as {
+      exports?: unknown;
+    };
+
+    if (!pkg.exports) return null;
+    if (typeof pkg.exports === "string" || Array.isArray(pkg.exports)) {
+      return matchExportTarget(pkgName, ".", pkg.exports, packageRoot, absolutePath);
+    }
+
+    if (typeof pkg.exports !== "object" || pkg.exports === null) return null;
+
+    const entries = Object.entries(pkg.exports as Record<string, unknown>);
+    const subpathEntries = entries.filter(([key]) => key.startsWith("."));
+    const candidates = (subpathEntries.length > 0 ? subpathEntries : entries).sort(([a], [b]) => {
+      const aScore = Number(a.includes("*"));
+      const bScore = Number(b.includes("*"));
+      if (aScore !== bScore) return aScore - bScore;
+      return b.length - a.length;
+    });
+
+    for (const [exportKey, target] of candidates) {
+      const matched = matchExportTarget(pkgName, exportKey, target, packageRoot, absolutePath);
+      if (matched) return matched;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 const DEDUP_PREFIX = "\0vinext:dedup/";
@@ -122,6 +220,11 @@ export function clientReferenceDedupPlugin(): Plugin {
 
         const packageRoot = extractPackageRoot(id);
         if (!packageRoot) return;
+
+        const exportedSpecifier = resolveSpecifierFromExports(packageRoot, pkgName, id);
+        if (exportedSpecifier) {
+          return `${DEDUP_PREFIX}${exportedSpecifier}`;
+        }
 
         let hasRootExport = hasRootExportCache.get(packageRoot);
         if (hasRootExport === undefined) {
