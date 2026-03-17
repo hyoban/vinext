@@ -141,6 +141,7 @@ describe("Vite tsconfig paths support", () => {
     const plugins = vinext({ appDir: root });
 
     expect(findNamedPlugin(plugins, "vite-tsconfig-paths")).toBeDefined();
+    expect(warn).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledWith(
       "[vinext] Could not determine Vite major version from @voidzero-dev/vite-plus-core; assuming Vite 7",
     );

@@ -289,7 +289,8 @@ function getViteMajorVersion(): number {
     );
     return 7;
   } catch (error) {
-    console.warn("[vinext] Failed to resolve vite/package.json; assuming Vite 7", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[vinext] Failed to resolve vite/package.json (${message}); assuming Vite 7`);
     return 7;
   }
 }
