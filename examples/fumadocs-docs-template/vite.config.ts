@@ -1,10 +1,10 @@
 import { defineConfig } from "vite-plus";
 import vinext from "vinext";
 import tailwindcss from "@tailwindcss/vite";
-import fumadocsMdx from "fumadocs-mdx/vite";
-import * as sourceConfig from "./source.config";
+import mdx from 'fumadocs-mdx/vite';
+import * as MdxConfig from './source.config.js';
 
-export default defineConfig(async () => ({
+export default defineConfig({
   // we do this to avoid Vite from bundling React contexts and cause duplicated contexts conflicts.
   optimizeDeps: {
     exclude: [
@@ -29,7 +29,7 @@ export default defineConfig(async () => ({
   },
   plugins: [
     tailwindcss(),
-    await fumadocsMdx(sourceConfig),
+    mdx(MdxConfig),,
     vinext(),
   ],
-}));
+});

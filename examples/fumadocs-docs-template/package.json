@@ -4,13 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
-    "dev": "next dev",
-    "start": "next start",
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
     "types:check": "fumadocs-mdx && next typegen && tsc --noEmit",
-    "postinstall": "fumadocs-mdx",
-    "dev:vinext": "vp dev --port 3001",
-    "build:vinext": "vp build"
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "@takumi-rs/image-response": "catalog:",
@@ -38,6 +36,8 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vinext": "workspace:*",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "wrangler": "catalog:",
+    "@cloudflare/vite-plugin": "catalog:"
   }
 }
