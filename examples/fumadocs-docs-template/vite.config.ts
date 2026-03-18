@@ -14,10 +14,8 @@ export default defineConfig({
     include: [
       'fumadocs-ui > debug',
       'fumadocs-core > extend',
-      '@mdx-js/rollup > extend',
       'fumadocs-mdx > extend',
       'fumadocs-core > style-to-js',
-      '@mdx-js/rollup > style-to-js',
       'fumadocs-mdx > style-to-js',
     ],
   },

@@ -22,7 +22,6 @@
     "tailwind-merge": "catalog:"
   },
   "devDependencies": {
-    "@mdx-js/rollup": "catalog:",
     "@tailwindcss/postcss": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@types/mdx": "catalog:",
