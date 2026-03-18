@@ -1120,12 +1120,17 @@ describe("App Router integration", () => {
     //
     // Client: react, react-dom, and react-dom/client are framework deps
     // used for hydration that aren't in user source files.
+    //
+    // next/image's @unpic/react dependency is only imported through
+    // vinext's shim, so it must also be pre-included to prevent late
+    // optimizeDeps discovery from forcing a full reload with stale hashes.
     const ssrInclude = server.config.environments.ssr?.optimizeDeps?.include;
     const clientInclude = server.config.environments.client?.optimizeDeps?.include;
 
     // react-dom/server.edge should be present (added by @vitejs/plugin-rsc)
     expect(ssrInclude).toContain("react-dom/server.edge");
 
+    expect(clientInclude).toContain("@unpic/react");
     expect(clientInclude).toContain("react");
     expect(clientInclude).toContain("react-dom");
     expect(clientInclude).toContain("react-dom/client");

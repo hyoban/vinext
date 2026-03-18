@@ -2013,10 +2013,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                 // triggering a late re-optimisation + full page reload.
                 entries: appEntries,
                 // React packages aren't crawled from app/ source files,
-                // so must be pre-included to avoid late discovery (#25).
+                // and next/image's @unpic/react dependency is only reached
+                // through vinext's shim. Pre-include them to avoid late
+                // discovery, re-optimisation, and stale dep graph reloads.
                 include: [
                   ...new Set([
                     ...incomingInclude,
+                    "@unpic/react",
                     "react",
                     "react-dom",
                     "react-dom/client",
