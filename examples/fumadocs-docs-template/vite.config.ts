@@ -10,9 +10,6 @@ export default defineConfig({
     exclude: [
       'fumadocs-ui',
       'fumadocs-core',
-      '@unpic/react',
-      '@unpic/core',
-      'unpic'
     ],
     include: [
       'fumadocs-ui > debug',
