@@ -17,6 +17,8 @@ export default defineConfig({
       'fumadocs-mdx > extend',
       'fumadocs-core > style-to-js',
       'fumadocs-mdx > style-to-js',
+      // we do not import `next/image` directly, but fumadocs does.
+      "@unpic/react",
     ],
   },
   plugins: [
