@@ -2986,7 +2986,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                     applyRequestHeadersToNodeRequest(middlewareRequestHeaders);
                   }
                 }
-                const handled = await handleApiRoute(server, req, res, resolvedUrl, apiRoutes);
+                const handled = await handleApiRoute(
+                  getPagesRunner(),
+                  req,
+                  res,
+                  resolvedUrl,
+                  apiRoutes,
+                );
                 if (handled) return;
 
                 // No API route matched — if app dir exists, let the RSC plugin handle it
@@ -3022,6 +3028,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
 
               const handler = createSSRHandler(
                 server,
+                getPagesRunner(),
                 routes,
                 pagesDir,
                 nextConfig?.i18n,
