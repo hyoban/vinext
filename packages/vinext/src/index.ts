@@ -831,6 +831,18 @@ export interface VinextOptions {
    * @default true
    */
   react?: VitePluginReactOptions | boolean;
+  /**
+   * Experimental vinext-only feature flags.
+   */
+  experimental?: {
+    /**
+     * Dedup client references emitted from RSC proxy modules in dev.
+     * Disabled by default until the behavior is better proven across
+     * ecosystem apps.
+     * @default false
+     */
+    clientReferenceDedup?: boolean;
+  };
 }
 
 export default function vinext(options: VinextOptions = {}): PluginOption[] {
@@ -2234,7 +2246,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     // Stub node:async_hooks in client builds — see src/plugins/async-hooks-stub.ts
     asyncHooksStubPlugin,
     // Dedup client references from RSC proxy modules — see src/plugins/client-reference-dedup.ts
-    clientReferenceDedupPlugin(),
+    ...(options.experimental?.clientReferenceDedup ? [clientReferenceDedupPlugin()] : []),
     // Proxy plugin for @mdx-js/rollup. The real MDX plugin is created lazily
     // during vinext:config's config() (when MDX files are detected), but
     // plugins returned from config() hooks run too late in the pipeline —
