@@ -21,9 +21,6 @@ export default defineConfig({
       'fumadocs-mdx > style-to-js',
     ],
   },
-  ssr: {
-    external: ['@takumi-rs/image-response'],
-  },
   plugins: [
     tailwindcss(),
     mdx(MdxConfig),,
