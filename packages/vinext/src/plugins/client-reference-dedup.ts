@@ -4,8 +4,9 @@ import path from "node:path";
 import type { DevEnvironment, Environment, Plugin } from "vite";
 
 const NODE_MODULES_SEGMENT = "/node_modules/";
-const NODE_MODULES_FILTER = /node_modules/;
-const PROXY_MARKER = "virtual:vite-rsc/client-in-server-package-proxy/";
+const CLIENT_PROXY_PREFIX =
+  String.fromCharCode(0) + "virtual:vite-rsc/client-in-server-package-proxy/";
+const CLIENT_PROXY_FILTER = new RegExp(`^${escapeRegExp(CLIENT_PROXY_PREFIX)}`);
 
 type PackagePathInfo = {
   packageName: string;
@@ -169,11 +170,6 @@ function createExactFileDepId(absolutePath: string): string {
   return `vinext-client-ref-${digest}`;
 }
 
-function normalizeResolvedFileId(id: string): string {
-  const withoutQuery = id.split("?")[0]?.split("#")[0] ?? id;
-  return withoutQuery.startsWith("/@fs/") ? withoutQuery.slice("/@fs".length) : withoutQuery;
-}
-
 function getCanonicalSpecifiers(
   packageName: string,
   packageRoot: string,
@@ -194,27 +190,26 @@ function getCanonicalSpecifiers(
   return specifiers;
 }
 
-async function getCanonicalClientReferenceId(
-  context: PluginContextLike,
-  specifiers: readonly string[],
-  importer: string,
+function renderClientProxy(source: string): string {
+  return `
+export * from ${JSON.stringify(source)};
+import * as __all__ from ${JSON.stringify(source)};
+export default __all__.default;
+`;
+}
+
+function decodeClientProxyId(id: string): string | null {
+  if (!id.startsWith(CLIENT_PROXY_PREFIX)) return null;
+  return decodeURIComponent(id.slice(CLIENT_PROXY_PREFIX.length));
+}
+
+function getExactFileFallbackSource(
+  environment: Environment | undefined,
   absolutePath: string,
-  allowExactFileFallback: boolean,
-): Promise<string | undefined> {
-  const depsOptimizer = getDepsOptimizer(context.environment);
-  for (const specifier of specifiers) {
-    const resolved = await context.resolve(specifier, importer, { skipSelf: true });
-    if (!resolved?.id) continue;
-    if (!depsOptimizer) return resolved.id;
+): string | undefined {
+  const depsOptimizer = getDepsOptimizer(environment);
+  if (!depsOptimizer) return absolutePath;
 
-    const depInfo = depsOptimizer.registerMissingImport(
-      specifier,
-      normalizeResolvedFileId(resolved.id),
-    );
-    return depsOptimizer.getOptimizedDepId(depInfo);
-  }
-
-  if (!allowExactFileFallback || !depsOptimizer) return;
   const depInfo = depsOptimizer.registerMissingImport(
     createExactFileDepId(absolutePath),
     absolutePath,
@@ -222,28 +217,29 @@ async function getCanonicalClientReferenceId(
   return depsOptimizer.getOptimizedDepId(depInfo);
 }
 
+function getCanonicalClientReferenceSource(
+  environment: Environment | undefined,
+  specifiers: readonly string[],
+  absolutePath: string,
+  allowExactFileFallback: boolean,
+): string | undefined {
+  if (specifiers.length > 0) return specifiers[0];
+  if (!allowExactFileFallback) return;
+  return getExactFileFallbackSource(environment, absolutePath);
+}
+
 function getDepsOptimizer(environment: Environment | undefined): DevEnvironment["depsOptimizer"] {
   if (!environment || environment.mode !== "dev") return;
   return environment.depsOptimizer;
 }
 
-type PluginContextLike = {
-  environment?: Environment;
-  resolve(
-    id: string,
-    importer?: string,
-    options?: { skipSelf?: boolean },
-  ): Promise<{ id: string } | null | undefined>;
-};
-
 /**
- * Intercepts absolute node_modules path imports originating from RSC
- * `client-in-server-package-proxy` virtual modules in the client environment
- * and redirects them through bare specifier imports. This ensures the browser
- * loads the pre-bundled version (from `.vite/deps/`) rather than the raw ESM
- * file, preventing module duplication and broken React contexts.
+ * Overrides vite-plugin-rsc's dev-only `client-in-server-package-proxy` virtual
+ * modules so they re-export from canonical client sources instead of raw
+ * node_modules file paths.
  *
- * Dev-only — production builds use the SSR manifest which handles this correctly.
+ * This keeps client references aligned with the browser environment's normal
+ * module graph and avoids duplicate React contexts.
  */
 export function clientReferenceDedupPlugin(): Plugin {
   let excludeSet = new Set<string>();
@@ -262,31 +258,24 @@ export function clientReferenceDedupPlugin(): Plugin {
       excludeSet = new Set(clientExclude);
     },
 
-    resolveId: {
-      filter: { id: NODE_MODULES_FILTER },
-      async handler(id, importer) {
-        // Only operate in the client environment
+    load: {
+      filter: { id: CLIENT_PROXY_FILTER },
+      handler(id) {
         if (this.environment?.name !== "client") return;
-
-        // Only intercept imports from client-in-server-package-proxy modules
-        if (!importer || !importer.includes(PROXY_MARKER)) return;
-
-        // Only handle absolute paths through node_modules
-        if (!id.startsWith("/") || !id.includes("/node_modules/")) return;
-
+        const absolutePath = decodeClientProxyId(id);
+        if (!absolutePath || !absolutePath.includes(NODE_MODULES_SEGMENT)) return;
         if (process.env.VINEXT_DEBUG_RESOLVE === "1") {
-          console.log("[vinext:client-reference-dedup:resolveId]", {
+          console.log("[vinext:client-reference-dedup:load]", {
             environment: this.environment.name,
-            id,
-            importer,
+            id: absolutePath,
+            proxyId: id,
           });
         }
 
-        const packageInfo = getPackagePathInfo(id);
+        const packageInfo = getPackagePathInfo(absolutePath);
         if (!packageInfo) return;
         const { packageName, packageRoot } = packageInfo;
 
-        // Respect user's optimizeDeps.exclude
         if (excludeSet.has(packageName)) return;
 
         let packageMetadata = packageMetadataCache.get(packageRoot);
@@ -295,13 +284,14 @@ export function clientReferenceDedupPlugin(): Plugin {
           packageMetadataCache.set(packageRoot, packageMetadata);
         }
 
-        return await getCanonicalClientReferenceId(
-          this as PluginContextLike,
-          getCanonicalSpecifiers(packageName, packageRoot, packageMetadata, id),
-          importer,
-          id,
+        const source = getCanonicalClientReferenceSource(
+          this.environment,
+          getCanonicalSpecifiers(packageName, packageRoot, packageMetadata, absolutePath),
+          absolutePath,
           !packageMetadata.hasRootExport,
         );
+        if (!source) return;
+        return renderClientProxy(source);
       },
     },
   };

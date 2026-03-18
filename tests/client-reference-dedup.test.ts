@@ -60,9 +60,9 @@ describe("extractPackageName", () => {
 
 describe("clientReferenceDedupPlugin", () => {
   const plugin = clientReferenceDedupPlugin();
-  const resolveId = getHookObject<(id: string, importer?: string) => Promise<string | undefined>>(
-    plugin.resolveId,
-  );
+  const load = getHookObject<(id: string) => string | undefined>(plugin.load);
+  const proxyId = (id: string) =>
+    `${String.fromCharCode(0)}virtual:vite-rsc/client-in-server-package-proxy/${encodeURIComponent(id)}`;
 
   function createContext(
     envName: string,
@@ -73,154 +73,83 @@ describe("clientReferenceDedupPlugin", () => {
       ) => { file: string; browserHash: string };
       getOptimizedDepId: (depInfo: { file: string; browserHash: string }) => string;
     },
-    resolve: (
-      id: string,
-      importer?: string,
-      options?: { skipSelf?: boolean },
-    ) => Promise<{ id: string } | null | undefined> = async (id) => ({ id }),
   ) {
     return {
       environment: { mode: "dev" as const, name: envName, depsOptimizer },
-      resolve,
     };
   }
 
-  describe("resolveId", () => {
-    it("uses the resolved canonical id even when the client environment has no deps optimizer", async () => {
+  describe("load", () => {
+    it("re-exports from the package root when no exact export matches", () => {
       const ctx = createContext("client");
-      const result = await resolveId.handler.call(
+      const result = load.handler.call(
         ctx,
-        "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+        proxyId("/project/node_modules/@mantine/core/esm/MantineProvider.mjs"),
       );
-      expect(result).toBe("@mantine/core");
+      expect(result).toContain(`export * from "@mantine/core";`);
     });
 
-    it("falls back to the package root optimized dep when no exact export matches", async () => {
-      let resolvedId = "";
-      const registerMissingImport = (id: string, resolved: string) => {
-        resolvedId = resolved;
-        return {
-          file: `/project/node_modules/.vite/deps/${id}.js`,
-          browserHash: "abc123",
-        };
-      };
-      const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
-        `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext(
-        "client",
-        { registerMissingImport, getOptimizedDepId },
-        async () => ({ id: "/@fs/project/node_modules/@mantine/core/index.js?v=abc123" }),
-      );
-
-      const result = await resolveId.handler.call(
-        ctx,
-        "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
-      );
-      expect(result).toBe("/project/node_modules/.vite/deps/@mantine/core.js?v=abc123");
-      expect(resolvedId).toBe("/project/node_modules/@mantine/core/index.js");
-    });
-
-    it("skips non-client environments", async () => {
+    it("skips non-client environments", () => {
       const ctx = createContext("rsc");
-      const result = await resolveId.handler.call(
+      const result = load.handler.call(
         ctx,
-        "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+        proxyId("/project/node_modules/@mantine/core/esm/MantineProvider.mjs"),
       );
       expect(result).toBeUndefined();
     });
 
-    it("skips imports not from proxy modules", async () => {
+    it("skips ids that are not client proxy modules", () => {
       const ctx = createContext("client");
-      const result = await resolveId.handler.call(
-        ctx,
-        "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
-        "/project/src/App.tsx",
-      );
+      const result = load.handler.call(ctx, "/project/src/App.tsx");
       expect(result).toBeUndefined();
     });
 
-    it("skips non-absolute paths", async () => {
+    it("skips ids that do not decode to node_modules paths", () => {
       const ctx = createContext("client");
-      const result = await resolveId.handler.call(
-        ctx,
-        "@mantine/core",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
-      );
+      const result = load.handler.call(ctx, proxyId("/project/src/components/Foo.tsx"));
       expect(result).toBeUndefined();
     });
 
-    it("skips paths without node_modules", async () => {
-      const ctx = createContext("client");
-      const result = await resolveId.handler.call(
-        ctx,
-        "/project/src/components/Foo.tsx",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
-      );
-      expect(result).toBeUndefined();
-    });
-
-    it("skips when importer is undefined", async () => {
-      const ctx = createContext("client");
-      const result = await resolveId.handler.call(
-        ctx,
-        "/project/node_modules/react/index.js",
-        undefined,
-      );
-      expect(result).toBeUndefined();
-    });
-
-    it("respects optimizeDeps.exclude from resolved config", async () => {
+    it("respects optimizeDeps.exclude from resolved config", () => {
       const excludePlugin = clientReferenceDedupPlugin();
-      // Simulate configResolved with @mantine/core excluded
       (excludePlugin.configResolved as any)({
         environments: {
           client: { optimizeDeps: { exclude: ["@mantine/core"] } },
         },
         optimizeDeps: {},
       });
-      const excludeResolveId = excludePlugin.resolveId as Extract<
-        NonNullable<typeof excludePlugin.resolveId>,
+      const excludeLoad = excludePlugin.load as Extract<
+        NonNullable<typeof excludePlugin.load>,
         object
       >;
-      const excludeResolveIdHook =
-        getHookObject<(id: string, importer?: string) => Promise<string | undefined>>(
-          excludeResolveId,
-        );
+      const excludeLoadHook = getHookObject<(id: string) => string | undefined>(excludeLoad);
       const ctx = createContext("client");
-      const result = await excludeResolveIdHook.handler.call(
+      const result = excludeLoadHook.handler.call(
         ctx,
-        "/project/node_modules/@mantine/core/esm/MantineProvider.mjs",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+        proxyId("/project/node_modules/@mantine/core/esm/MantineProvider.mjs"),
       );
       expect(result).toBeUndefined();
     });
 
-    it("falls back to top-level optimizeDeps.exclude", async () => {
+    it("falls back to top-level optimizeDeps.exclude", () => {
       const excludePlugin = clientReferenceDedupPlugin();
       (excludePlugin.configResolved as any)({
         optimizeDeps: { exclude: ["some-pkg"] },
       });
-      const excludeResolveId = excludePlugin.resolveId as Extract<
-        NonNullable<typeof excludePlugin.resolveId>,
+      const excludeLoad = excludePlugin.load as Extract<
+        NonNullable<typeof excludePlugin.load>,
         object
       >;
-      const excludeResolveIdHook =
-        getHookObject<(id: string, importer?: string) => Promise<string | undefined>>(
-          excludeResolveId,
-        );
+      const excludeLoadHook = getHookObject<(id: string) => string | undefined>(excludeLoad);
       const ctx = createContext("client");
-      const result = await excludeResolveIdHook.handler.call(
+      const result = excludeLoadHook.handler.call(
         ctx,
-        "/project/node_modules/some-pkg/dist/index.mjs",
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+        proxyId("/project/node_modules/some-pkg/dist/index.mjs"),
       );
       expect(result).toBeUndefined();
     });
 
-    it("registers an exact-file optimized dep when the package has no root export", async () => {
+    it("registers an exact-file optimized dep when the package has no root export", () => {
       const registerMissingImport = (id: string, resolved: string) => ({
         file: `/project/node_modules/.vite/deps/${id}.js`,
         browserHash: "abc123",
@@ -235,82 +164,45 @@ describe("clientReferenceDedupPlugin", () => {
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/client.js",
       );
 
-      const result = await resolveId.handler.call(
-        ctx,
-        rawClientFile,
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
+      const result = load.handler.call(ctx, proxyId(rawClientFile));
+      expect(result).toContain(
+        `export * from "/project/node_modules/.vite/deps/vinext-client-ref-`,
       );
-
-      expect(result).toContain("/node_modules/.vite/deps/vinext-client-ref-");
-      expect(result).toMatch(/vinext-client-ref-[a-f0-9]{40}\.js\?v=abc123$/);
+      expect(result).toMatch(/vinext-client-ref-[a-f0-9]{40}\.js\?v=abc123/);
     });
 
-    it("prefers an exact exported subpath when the file matches a static export target", async () => {
-      let resolvedId = "";
-      const registerMissingImport = (id: string, resolved: string) => {
-        resolvedId = resolved;
-        return {
-          file: `/project/node_modules/.vite/deps/${id}.js`,
-          browserHash: "abc123",
-        };
-      };
-      const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
-        `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext(
-        "client",
-        { registerMissingImport, getOptimizedDepId },
-        async () => ({
-          id: "/@fs/project/node_modules/fumadocs-ui/dist/layouts/home/index.js?v=abc123",
-        }),
+    it("falls back to the raw file when exact-file fallback cannot be optimized", () => {
+      const ctx = createContext("client");
+      const rawClientFile = path.join(
+        process.cwd(),
+        "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/client.js",
       );
+      const result = load.handler.call(ctx, proxyId(rawClientFile));
+      expect(result).toContain(`export * from ${JSON.stringify(rawClientFile)};`);
+    });
+
+    it("prefers an exact exported subpath when the file matches a static export target", () => {
+      const ctx = createContext("client");
       const exportedFile = path.join(
         process.cwd(),
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/layouts/home/index.js",
       );
-
-      const result = await resolveId.handler.call(
-        ctx,
-        exportedFile,
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
-      );
-      expect(result).toBe("/project/node_modules/.vite/deps/fumadocs-ui/layouts/home.js?v=abc123");
-      expect(resolvedId).toBe("/project/node_modules/fumadocs-ui/dist/layouts/home/index.js");
+      const result = load.handler.call(ctx, proxyId(exportedFile));
+      expect(result).toContain(`export * from "fumadocs-ui/layouts/home";`);
     });
 
-    it("prefers an exact exported subpath when the file matches a pattern export target", async () => {
-      let resolvedId = "";
-      const registerMissingImport = (id: string, resolved: string) => {
-        resolvedId = resolved;
-        return {
-          file: `/project/node_modules/.vite/deps/${id}.js`,
-          browserHash: "abc123",
-        };
-      };
-      const getOptimizedDepId = (depInfo: { file: string; browserHash: string }) =>
-        `${depInfo.file}?v=${depInfo.browserHash}`;
-      const ctx = createContext(
-        "client",
-        { registerMissingImport, getOptimizedDepId },
-        async () => ({
-          id: "/@fs/project/node_modules/fumadocs-ui/dist/provider/next.js?v=abc123",
-        }),
-      );
+    it("prefers an exact exported subpath when the file matches a pattern export target", () => {
+      const ctx = createContext("client");
       const exportedFile = path.join(
         process.cwd(),
         "examples/fumadocs-docs-template/node_modules/fumadocs-ui/dist/provider/next.js",
       );
-
-      const result = await resolveId.handler.call(
-        ctx,
-        exportedFile,
-        "\0virtual:vite-rsc/client-in-server-package-proxy/abc123",
-      );
-      expect(result).toBe("/project/node_modules/.vite/deps/fumadocs-ui/provider/next.js?v=abc123");
-      expect(resolvedId).toBe("/project/node_modules/fumadocs-ui/dist/provider/next.js");
+      const result = load.handler.call(ctx, proxyId(exportedFile));
+      expect(result).toContain(`export * from "fumadocs-ui/provider/next";`);
     });
 
-    it("declares a node_modules filter", () => {
-      expect(resolveId.filter?.id?.source).toBe("node_modules");
+    it("declares a client proxy filter", () => {
+      expect(load.filter?.id?.source).toContain("client-in-server-package-proxy");
     });
   });
 
@@ -327,8 +219,12 @@ describe("clientReferenceDedupPlugin", () => {
       expect(plugin.apply).toBe("serve");
     });
 
-    it("does not register a load hook", () => {
-      expect(plugin.load).toBeUndefined();
+    it("registers a load hook", () => {
+      expect(plugin.load).toBeDefined();
+    });
+
+    it("does not register a resolveId hook", () => {
+      expect(plugin.resolveId).toBeUndefined();
     });
   });
 });
