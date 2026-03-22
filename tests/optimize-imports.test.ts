@@ -202,6 +202,25 @@ export { format };`;
     });
   });
 
+  it("handles export { Local as Public } for same-file declarations", async () => {
+    const entryPath = uniquePath("local-alias-reexport");
+    const barrelCode = `const Mo = {};
+export { Mo as Listbox };`;
+
+    const map = await buildBarrelExportMap(
+      "test-pkg",
+      () => entryPath,
+      () => Promise.resolve(barrelCode),
+    );
+
+    expect(map).not.toBeNull();
+    expect(map!.get("Listbox")).toEqual({
+      source: entryPath,
+      isNamespace: false,
+      originalName: "Listbox",
+    });
+  });
+
   it("returns null when entry cannot be resolved", async () => {
     const map = await buildBarrelExportMap(
       "nonexistent-pkg",
@@ -767,6 +786,46 @@ describe("vinext:optimize-imports transform", () => {
     expect(result!.code).not.toContain(`from "ramda"`);
     // Must not contain named import syntax for the default specifier
     expect(result!.code).not.toContain("{ MyFoo }");
+  });
+
+  it("rewrites same-file alias exports from wildcard re-exports", async () => {
+    tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vinext-optimize-test-")));
+    fs.writeFileSync(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "test-app", type: "module" }),
+    );
+    const pkgDir = path.join(tmpDir, "node_modules", "antd");
+    fs.mkdirSync(path.join(pkgDir, "components"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({ name: "antd", type: "module", main: "./index.js" }),
+    );
+    fs.writeFileSync(path.join(pkgDir, "index.js"), `export * from "./components/listbox.js";`);
+    fs.writeFileSync(
+      path.join(pkgDir, "components", "listbox.js"),
+      `const Mo = {};\nexport { Mo as Listbox };`,
+    );
+
+    const plugin = createOptimizeImportsPlugin(
+      () => undefined,
+      () => tmpDir,
+    ) as Plugin;
+    const buildStartHook = unwrapHook((plugin as any).buildStart);
+    if (buildStartHook) await buildStartHook.call(plugin);
+    const transform = unwrapHook(plugin.transform)!;
+    const call = async (code: string, id: string) =>
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await (transform as any).call({ ...plugin, environment: { name: "rsc" } }, code, id);
+
+    const code = `import { Listbox as HeadlessListbox } from "antd";`;
+    const result = await call(code, "/app/page.tsx");
+    expect(result).not.toBeNull();
+
+    const absListbox = path.join(pkgDir, "components", "listbox.js");
+    expect(result!.code).toContain(
+      `import { Listbox as HeadlessListbox } from ${JSON.stringify(absListbox)}`,
+    );
+    expect(result!.code).not.toContain(`from "antd"`);
   });
 
   it("rewrites imports from wildcard re-exports in barrels", async () => {

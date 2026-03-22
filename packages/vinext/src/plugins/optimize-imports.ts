@@ -58,6 +58,12 @@ interface BarrelExportEntry {
 
 type BarrelExportMap = Map<string, BarrelExportEntry>;
 
+type DeclarationNode = {
+  type: string;
+  id?: { name: string } | null;
+  declarations?: Array<{ id: { name: string } }>;
+};
+
 /** Caches used by the optimize-imports plugin, scoped to a plugin instance. */
 interface BarrelCaches {
   /** Barrel export maps keyed by resolved entry file path. */
@@ -91,11 +97,9 @@ type AstBodyNode = {
    *   export class Foo {}              → ClassDeclaration     { id: { name } }
    *   export const x = 1, y = 2       → VariableDeclaration  { declarations: [{ id: { name } }] }
    */
-  declaration?: {
-    type: string;
-    id?: { name: string } | null;
-    declarations?: Array<{ id: { name: string } }>;
-  } | null;
+  declaration?: DeclarationNode | null;
+  id?: { name: string } | null;
+  declarations?: Array<{ id: { name: string } }>;
 };
 
 // Vite doesn't publicly type `this.environment` on plugin hooks yet.
@@ -361,6 +365,7 @@ async function buildExportMapFromFile(
     string,
     { source: string; isNamespace: boolean; originalName?: string }
   >();
+  const localDeclarations = new Set<string>();
 
   const fileDir = path.dirname(filePath);
 
@@ -375,6 +380,21 @@ async function buildExportMapFromFile(
       : source;
   }
 
+  function recordLocalDeclaration(node: DeclarationNode | null | undefined): void {
+    if (!node) return;
+    if (node.id?.name) {
+      localDeclarations.add(node.id.name);
+      return;
+    }
+    for (const declaration of node.declarations ?? []) {
+      if (declaration.id?.name) {
+        localDeclarations.add(declaration.id.name);
+      }
+    }
+  }
+
+  // Pre-scan imports and local declarations so export lists can resolve both
+  // imported bindings and same-file aliases like `const Foo = ...; export { Foo as Bar }`.
   for (const node of ast.body as AstBodyNode[]) {
     switch (node.type) {
       case "ImportDeclaration": {
@@ -409,7 +429,19 @@ async function buildExportMapFromFile(
         }
         break;
       }
+      case "FunctionDeclaration":
+      case "ClassDeclaration":
+      case "VariableDeclaration":
+        recordLocalDeclaration(node);
+        break;
+      case "ExportNamedDeclaration":
+        recordLocalDeclaration(node.declaration);
+        break;
+    }
+  }
 
+  for (const node of ast.body as AstBodyNode[]) {
+    switch (node.type) {
       case "ExportAllDeclaration": {
         const rawSource = typeof node.source?.value === "string" ? node.source.value : null;
         if (!rawSource) break;
@@ -507,6 +539,12 @@ async function buildExportMapFromFile(
                 isNamespace: binding.isNamespace,
                 originalName: binding.isNamespace ? undefined : binding.originalName,
               });
+            } else if (localDeclarations.has(local)) {
+              exportMap.set(exported, {
+                source: filePath,
+                isNamespace: false,
+                originalName: exported,
+              });
             }
           }
         } else if (node.declaration) {
@@ -517,12 +555,20 @@ async function buildExportMapFromFile(
           const decl = node.declaration;
           if (decl.id?.name) {
             // FunctionDeclaration or ClassDeclaration — single named export
-            exportMap.set(decl.id.name, { source: filePath, isNamespace: false });
+            exportMap.set(decl.id.name, {
+              source: filePath,
+              isNamespace: false,
+              originalName: decl.id.name,
+            });
           } else if (decl.declarations) {
             // VariableDeclaration — may declare multiple bindings: export const x = 1, y = 2
             for (const d of decl.declarations) {
               if (d.id?.name) {
-                exportMap.set(d.id.name, { source: filePath, isNamespace: false });
+                exportMap.set(d.id.name, {
+                  source: filePath,
+                  isNamespace: false,
+                  originalName: d.id.name,
+                });
               }
             }
           }
