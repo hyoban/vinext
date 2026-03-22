@@ -9,6 +9,10 @@ import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import zlib from "node:zlib";
 import vinext from "../packages/vinext/src/index.js";
+import {
+  PHASE_DEVELOPMENT_SERVER,
+  PHASE_PRODUCTION_BUILD,
+} from "../packages/vinext/src/shims/constants.js";
 import { PAGES_FIXTURE_DIR, buildPagesFixture, startFixtureServer } from "./helpers.js";
 
 const FIXTURE_DIR = PAGES_FIXTURE_DIR;
@@ -1201,6 +1205,126 @@ describe("Virtual server entry generation", () => {
 });
 
 describe("Plugin config", () => {
+  it("uses inline nextConfig instead of root next.config and warns once", async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-inline-config-"));
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await fsp.mkdir(path.join(tmpDir, "pages"), { recursive: true });
+    await fsp.writeFile(
+      path.join(tmpDir, "pages", "index.tsx"),
+      `export default function Home() { return <h1>Home</h1>; }`,
+    );
+    await fsp.writeFile(
+      path.join(tmpDir, "next.config.mjs"),
+      `export default { basePath: "/disk", env: { CONFIG_SOURCE: "disk" } };`,
+    );
+
+    try {
+      const plugins = vinext({
+        nextConfig: {
+          basePath: "/inline",
+          env: { CONFIG_SOURCE: "inline" },
+        },
+      }) as any[];
+      const configPlugin = plugins.find((p) => p.name === "vinext:config");
+      expect(configPlugin).toBeDefined();
+
+      const result = await configPlugin.config(
+        { root: tmpDir, plugins: [] },
+        { command: "serve", mode: "development" },
+      );
+
+      expect(result.base).toBe("/inline/");
+      expect(result.define["process.env.CONFIG_SOURCE"]).toBe(JSON.stringify("inline"));
+      expect(consoleWarn).toHaveBeenCalledWith(
+        expect.stringContaining("vinext({ nextConfig }) overrides next.config.mjs"),
+      );
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes the current phase to inline function-form nextConfig", async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-inline-phase-"));
+
+    await fsp.mkdir(path.join(tmpDir, "pages"), { recursive: true });
+    await fsp.writeFile(
+      path.join(tmpDir, "pages", "index.tsx"),
+      `export default function Home() { return <h1>Home</h1>; }`,
+    );
+
+    try {
+      const buildPlugins = vinext({
+        nextConfig: async (phase) => ({ env: { RECEIVED_PHASE: phase } }),
+      }) as any[];
+      const buildConfigPlugin = buildPlugins.find((p) => p.name === "vinext:config");
+      expect(buildConfigPlugin).toBeDefined();
+
+      const buildResult = await buildConfigPlugin.config(
+        { root: tmpDir, plugins: [] },
+        { command: "build", mode: "production" },
+      );
+
+      expect(buildResult.define["process.env.RECEIVED_PHASE"]).toBe(
+        JSON.stringify(PHASE_PRODUCTION_BUILD),
+      );
+
+      const servePlugins = vinext({
+        nextConfig: (phase) => ({ env: { RECEIVED_PHASE: phase } }),
+      }) as any[];
+      const serveConfigPlugin = servePlugins.find((p) => p.name === "vinext:config");
+      expect(serveConfigPlugin).toBeDefined();
+
+      const serveResult = await serveConfigPlugin.config(
+        { root: tmpDir, plugins: [] },
+        { command: "serve", mode: "development" },
+      );
+
+      expect(serveResult.define["process.env.RECEIVED_PHASE"]).toBe(
+        JSON.stringify(PHASE_DEVELOPMENT_SERVER),
+      );
+    } finally {
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads .env before evaluating inline function-form nextConfig", async () => {
+    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), "vinext-inline-env-"));
+    const envKey = "VINEXT_INLINE_NEXT_CONFIG_ENV";
+    delete process.env[envKey];
+
+    await fsp.mkdir(path.join(tmpDir, "pages"), { recursive: true });
+    await fsp.writeFile(
+      path.join(tmpDir, "pages", "index.tsx"),
+      `export default function Home() { return <h1>Home</h1>; }`,
+    );
+    await fsp.writeFile(path.join(tmpDir, ".env"), `${envKey}=loaded-before-inline-config\n`);
+
+    try {
+      const plugins = vinext({
+        nextConfig: () => ({
+          env: {
+            INLINE_ENV_VALUE: process.env[envKey] ?? "missing",
+          },
+        }),
+      }) as any[];
+      const configPlugin = plugins.find((p) => p.name === "vinext:config");
+      expect(configPlugin).toBeDefined();
+
+      const result = await configPlugin.config(
+        { root: tmpDir, plugins: [] },
+        { command: "serve", mode: "development" },
+      );
+
+      expect(result.define["process.env.INLINE_ENV_VALUE"]).toBe(
+        JSON.stringify("loaded-before-inline-config"),
+      );
+    } finally {
+      delete process.env[envKey];
+      await fsp.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("auto-injects @vitejs/plugin-react as a top-level async plugin", async () => {
     const plugins = vinext() as any[];
     const resolvedPlugins = (

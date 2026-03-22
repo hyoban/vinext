@@ -18,8 +18,12 @@ import { generateSsrEntry } from "./entries/app-ssr-entry.js";
 import { generateBrowserEntry } from "./entries/app-browser-entry.js";
 import { normalizePathnameForRouteMatchStrict } from "./routing/utils.js";
 import {
+  findNextConfigPath,
   loadNextConfig,
+  resolveNextConfigInput,
   resolveNextConfig,
+  type NextConfig,
+  type NextConfigInput,
   type ResolvedNextConfig,
   type NextRedirect,
   type NextRewrite,
@@ -818,6 +822,14 @@ export interface VinextOptions {
    */
   clientOutDir?: string;
   /**
+   * Inline Next.js config for projects that want to configure vinext from
+   * vite.config without a separate next.config file.
+   *
+   * When provided, vinext skips loading next.config.* from disk and uses this
+   * value instead. Supports both object-form and function-form config.
+   */
+  nextConfig?: NextConfigInput;
+  /**
    * Auto-register @vitejs/plugin-rsc when an app/ directory is detected.
    * Set to `false` to disable auto-registration (e.g. if you configure
    * @vitejs/plugin-rsc manually with custom options).
@@ -858,6 +870,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let middlewarePath: string | null = null;
   let instrumentationPath: string | null = null;
   let hasCloudflarePlugin = false;
+  let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
 
   // Resolve shim paths - works both from source (.ts) and built (.js)
@@ -1509,9 +1522,22 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         hasPagesDir = fs.existsSync(pagesDir);
         hasAppDir = !options.disableAppRouter && fs.existsSync(appDir);
 
-        // Load next.config.js if present (always from project root, not src/)
+        // Load next.config.js if present (always from project root, not src/),
+        // unless vinext({ nextConfig }) explicitly overrides it.
         const phase = env?.command === "build" ? PHASE_PRODUCTION_BUILD : PHASE_DEVELOPMENT_SERVER;
-        const rawConfig = await loadNextConfig(root, phase);
+        let rawConfig: NextConfig | null;
+        if (options.nextConfig) {
+          const diskConfigPath = findNextConfigPath(root);
+          if (diskConfigPath && !warnedInlineNextConfigOverride) {
+            warnedInlineNextConfigOverride = true;
+            console.warn(
+              `[vinext] vinext({ nextConfig }) overrides ${path.basename(diskConfigPath)}. Remove one of the config sources to avoid drift.`,
+            );
+          }
+          rawConfig = await resolveNextConfigInput(options.nextConfig, phase);
+        } else {
+          rawConfig = await loadNextConfig(root, phase);
+        }
         nextConfig = await resolveNextConfig(rawConfig, root);
         fileMatcher = createValidFileMatcher(nextConfig.pageExtensions);
         instrumentationPath = findInstrumentationFile(root, fileMatcher);
@@ -4511,7 +4537,7 @@ export type {
 
 // Export NextConfig type so next.config.ts files can import it from "vinext"
 // instead of "next".
-export type { NextConfig } from "./config/next-config.js";
+export type { NextConfig, NextConfigInput } from "./config/next-config.js";
 
 // Exported for CLI and testing
 export { clientManualChunks, clientOutputConfig, clientTreeshakeConfig, computeLazyChunks };
