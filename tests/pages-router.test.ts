@@ -1240,6 +1240,7 @@ describe("Plugin config", () => {
         expect.stringContaining("vinext({ nextConfig }) overrides next.config.mjs"),
       );
     } finally {
+      consoleWarn.mockRestore();
       await fsp.rm(tmpDir, { recursive: true, force: true });
     }
   });

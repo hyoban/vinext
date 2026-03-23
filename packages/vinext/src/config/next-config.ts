@@ -296,19 +296,13 @@ function warnConfigLoadFailure(filename: string, err: Error): void {
 }
 
 /**
- * Unwrap the config value from a loaded module, calling it if it's a
- * function-form config (Next.js supports `module.exports = (phase, opts) => config`).
+ * Resolve a Next-style config value, calling it if it's a function-form config
+ * (Next.js supports `module.exports = (phase, opts) => config`).
  */
-async function unwrapConfig(
-  configInput: unknown,
+async function resolveConfigValue(
+  config: unknown,
   phase: string = PHASE_DEVELOPMENT_SERVER,
 ): Promise<NextConfig> {
-  const config =
-    configInput &&
-    typeof configInput === "object" &&
-    "default" in (configInput as Record<string, unknown>)
-      ? (configInput as { default: unknown }).default
-      : configInput;
   if (typeof config === "function") {
     const result = await config(phase, {
       defaultConfig: {},
@@ -316,6 +310,16 @@ async function unwrapConfig(
     return result as NextConfig;
   }
   return config as NextConfig;
+}
+
+/**
+ * Unwrap the config value from a loaded module namespace.
+ */
+async function unwrapConfig(
+  mod: any,
+  phase: string = PHASE_DEVELOPMENT_SERVER,
+): Promise<NextConfig> {
+  return await resolveConfigValue(mod.default ?? mod, phase);
 }
 
 export function findNextConfigPath(root: string): string | null {
@@ -330,7 +334,9 @@ export async function resolveNextConfigInput(
   config: NextConfigInput,
   phase: string = PHASE_DEVELOPMENT_SERVER,
 ): Promise<NextConfig> {
-  return await unwrapConfig(config, phase);
+  // Inline vinext({ nextConfig }) already receives the config value itself,
+  // not a module namespace object, so do not treat a "default" key specially.
+  return await resolveConfigValue(config, phase);
 }
 
 /**
