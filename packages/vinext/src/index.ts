@@ -4537,7 +4537,7 @@ export type {
 
 // Export NextConfig type so next.config.ts files can import it from "vinext"
 // instead of "next".
-export type { NextConfig, NextConfigInput } from "./config/next-config.js";
+export type { NextConfig } from "./config/next-config.js";
 
 // Exported for CLI and testing
 export { clientManualChunks, clientOutputConfig, clientTreeshakeConfig, computeLazyChunks };
