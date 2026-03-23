@@ -74,11 +74,67 @@ export async function renderAppPageHtmlStream(
   );
 }
 
+/**
+ * Wraps a stream so that `onFlush` is called when the last byte has been read
+ * by the downstream consumer (i.e. when the HTTP layer finishes draining the
+ * response body). This is the correct place to clear per-request context,
+ * because the RSC/SSR pipeline is lazy — components execute while the stream
+ * is being consumed, not when the stream handle is first obtained.
+ */
+export function deferUntilStreamConsumed(
+  stream: ReadableStream<Uint8Array>,
+  onFlush: () => void,
+): ReadableStream<Uint8Array> {
+  let called = false;
+  const once = () => {
+    if (!called) {
+      called = true;
+      onFlush();
+    }
+  };
+
+  const cleanup = new TransformStream<Uint8Array, Uint8Array>({
+    flush() {
+      once();
+    },
+  });
+
+  const piped = stream.pipeThrough(cleanup);
+
+  // Wrap with a ReadableStream so we can intercept cancel() — the TransformStream
+  // Transformer interface does not expose a cancel hook in the Web Streams spec.
+  const reader = piped.getReader();
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      return reader.read().then(({ done, value }) => {
+        if (done) {
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      });
+    },
+    cancel(reason) {
+      // Stream cancelled before fully consumed (e.g. client disconnected).
+      // Still clear per-request context to avoid leaks.
+      once();
+      return reader.cancel(reason);
+    },
+  });
+}
+
 export async function renderAppPageHtmlResponse(
   options: RenderAppPageHtmlResponseOptions,
 ): Promise<Response> {
   const htmlStream = await renderAppPageHtmlStream(options);
-  options.clearRequestContext();
+
+  // Defer clearRequestContext() until the stream is fully consumed by the HTTP
+  // layer. Calling it synchronously here would race the lazy RSC/SSR pipeline:
+  // components execute while the stream is being pulled, not when the handle
+  // is first returned. See: https://github.com/cloudflare/vinext/issues/660
+  const safeStream = deferUntilStreamConsumed(htmlStream, () => {
+    options.clearRequestContext();
+  });
 
   const headers: Record<string, string> = {
     "Content-Type": "text/html; charset=utf-8",
@@ -89,7 +145,7 @@ export async function renderAppPageHtmlResponse(
     headers.Link = options.fontLinkHeader;
   }
 
-  return new Response(htmlStream, {
+  return new Response(safeStream, {
     status: options.status,
     headers,
   });
