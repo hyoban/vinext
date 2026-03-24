@@ -1,4 +1,5 @@
-import { resolveRuntimeEntryModule, resolveRuntimeModule } from "./runtime-entry-module.js";
+import { createAppInstrumentationClientEntry } from "./instrumentation-client-entry.js";
+import { resolveRuntimeEntryModule } from "./runtime-entry-module.js";
 
 /**
  * Generate the virtual browser entry module.
@@ -9,37 +10,14 @@ import { resolveRuntimeEntryModule, resolveRuntimeModule } from "./runtime-entry
  */
 export function generateBrowserEntry(instrumentationClientPath?: string | null): string {
   const entryPath = resolveRuntimeEntryModule("app-browser-entry");
-  const instrumentationTimingPath = resolveRuntimeModule(
-    "../client/require-instrumentation-client",
-  );
-  const normalizedInstrumentationPath = instrumentationClientPath?.replace(/\\/g, "/");
-  const instrumentationTimingStartImport = normalizedInstrumentationPath
-    ? `import ${JSON.stringify(`${instrumentationTimingPath}?vinext-instrumentation=start`)};`
-    : "";
-  const instrumentationClientImport = normalizedInstrumentationPath
-    ? `import * as __instrumentationClient from ${JSON.stringify(normalizedInstrumentationPath)};`
-    : `const __instrumentationClient = null;`;
-  const instrumentationTimingEndImport = normalizedInstrumentationPath
-    ? `import ${JSON.stringify(`${instrumentationTimingPath}?vinext-instrumentation=end`)};`
-    : "";
-  const instrumentationClientHmr = normalizedInstrumentationPath
-    ? `
-if (import.meta.hot) {
-  import.meta.hot.accept(${JSON.stringify(normalizedInstrumentationPath)}, (mod) => {
-    setClientInstrumentationHooks(mod);
-  });
-}
-`
-    : "";
+  const instrumentationClientEntry = createAppInstrumentationClientEntry(instrumentationClientPath);
 
   return `import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from ${JSON.stringify(entryPath)};
 
-${instrumentationTimingStartImport}
-${instrumentationClientImport}
-${instrumentationTimingEndImport}
-setClientInstrumentationHooks(__instrumentationClient);
-${instrumentationClientHmr}
+${instrumentationClientEntry.imports}
+setClientInstrumentationHooks(${instrumentationClientEntry.binding});
+${instrumentationClientEntry.hmr}
 
 void bootstrapAppBrowserEntry();
 `;

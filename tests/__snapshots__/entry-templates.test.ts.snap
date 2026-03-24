@@ -25,9 +25,7 @@ exports[`App Router entry templates > generateBrowserEntry snapshot 1`] = `
 import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
 
 
-const __instrumentationClient = null;
-
-setClientInstrumentationHooks(__instrumentationClient);
+setClientInstrumentationHooks(null);
 
 
 void bootstrapAppBrowserEntry();
