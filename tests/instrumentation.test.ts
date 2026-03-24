@@ -2,15 +2,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findInstrumentationFile } from "../packages/vinext/src/server/instrumentation.js";
+import { findConventionFile } from "../packages/vinext/src/server/find-convention-file.js";
 import { createValidFileMatcher } from "../packages/vinext/src/routing/file-matcher.js";
 
 // The runInstrumentation/reportRequestError describe blocks re-import via
 // vi.resetModules() to get fresh module-level state (_onRequestError).
-// findInstrumentationFile is a pure function — no reset needed.
+// findConventionFile is a pure function — no reset needed.
 
-describe("findInstrumentationFile", () => {
+describe("instrumentation file resolution", () => {
   let tmpDir: string;
+
+  function findInstrumentationPath(root: string): string | null {
+    return findConventionFile({
+      root,
+      baseNames: ["instrumentation"],
+      locations: ["", "src/"],
+      extensions: createValidFileMatcher().dottedExtensions,
+    });
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-instr-"));
@@ -23,7 +32,7 @@ describe("findInstrumentationFile", () => {
   it("returns the path when a file exists at root", () => {
     fs.writeFileSync(path.join(tmpDir, "instrumentation.ts"), "");
 
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
+    const result = findInstrumentationPath(tmpDir);
 
     expect(result).toBe(path.join(tmpDir, "instrumentation.ts"));
   });
@@ -34,7 +43,7 @@ describe("findInstrumentationFile", () => {
     fs.mkdirSync(path.join(tmpDir, "src"));
     fs.writeFileSync(path.join(tmpDir, "src", "instrumentation.ts"), "");
 
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
+    const result = findInstrumentationPath(tmpDir);
 
     // Root files come first in INSTRUMENTATION_FILES, so root wins
     expect(result).toBe(path.join(tmpDir, "instrumentation.ts"));
@@ -44,13 +53,13 @@ describe("findInstrumentationFile", () => {
     fs.mkdirSync(path.join(tmpDir, "src"));
     fs.writeFileSync(path.join(tmpDir, "src", "instrumentation.ts"), "");
 
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
+    const result = findInstrumentationPath(tmpDir);
 
     expect(result).toBe(path.join(tmpDir, "src", "instrumentation.ts"));
   });
 
   it("returns null when no instrumentation file exists", () => {
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
+    const result = findInstrumentationPath(tmpDir);
 
     expect(result).toBeNull();
   });

@@ -33,8 +33,8 @@ import {
 import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
 import { logRequest, now } from "./server/request-log.js";
 import { normalizePath } from "./server/normalize-path.js";
-import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
-import { findInstrumentationClientFile } from "./server/instrumentation-client.js";
+import { runInstrumentation } from "./server/instrumentation.js";
+import { findConventionFile } from "./server/find-convention-file.js";
 import { PHASE_PRODUCTION_BUILD, PHASE_DEVELOPMENT_SERVER } from "./shims/constants.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
 import {
@@ -72,6 +72,9 @@ import commonjs from "vite-plugin-commonjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 type VitePluginReactModule = typeof import("@vitejs/plugin-react");
+const INSTRUMENTATION_LOCATIONS = ["", "src/"];
+const INSTRUMENTATION_CLIENT_LOCATIONS = ["src/", ""];
+const INSTRUMENTATION_CLIENT_EXTENSIONS = [".js", ".mjs", ".tsx", ".ts", ".jsx"];
 
 function resolveOptionalDependency(projectRoot: string, specifier: string): string | null {
   try {
@@ -1865,8 +1868,18 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         }
         nextConfig = await resolveNextConfig(rawConfig, root);
         fileMatcher = createValidFileMatcher(nextConfig.pageExtensions);
-        instrumentationPath = findInstrumentationFile(root, fileMatcher);
-        instrumentationClientPath = findInstrumentationClientFile(root);
+        instrumentationPath = findConventionFile({
+          root,
+          baseNames: ["instrumentation"],
+          locations: INSTRUMENTATION_LOCATIONS,
+          extensions: fileMatcher.dottedExtensions,
+        });
+        instrumentationClientPath = findConventionFile({
+          root,
+          baseNames: ["instrumentation-client"],
+          locations: INSTRUMENTATION_CLIENT_LOCATIONS,
+          extensions: INSTRUMENTATION_CLIENT_EXTENSIONS,
+        });
         middlewarePath = findMiddlewareFile(root, fileMatcher);
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars

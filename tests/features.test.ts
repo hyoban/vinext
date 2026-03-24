@@ -23,7 +23,6 @@ import {
   requestNodeServerWithHost,
   startFixtureServer,
 } from "./helpers.js";
-import { createValidFileMatcher } from "../packages/vinext/src/routing/file-matcher.js";
 
 const FIXTURE_DIR = PAGES_FIXTURE_DIR;
 
@@ -2944,59 +2943,6 @@ describe("fetch cache (extended fetch with next options)", () => {
 // ---------------------------------------------------------------------------
 
 describe("instrumentation.ts support", () => {
-  it("exports findInstrumentationFile", async () => {
-    const mod = await import("../packages/vinext/src/server/instrumentation.js");
-    expect(typeof mod.findInstrumentationFile).toBe("function");
-  });
-
-  it("findInstrumentationFile returns null when no file exists", async () => {
-    const { findInstrumentationFile } =
-      await import("../packages/vinext/src/server/instrumentation.js");
-    const result = findInstrumentationFile("/nonexistent/path", createValidFileMatcher());
-    expect(result).toBeNull();
-  });
-
-  it("findInstrumentationFile detects instrumentation.ts", async () => {
-    const { findInstrumentationFile } =
-      await import("../packages/vinext/src/server/instrumentation.js");
-    const os = await import("node:os");
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-
-    // Create a temp directory with an instrumentation.ts file
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-inst-"));
-    fs.writeFileSync(
-      path.join(tmpDir, "instrumentation.ts"),
-      'export function register() { console.log("registered"); }',
-    );
-
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
-    expect(result).toBe(path.join(tmpDir, "instrumentation.ts"));
-
-    // Cleanup
-    fs.rmSync(tmpDir, { recursive: true });
-  });
-
-  it("findInstrumentationFile detects src/instrumentation.ts", async () => {
-    const { findInstrumentationFile } =
-      await import("../packages/vinext/src/server/instrumentation.js");
-    const os = await import("node:os");
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-inst-"));
-    fs.mkdirSync(path.join(tmpDir, "src"));
-    fs.writeFileSync(
-      path.join(tmpDir, "src", "instrumentation.ts"),
-      "export function register() {}",
-    );
-
-    const result = findInstrumentationFile(tmpDir, createValidFileMatcher());
-    expect(result).toBe(path.join(tmpDir, "src", "instrumentation.ts"));
-
-    fs.rmSync(tmpDir, { recursive: true });
-  });
-
   it("runInstrumentation calls register() and stores onRequestError", async () => {
     const { runInstrumentation, getOnRequestErrorHandler } =
       await import("../packages/vinext/src/server/instrumentation.js");

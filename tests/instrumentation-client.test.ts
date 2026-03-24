@@ -2,9 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { findConventionFile } from "../packages/vinext/src/server/find-convention-file.js";
 
-describe("findInstrumentationClientFile", () => {
+describe("instrumentation-client file resolution", () => {
   let tmpDir: string;
+
+  function findInstrumentationClientPath(root: string): string | null {
+    return findConventionFile({
+      root,
+      baseNames: ["instrumentation-client"],
+      locations: ["src/", ""],
+      extensions: [".js", ".mjs", ".tsx", ".ts", ".jsx"],
+    });
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-inst-client-"));
@@ -19,41 +29,21 @@ describe("findInstrumentationClientFile", () => {
     fs.mkdirSync(path.join(tmpDir, "src"));
     fs.writeFileSync(path.join(tmpDir, "src", "instrumentation-client.ts"), "");
 
-    const { findInstrumentationClientFile } =
-      await import("../packages/vinext/src/server/instrumentation-client.js");
-
-    expect(findInstrumentationClientFile(tmpDir)).toBe(
+    expect(findInstrumentationClientPath(tmpDir)).toBe(
       path.join(tmpDir, "src", "instrumentation-client.ts"),
     );
   });
 
-  it("falls back to the project root when src/ is absent", async () => {
+  it("falls back to the project root when src/ is absent", () => {
     fs.writeFileSync(path.join(tmpDir, "instrumentation-client.ts"), "");
 
-    const { findInstrumentationClientFile } =
-      await import("../packages/vinext/src/server/instrumentation-client.js");
-
-    expect(findInstrumentationClientFile(tmpDir)).toBe(
+    expect(findInstrumentationClientPath(tmpDir)).toBe(
       path.join(tmpDir, "instrumentation-client.ts"),
     );
   });
 
-  it("finds instrumentation-client even when pageExtensions would not include .ts", async () => {
-    fs.writeFileSync(path.join(tmpDir, "instrumentation-client.ts"), "");
-
-    const { findInstrumentationClientFile } =
-      await import("../packages/vinext/src/server/instrumentation-client.js");
-
-    expect(findInstrumentationClientFile(tmpDir)).toBe(
-      path.join(tmpDir, "instrumentation-client.ts"),
-    );
-  });
-
-  it("returns null when no instrumentation-client file exists", async () => {
-    const { findInstrumentationClientFile } =
-      await import("../packages/vinext/src/server/instrumentation-client.js");
-
-    expect(findInstrumentationClientFile(tmpDir)).toBeNull();
+  it("returns null when no instrumentation-client file exists", () => {
+    expect(findInstrumentationClientPath(tmpDir)).toBeNull();
   });
 });
 
@@ -67,31 +57,26 @@ describe("client instrumentation runtime", () => {
   });
 
   it("is a no-op when no module is provided", async () => {
-    const { setClientInstrumentationHooks, getClientInstrumentationHooks } =
+    const { setClientInstrumentationHooks, notifyRouterTransitionStart } =
       await import("../packages/vinext/src/client/instrumentation-client.js");
 
-    expect(setClientInstrumentationHooks()).toBeNull();
-    expect(getClientInstrumentationHooks()).toBeNull();
+    expect(() => setClientInstrumentationHooks()).not.toThrow();
+    expect(() => notifyRouterTransitionStart("/about", "push")).not.toThrow();
   });
 
   it("stores onRouterTransitionStart and notifies it later", async () => {
-    const {
-      setClientInstrumentationHooks,
-      getClientInstrumentationHooks,
-      notifyRouterTransitionStart,
-    } = await import("../packages/vinext/src/client/instrumentation-client.js");
+    const { setClientInstrumentationHooks, notifyRouterTransitionStart } =
+      await import("../packages/vinext/src/client/instrumentation-client.js");
     const onRouterTransitionStart = vi.fn();
 
     setClientInstrumentationHooks({ onRouterTransitionStart });
-
-    expect(getClientInstrumentationHooks()?.onRouterTransitionStart).toBe(onRouterTransitionStart);
 
     notifyRouterTransitionStart("/about", "push");
     expect(onRouterTransitionStart).toHaveBeenCalledWith("/about", "push");
   });
 
   it("supports modules that expose hooks on the default export", async () => {
-    const { setClientInstrumentationHooks, getClientInstrumentationHooks } =
+    const { setClientInstrumentationHooks, notifyRouterTransitionStart } =
       await import("../packages/vinext/src/client/instrumentation-client.js");
     const onRouterTransitionStart = vi.fn();
 
@@ -100,8 +85,8 @@ describe("client instrumentation runtime", () => {
         onRouterTransitionStart,
       },
     });
-
-    expect(getClientInstrumentationHooks()?.onRouterTransitionStart).toBe(onRouterTransitionStart);
+    notifyRouterTransitionStart("/dashboard", "replace");
+    expect(onRouterTransitionStart).toHaveBeenCalledWith("/dashboard", "replace");
   });
 });
 
