@@ -238,6 +238,11 @@ describe("App Router entry templates", () => {
     const code = generateBrowserEntry();
     expect(stabilize(code)).toMatchSnapshot();
   });
+
+  it("generateBrowserEntry snapshot (with instrumentation-client)", () => {
+    const code = generateBrowserEntry("/tmp/test/src/instrumentation-client.ts");
+    expect(stabilize(code)).toMatchSnapshot();
+  });
 });
 
 // ── Pages Router entry templates ──────────────────────────────────────

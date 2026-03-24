@@ -11,6 +11,7 @@ import {
 } from "@vitejs/plugin-rsc/browser";
 import { flushSync } from "react-dom";
 import { hydrateRoot } from "react-dom/client";
+import { notifyRouterTransitionStart } from "../client/instrumentation-client.js";
 import {
   PREFETCH_CACHE_TTL,
   getPrefetchCache,
@@ -175,7 +176,7 @@ function registerServerActionCallback(): void {
   });
 }
 
-async function main(): Promise<void> {
+export async function bootstrapAppBrowserEntry(): Promise<void> {
   registerServerActionCallback();
 
   const rscStream = await readInitialRscStream();
@@ -187,6 +188,7 @@ async function main(): Promise<void> {
     import.meta.env.DEV ? { onCaughtError() {} } : undefined,
   );
 
+  window.__VINEXT_RSC_HYDRATED_AT__ = performance.now();
   window.__VINEXT_RSC_ROOT__ = reactRoot;
 
   window.__VINEXT_RSC_NAVIGATE__ = async function navigateRsc(
@@ -262,6 +264,7 @@ async function main(): Promise<void> {
   };
 
   window.addEventListener("popstate", () => {
+    notifyRouterTransitionStart(window.location.href, "traverse");
     const pendingNavigation =
       window.__VINEXT_RSC_NAVIGATE__?.(window.location.href) ?? Promise.resolve();
     window.__VINEXT_RSC_PENDING__ = pendingNavigation;
@@ -285,5 +288,3 @@ async function main(): Promise<void> {
     });
   }
 }
-
-void main();

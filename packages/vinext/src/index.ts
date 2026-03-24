@@ -34,6 +34,7 @@ import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
 import { logRequest, now } from "./server/request-log.js";
 import { normalizePath } from "./server/normalize-path.js";
 import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
+import { findInstrumentationClientFile } from "./server/instrumentation-client.js";
 import { PHASE_PRODUCTION_BUILD, PHASE_DEVELOPMENT_SERVER } from "./shims/constants.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
 import {
@@ -1191,6 +1192,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let fileMatcher: ReturnType<typeof createValidFileMatcher>;
   let middlewarePath: string | null = null;
   let instrumentationPath: string | null = null;
+  let instrumentationClientPath: string | null = null;
   let hasCloudflarePlugin = false;
   let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
@@ -1230,7 +1232,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
    * __NEXT_DATA__ to determine which page to hydrate.
    */
   async function generateClientEntry(): Promise<string> {
-    return _generateClientEntry(pagesDir, nextConfig, fileMatcher);
+    return _generateClientEntry(pagesDir, nextConfig, fileMatcher, instrumentationClientPath);
   }
 
   // Auto-register @vitejs/plugin-rsc when App Router is detected.
@@ -1864,6 +1866,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         nextConfig = await resolveNextConfig(rawConfig, root);
         fileMatcher = createValidFileMatcher(nextConfig.pageExtensions);
         instrumentationPath = findInstrumentationFile(root, fileMatcher);
+        instrumentationClientPath = findInstrumentationClientFile(root, fileMatcher);
         middlewarePath = findMiddlewareFile(root, fileMatcher);
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars
@@ -2011,6 +2014,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             "vinext/i18n-state": path.join(shimsDir, "i18n-state"),
             "vinext/i18n-context": path.join(shimsDir, "i18n-context"),
             "vinext/instrumentation": path.resolve(__dirname, "server", "instrumentation"),
+            "vinext/client-instrumentation": path.resolve(
+              __dirname,
+              "client",
+              "instrumentation-client",
+            ),
             "vinext/html": path.resolve(__dirname, "server", "html"),
           }).flatMap(([k, v]) =>
             k.startsWith("next/")
@@ -2590,7 +2598,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           return generateSsrEntry(hasPagesDir);
         }
         if (id === RESOLVED_APP_BROWSER_ENTRY && hasAppDir) {
-          return generateBrowserEntry();
+          return generateBrowserEntry(instrumentationClientPath);
         }
         if (id.startsWith(RESOLVED_VIRTUAL_GOOGLE_FONTS + "?")) {
           return generateGoogleFontsVirtualModule(id);
@@ -3405,6 +3413,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                 fileMatcher,
                 nextConfig?.basePath ?? "",
                 nextConfig?.trailingSlash ?? false,
+                instrumentationClientPath,
               );
               const mwStatus = req.__vinextRewriteStatus;
 

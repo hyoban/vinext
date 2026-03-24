@@ -20,6 +20,7 @@ import React, {
 } from "react";
 // Import shared RSC prefetch utilities from navigation shim (relative path
 // so this resolves both via the Vite plugin and in direct vitest imports)
+import { notifyRouterTransitionStart } from "../client/instrumentation-client.js";
 import { toRscUrl, getPrefetchedUrls, storePrefetchResponse } from "./navigation.js";
 import { isDangerousScheme } from "./url-safety.js";
 import {
@@ -470,6 +471,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       // App Router: push/replace history state, then fetch RSC stream.
       // Await the RSC navigate so scroll-to-top happens after the new
       // content is committed to the DOM (prevents flash of old page at top).
+      notifyRouterTransitionStart(absoluteFullHref, replace ? "replace" : "push");
       if (replace) {
         window.history.replaceState(null, "", absoluteFullHref);
       } else {

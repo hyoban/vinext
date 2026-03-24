@@ -1,6 +1,34 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`App Router entry templates > generateBrowserEntry snapshot 1`] = `"import "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";"`;
+exports[`App Router entry templates > generateBrowserEntry snapshot (with instrumentation-client) 1`] = `
+"import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
+
+const __loadInstrumentationClient = () => import("/tmp/test/src/instrumentation-client.ts");
+
+async function bootstrap() {
+  await ensureClientInstrumentation(__loadInstrumentationClient);
+  await bootstrapAppBrowserEntry();
+}
+
+void bootstrap();
+"
+`;
+
+exports[`App Router entry templates > generateBrowserEntry snapshot 1`] = `
+"import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
+
+const __loadInstrumentationClient = undefined;
+
+async function bootstrap() {
+  await ensureClientInstrumentation(__loadInstrumentationClient);
+  await bootstrapAppBrowserEntry();
+}
+
+void bootstrap();
+"
+`;
 
 exports[`App Router entry templates > generateRscEntry snapshot (minimal routes) 1`] = `
 "
@@ -13583,10 +13611,13 @@ exports[`Pages Router entry templates > client entry snapshot 1`] = `
 "
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
+import { ensureClientInstrumentation } from "vinext/client-instrumentation";
 // Eagerly import the router shim so its module-level popstate listener is
 // registered.  Without this, browser back/forward buttons do nothing because
 // navigateClient() is never invoked on history changes.
 import "next/router";
+
+const __loadInstrumentationClient = () => import("<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts");
 
 const pageLoaders = {
   "/": () => import("<ROOT>/tests/fixtures/pages-basic/pages/index.tsx"),
@@ -13630,6 +13661,8 @@ const pageLoaders = {
 };
 
 async function hydrate() {
+  await ensureClientInstrumentation(__loadInstrumentationClient);
+
   const nextData = window.__NEXT_DATA__;
   if (!nextData) {
     console.error("[vinext] No __NEXT_DATA__ found");
@@ -13673,6 +13706,7 @@ async function hydrate() {
   }
 
   const root = hydrateRoot(container, element);
+  window.__VINEXT_HYDRATED_AT__ = performance.now();
   window.__VINEXT_ROOT__ = root;
 }
 

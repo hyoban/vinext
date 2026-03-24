@@ -33,6 +33,13 @@ declare global {
     __VINEXT_ROOT__: Root | undefined;
 
     /**
+     * High-resolution timestamp captured immediately after Pages Router
+     * hydration begins.
+     * Used by tests to assert that client instrumentation ran first.
+     */
+    __VINEXT_HYDRATED_AT__: number | undefined;
+
+    /**
      * The cached `_app` component for Pages Router.
      * Written and read by `shims/router.ts` to avoid re-importing on every
      * client-side navigation.
@@ -67,6 +74,13 @@ declare global {
      * Used by E2E tests as a sentinel to detect that hydration has completed.
      */
     __VINEXT_RSC_ROOT__: Root | undefined;
+
+    /**
+     * High-resolution timestamp captured immediately after App Router
+     * hydration begins.
+     * Used by tests to assert that client instrumentation ran first.
+     */
+    __VINEXT_RSC_HYDRATED_AT__: number | undefined;
 
     /**
      * The client-side RSC navigation function for App Router.

@@ -250,6 +250,7 @@ export function createSSRHandler(
   fileMatcher?: ValidFileMatcher,
   basePath = "",
   trailingSlash = false,
+  instrumentationClientPath?: string | null,
 ) {
   const matcher = fileMatcher ?? createValidFileMatcher();
 
@@ -852,6 +853,9 @@ export function createSSRHandler(
         const appModuleUrl = AppComponent
           ? "/" + path.relative(viteRoot, path.join(pagesDir, "_app"))
           : null;
+        const instrumentationClientModuleUrl = instrumentationClientPath
+          ? "/" + path.relative(viteRoot, instrumentationClientPath)
+          : null;
 
         // Hydration entry: inline script that imports the page and hydrates.
         // Stores the React root and page loader for client-side navigation.
@@ -859,12 +863,19 @@ export function createSSRHandler(
 <script type="module">
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
+import { ensureClientInstrumentation } from "vinext/client-instrumentation";
 import { wrapWithRouterContext } from "next/router";
 
 const nextData = window.__NEXT_DATA__;
 const { pageProps } = nextData.props;
+const loadInstrumentationClient = ${
+          instrumentationClientModuleUrl
+            ? `() => import(${JSON.stringify(instrumentationClientModuleUrl)})`
+            : "undefined"
+        };
 
 async function hydrate() {
+  await ensureClientInstrumentation(loadInstrumentationClient);
   const pageModule = await import("${pageModuleUrl}");
   const PageComponent = pageModule.default;
   let element;
@@ -882,6 +893,7 @@ async function hydrate() {
   }
   element = wrapWithRouterContext(element);
   const root = hydrateRoot(document.getElementById("__next"), element);
+  window.__VINEXT_HYDRATED_AT__ = performance.now();
   window.__VINEXT_ROOT__ = root;
 }
 hydrate();

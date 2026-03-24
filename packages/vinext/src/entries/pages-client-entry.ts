@@ -22,6 +22,7 @@ export async function generateClientEntry(
   pagesDir: string,
   nextConfig: ResolvedNextConfig,
   fileMatcher: ReturnType<typeof createValidFileMatcher>,
+  instrumentationClientPath?: string | null,
 ): Promise<string> {
   const pageRoutes = await pagesRouter(pagesDir, nextConfig?.pageExtensions, fileMatcher);
 
@@ -41,20 +42,30 @@ export async function generateClientEntry(
   });
 
   const appFileBase = appFilePath?.replace(/\\/g, "/");
+  const instrumentationClientImport = instrumentationClientPath
+    ? `const __loadInstrumentationClient = () => import(${JSON.stringify(
+        instrumentationClientPath.replace(/\\/g, "/"),
+      )});`
+    : `const __loadInstrumentationClient = undefined;`;
 
   return `
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
+import { ensureClientInstrumentation } from "vinext/client-instrumentation";
 // Eagerly import the router shim so its module-level popstate listener is
 // registered.  Without this, browser back/forward buttons do nothing because
 // navigateClient() is never invoked on history changes.
 import "next/router";
+
+${instrumentationClientImport}
 
 const pageLoaders = {
 ${loaderEntries.join(",\n")}
 };
 
 async function hydrate() {
+  await ensureClientInstrumentation(__loadInstrumentationClient);
+
   const nextData = window.__NEXT_DATA__;
   if (!nextData) {
     console.error("[vinext] No __NEXT_DATA__ found");
@@ -104,6 +115,7 @@ async function hydrate() {
   }
 
   const root = hydrateRoot(container, element);
+  window.__VINEXT_HYDRATED_AT__ = performance.now();
   window.__VINEXT_ROOT__ = root;
 }
 
