@@ -43,6 +43,65 @@ describe("next/navigation shim", () => {
     expect(typeof router.prefetch).toBe("function");
   });
 
+  it("calls onRouterTransitionStart for external router.push and router.replace", async () => {
+    vi.resetModules();
+    const originalWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
+    const assignSpy = vi.fn();
+    const replaceSpy = vi.fn();
+
+    vi.stubGlobal("window", {
+      __VINEXT_ROOT__: undefined,
+      location: {
+        href: "http://localhost:3000/current",
+        origin: "http://localhost:3000",
+        assign: assignSpy,
+        replace: replaceSpy,
+      },
+      history: {
+        state: null,
+        pushState: vi.fn(),
+        replaceState: vi.fn(),
+        back: vi.fn(),
+        forward: vi.fn(),
+      },
+      addEventListener: vi.fn(),
+    });
+
+    try {
+      const { setClientInstrumentationHooks } =
+        await import("../packages/vinext/src/client/instrumentation-client.js");
+      const { useRouter } = await import("../packages/vinext/src/shims/navigation.js");
+      const onRouterTransitionStart = vi.fn();
+
+      setClientInstrumentationHooks({ onRouterTransitionStart });
+
+      const router = useRouter();
+      router.push("https://example.vercel.sh/stuff?abc=123");
+      router.replace("https://example.vercel.sh/other");
+
+      expect(onRouterTransitionStart).toHaveBeenNthCalledWith(
+        1,
+        "https://example.vercel.sh/stuff?abc=123",
+        "push",
+      );
+      expect(assignSpy).toHaveBeenCalledWith("https://example.vercel.sh/stuff?abc=123");
+      expect(onRouterTransitionStart).toHaveBeenNthCalledWith(
+        2,
+        "https://example.vercel.sh/other",
+        "replace",
+      );
+      expect(replaceSpy).toHaveBeenCalledWith("https://example.vercel.sh/other");
+
+      setClientInstrumentationHooks();
+    } finally {
+      vi.unstubAllGlobals();
+      if (originalWindow !== undefined) {
+        vi.stubGlobal("window", originalWindow);
+      }
+      vi.resetModules();
+    }
+  });
+
   it("exports redirect, notFound, permanentRedirect", async () => {
     const nav = await import("../packages/vinext/src/shims/navigation.js");
     expect(typeof nav.redirect).toBe("function");

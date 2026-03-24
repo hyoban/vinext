@@ -521,6 +521,8 @@ async function navigateImpl(
   mode: "push" | "replace",
   scroll: boolean,
 ): Promise<void> {
+  notifyRouterTransitionStart(href, mode);
+
   // Normalize same-origin absolute URLs to local paths for SPA navigation
   let normalizedHref = href;
   if (isExternalUrl(href)) {
@@ -543,8 +545,6 @@ async function navigateImpl(
   if (mode === "push") {
     saveScrollPosition();
   }
-
-  notifyRouterTransitionStart(href, mode);
 
   // Hash-only change: update URL and scroll to target, skip RSC fetch
   if (isHashOnlyChange(fullHref)) {
