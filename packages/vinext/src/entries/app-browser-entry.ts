@@ -9,22 +9,27 @@ import { resolveRuntimeEntryModule } from "./runtime-entry-module.js";
  */
 export function generateBrowserEntry(instrumentationClientPath?: string | null): string {
   const entryPath = resolveRuntimeEntryModule("app-browser-entry");
-  const instrumentationClientImport = instrumentationClientPath
-    ? `const __loadInstrumentationClient = () => import(${JSON.stringify(
-        instrumentationClientPath.replace(/\\/g, "/"),
-      )});`
-    : `const __loadInstrumentationClient = undefined;`;
+  const normalizedInstrumentationPath = instrumentationClientPath?.replace(/\\/g, "/");
+  const instrumentationClientImport = normalizedInstrumentationPath
+    ? `import * as __instrumentationClient from ${JSON.stringify(normalizedInstrumentationPath)};`
+    : `const __instrumentationClient = null;`;
+  const instrumentationClientHmr = normalizedInstrumentationPath
+    ? `
+if (import.meta.hot) {
+  import.meta.hot.accept(${JSON.stringify(normalizedInstrumentationPath)}, (mod) => {
+    setClientInstrumentationHooks(mod);
+  });
+}
+`
+    : "";
 
-  return `import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+  return `import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from ${JSON.stringify(entryPath)};
 
 ${instrumentationClientImport}
+setClientInstrumentationHooks(__instrumentationClient);
+${instrumentationClientHmr}
 
-async function bootstrap() {
-  await ensureClientInstrumentation(__loadInstrumentationClient);
-  await bootstrapAppBrowserEntry();
-}
-
-void bootstrap();
+void bootstrapAppBrowserEntry();
 `;
 }

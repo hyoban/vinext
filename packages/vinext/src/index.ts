@@ -100,6 +100,60 @@ function resolveShimModulePath(shimsDir: string, moduleName: string): string {
   return path.join(shimsDir, `${moduleName}.js`);
 }
 
+function stripQueryAndHash(id: string): string {
+  const queryIndex = id.indexOf("?");
+  const hashIndex = id.indexOf("#");
+  let end = id.length;
+  if (queryIndex !== -1) end = Math.min(end, queryIndex);
+  if (hashIndex !== -1) end = Math.min(end, hashIndex);
+  return id.slice(0, end);
+}
+
+function normalizeModuleId(id: string): string {
+  const strippedId = stripQueryAndHash(id);
+  const cleanedId = strippedId.startsWith("\u0000") ? strippedId.slice(1) : strippedId;
+  const fsId = cleanedId.startsWith("/@fs/") ? cleanedId.slice(4) : cleanedId;
+  return fsId.replace(/\\/g, "/");
+}
+
+function wrapInstrumentationClientCodeForDev(code: string) {
+  let ast: any;
+  try {
+    ast = parseAst(code);
+  } catch {
+    return null;
+  }
+
+  const output = new MagicString(code);
+  let insertPos = 0;
+
+  for (const node of ast.body ?? []) {
+    const isDirective = node.type === "ExpressionStatement" && typeof node.directive === "string";
+    if (isDirective || node.type === "ImportDeclaration") {
+      insertPos = node.end;
+      continue;
+    }
+    break;
+  }
+
+  output.appendLeft(insertPos, `\nconst __vinextInstrumentationClientStart = performance.now();\n`);
+  output.append(
+    `\nconst __vinextInstrumentationClientDuration = performance.now() - __vinextInstrumentationClientStart;\n` +
+      `if (__vinextInstrumentationClientDuration > 16) {\n` +
+      `  console.log(\n` +
+      `    "[Client Instrumentation Hook] Slow execution detected: " +\n` +
+      `      __vinextInstrumentationClientDuration.toFixed(0) +\n` +
+      `      "ms (Note: Code download overhead is not included in this measurement)",\n` +
+      `  );\n` +
+      `}\n`,
+  );
+
+  return {
+    code: output.toString(),
+    map: output.generateMap({ hires: true }),
+  };
+}
+
 /**
  * Fetch Google Fonts CSS, download .woff2 files, cache locally, and return
  * @font-face CSS with local file references.
@@ -1193,6 +1247,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let middlewarePath: string | null = null;
   let instrumentationPath: string | null = null;
   let instrumentationClientPath: string | null = null;
+  let isDevServer = false;
   let hasCloudflarePlugin = false;
   let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
@@ -1336,6 +1391,15 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     // Transform CJS require()/module.exports to ESM before other plugins
     // analyze imports (RSC directive scanning, shim resolution, etc.)
     commonjs(),
+    {
+      name: "vinext:instrumentation-client-dev-timing",
+      enforce: "pre" as const,
+      transform(code: string, id: string) {
+        if (!isDevServer || !instrumentationClientPath) return null;
+        if (normalizeModuleId(id) !== instrumentationClientPath.replace(/\\/g, "/")) return null;
+        return wrapInstrumentationClientCodeForDev(code);
+      },
+    },
     // Fix 'use server' closure variable collision with local declarations.
     //
     // @vitejs/plugin-rsc uses `periscopic` to find closure variables for
@@ -2438,6 +2502,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
       },
 
       configResolved(config) {
+        isDevServer = config.command === "serve";
+
         // Detect double React plugin registration. When vinext auto-injects
         // @vitejs/plugin-react AND the user also registers it manually, the
         // React transform / refresh pipeline runs twice.

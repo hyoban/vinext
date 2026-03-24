@@ -58,34 +58,31 @@ describe("findInstrumentationClientFile", () => {
 });
 
 describe("client instrumentation runtime", () => {
-  const originalNodeEnv = process.env.NODE_ENV;
-
   beforeEach(() => {
     vi.resetModules();
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = originalNodeEnv;
     vi.restoreAllMocks();
   });
 
-  it("is a no-op when no loader is provided", async () => {
-    const { ensureClientInstrumentation, getClientInstrumentationHooks } =
+  it("is a no-op when no module is provided", async () => {
+    const { setClientInstrumentationHooks, getClientInstrumentationHooks } =
       await import("../packages/vinext/src/client/instrumentation-client.js");
 
-    await expect(ensureClientInstrumentation()).resolves.toBeNull();
+    expect(setClientInstrumentationHooks()).toBeNull();
     expect(getClientInstrumentationHooks()).toBeNull();
   });
 
   it("stores onRouterTransitionStart and notifies it later", async () => {
     const {
-      ensureClientInstrumentation,
+      setClientInstrumentationHooks,
       getClientInstrumentationHooks,
       notifyRouterTransitionStart,
     } = await import("../packages/vinext/src/client/instrumentation-client.js");
     const onRouterTransitionStart = vi.fn();
 
-    await ensureClientInstrumentation(async () => ({ onRouterTransitionStart }));
+    setClientInstrumentationHooks({ onRouterTransitionStart });
 
     expect(getClientInstrumentationHooks()?.onRouterTransitionStart).toBe(onRouterTransitionStart);
 
@@ -93,20 +90,17 @@ describe("client instrumentation runtime", () => {
     expect(onRouterTransitionStart).toHaveBeenCalledWith("/about", "push");
   });
 
-  it("logs a dev warning when execution exceeds 16ms", async () => {
-    process.env.NODE_ENV = "development";
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const nowSpy = vi.spyOn(performance, "now");
-    nowSpy.mockReturnValueOnce(0).mockReturnValueOnce(20);
-
-    const { ensureClientInstrumentation } =
+  it("supports modules that expose hooks on the default export", async () => {
+    const { setClientInstrumentationHooks, getClientInstrumentationHooks } =
       await import("../packages/vinext/src/client/instrumentation-client.js");
+    const onRouterTransitionStart = vi.fn();
 
-    await ensureClientInstrumentation(async () => ({}));
+    setClientInstrumentationHooks({
+      default: {
+        onRouterTransitionStart,
+      },
+    });
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "[Client Instrumentation Hook] Slow execution detected: 20ms " +
-        "(Note: Code download overhead is not included in this measurement)",
-    );
+    expect(getClientInstrumentationHooks()?.onRouterTransitionStart).toBe(onRouterTransitionStart);
   });
 });

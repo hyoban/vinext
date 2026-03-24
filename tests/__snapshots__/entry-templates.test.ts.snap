@@ -1,32 +1,32 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`App Router entry templates > generateBrowserEntry snapshot (with instrumentation-client) 1`] = `
-"import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+"import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
 
-const __loadInstrumentationClient = () => import("/tmp/test/src/instrumentation-client.ts");
+import * as __instrumentationClient from "/tmp/test/src/instrumentation-client.ts";
+setClientInstrumentationHooks(__instrumentationClient);
 
-async function bootstrap() {
-  await ensureClientInstrumentation(__loadInstrumentationClient);
-  await bootstrapAppBrowserEntry();
+if (import.meta.hot) {
+  import.meta.hot.accept("/tmp/test/src/instrumentation-client.ts", (mod) => {
+    setClientInstrumentationHooks(mod);
+  });
 }
 
-void bootstrap();
+
+void bootstrapAppBrowserEntry();
 "
 `;
 
 exports[`App Router entry templates > generateBrowserEntry snapshot 1`] = `
-"import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+"import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
 
-const __loadInstrumentationClient = undefined;
+const __instrumentationClient = null;
+setClientInstrumentationHooks(__instrumentationClient);
 
-async function bootstrap() {
-  await ensureClientInstrumentation(__loadInstrumentationClient);
-  await bootstrapAppBrowserEntry();
-}
 
-void bootstrap();
+void bootstrapAppBrowserEntry();
 "
 `;
 
@@ -13611,13 +13611,17 @@ exports[`Pages Router entry templates > client entry snapshot 1`] = `
 "
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
-import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 // Eagerly import the router shim so its module-level popstate listener is
 // registered.  Without this, browser back/forward buttons do nothing because
 // navigateClient() is never invoked on history changes.
 import "next/router";
 
-const __loadInstrumentationClient = () => import("<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts");
+import * as __instrumentationClient from "<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts";
+// Next.js only wires onRouterTransitionStart through the App Router.
+// Pages Router still executes instrumentation-client for side effects,
+// but it does not register transition hooks from that module.
+setClientInstrumentationHooks();
 
 const pageLoaders = {
   "/": () => import("<ROOT>/tests/fixtures/pages-basic/pages/index.tsx"),
@@ -13661,8 +13665,6 @@ const pageLoaders = {
 };
 
 async function hydrate() {
-  await ensureClientInstrumentation(__loadInstrumentationClient);
-
   const nextData = window.__NEXT_DATA__;
   if (!nextData) {
     console.error("[vinext] No __NEXT_DATA__ found");

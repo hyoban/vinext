@@ -106,6 +106,7 @@ function createWindowStub() {
     scrollTo,
     window: {
       __VINEXT_RSC_NAVIGATE__: navigate,
+      __VINEXT_RSC_ROOT__: {},
       history: {
         pushState,
         replaceState,

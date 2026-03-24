@@ -42,30 +42,31 @@ export async function generateClientEntry(
   });
 
   const appFileBase = appFilePath?.replace(/\\/g, "/");
-  const instrumentationClientImport = instrumentationClientPath
-    ? `const __loadInstrumentationClient = () => import(${JSON.stringify(
-        instrumentationClientPath.replace(/\\/g, "/"),
-      )});`
-    : `const __loadInstrumentationClient = undefined;`;
+  const normalizedInstrumentationPath = instrumentationClientPath?.replace(/\\/g, "/");
+  const instrumentationClientImport = normalizedInstrumentationPath
+    ? `import * as __instrumentationClient from ${JSON.stringify(normalizedInstrumentationPath)};`
+    : `const __instrumentationClient = null;`;
 
   return `
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
-import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 // Eagerly import the router shim so its module-level popstate listener is
 // registered.  Without this, browser back/forward buttons do nothing because
 // navigateClient() is never invoked on history changes.
 import "next/router";
 
 ${instrumentationClientImport}
+// Next.js only wires onRouterTransitionStart through the App Router.
+// Pages Router still executes instrumentation-client for side effects,
+// but it does not register transition hooks from that module.
+setClientInstrumentationHooks();
 
 const pageLoaders = {
 ${loaderEntries.join(",\n")}
 };
 
 async function hydrate() {
-  await ensureClientInstrumentation(__loadInstrumentationClient);
-
   const nextData = window.__NEXT_DATA__;
   if (!nextData) {
     console.error("[vinext] No __NEXT_DATA__ found");

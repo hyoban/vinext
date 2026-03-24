@@ -224,7 +224,11 @@ const Form = forwardRef(function Form(props: FormProps, ref: ForwardedRef<HTMLFo
     const targetHref = new URL(url, window.location.href).href;
 
     // Navigate client-side
-    if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
+    if (
+      !window.__VINEXT_ROOT__ &&
+      window.__VINEXT_RSC_ROOT__ &&
+      typeof window.__VINEXT_RSC_NAVIGATE__ === "function"
+    ) {
       // App Router: mirror Next.js by emitting the transition hook before
       // dispatching the client-side navigation.
       notifyRouterTransitionStart(targetHref, replace ? "replace" : "push");
@@ -241,7 +245,13 @@ const Form = forwardRef(function Form(props: FormProps, ref: ForwardedRef<HTMLFo
       } else {
         window.history.pushState({}, "", url);
       }
-      window.dispatchEvent(new PopStateEvent("popstate"));
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(
+          typeof PopStateEvent === "function"
+            ? new PopStateEvent("popstate")
+            : new Event("popstate"),
+        );
+      }
     }
 
     if (scroll) {

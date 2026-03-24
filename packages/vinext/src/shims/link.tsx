@@ -20,7 +20,11 @@ import React, {
 } from "react";
 // Import shared RSC prefetch utilities from navigation shim (relative path
 // so this resolves both via the Vite plugin and in direct vitest imports)
-import { notifyRouterTransitionStart } from "../client/instrumentation-client.js";
+import {
+  getClientInstrumentationHooks,
+  notifyRouterTransitionStart,
+  setClientInstrumentationHooks,
+} from "../client/instrumentation-client.js";
 import { toRscUrl, getPrefetchedUrls, storePrefetchResponse } from "./navigation.js";
 import { isDangerousScheme } from "./url-safety.js";
 import {
@@ -160,7 +164,11 @@ function prefetchUrl(href: string): void {
   const schedule = (window as any).requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 100));
 
   schedule(() => {
-    if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
+    if (
+      !window.__VINEXT_ROOT__ &&
+      window.__VINEXT_RSC_ROOT__ &&
+      typeof window.__VINEXT_RSC_NAVIGATE__ === "function"
+    ) {
       // App Router: prefetch the RSC payload and store in cache
       fetch(rscUrl, {
         headers: { Accept: "text/x-component" },
@@ -446,8 +454,6 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       );
     }
 
-    notifyRouterTransitionStart(navigateHref, replace ? "replace" : "push");
-
     // Hash-only change: update URL and scroll to target, skip RSC fetch
     if (typeof window !== "undefined" && isHashOnlyChange(absoluteFullHref)) {
       const hash = absoluteFullHref.includes("#")
@@ -473,6 +479,7 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       // App Router: push/replace history state, then fetch RSC stream.
       // Await the RSC navigate so scroll-to-top happens after the new
       // content is committed to the DOM (prevents flash of old page at top).
+      notifyRouterTransitionStart(navigateHref, replace ? "replace" : "push");
       if (replace) {
         window.history.replaceState(null, "", absoluteFullHref);
       } else {
@@ -486,6 +493,8 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       }
     } else {
       // Pages Router: use the Router singleton
+      const existingHooks = getClientInstrumentationHooks();
+      setClientInstrumentationHooks();
       try {
         const routerModule = await import("next/router");
         // eslint-disable-next-line -- vinext's Router shim accepts (url, as, options)
@@ -503,6 +512,8 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
           window.history.pushState({}, "", absoluteFullHref);
         }
         window.dispatchEvent(new PopStateEvent("popstate"));
+      } finally {
+        setClientInstrumentationHooks(existingHooks ?? undefined);
       }
     }
 

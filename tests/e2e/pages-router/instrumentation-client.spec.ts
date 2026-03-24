@@ -26,7 +26,9 @@ test.describe("instrumentation-client.ts (Pages Router)", () => {
     expect(timings.instrumentation).toBeLessThan(timings.hydration);
   });
 
-  test("ignores exported onRouterTransitionStart for parity with Next.js", async ({ page }) => {
+  test("ignores exported onRouterTransitionStart for router.push and Link navigations", async ({
+    page,
+  }) => {
     await page.goto("/router-events-test");
     await page.waitForFunction(() => Boolean((window as any).__VINEXT_ROOT__));
 
@@ -39,5 +41,16 @@ test.describe("instrumentation-client.ts (Pages Router)", () => {
 
     const navs = await page.evaluate(() => (window as any).__VINEXT_PAGES_INSTRUMENTATION_NAVS__);
     expect(navs).toEqual([]);
+
+    await page.goBack();
+    await expect(page.locator("h1")).toHaveText("Router Events Test");
+
+    await page.click('[data-testid="link-about"]');
+    await expect(page.locator("h1")).toHaveText("About");
+
+    const navsAfterLink = await page.evaluate(
+      () => (window as any).__VINEXT_PAGES_INSTRUMENTATION_NAVS__,
+    );
+    expect(navsAfterLink).toEqual([]);
   });
 });

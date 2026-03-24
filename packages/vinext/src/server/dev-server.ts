@@ -863,19 +863,18 @@ export function createSSRHandler(
 <script type="module">
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
-import { ensureClientInstrumentation } from "vinext/client-instrumentation";
+import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { wrapWithRouterContext } from "next/router";
+${instrumentationClientModuleUrl ? `import * as __instrumentationClient from ${JSON.stringify(instrumentationClientModuleUrl)};` : `const __instrumentationClient = null;`}
 
 const nextData = window.__NEXT_DATA__;
 const { pageProps } = nextData.props;
-const loadInstrumentationClient = ${
-          instrumentationClientModuleUrl
-            ? `() => import(${JSON.stringify(instrumentationClientModuleUrl)})`
-            : "undefined"
-        };
+// Next.js only wires onRouterTransitionStart through the App Router.
+// Pages Router still executes instrumentation-client for side effects,
+// but it does not register transition hooks from that module.
+setClientInstrumentationHooks();
 
 async function hydrate() {
-  await ensureClientInstrumentation(loadInstrumentationClient);
   const pageModule = await import("${pageModuleUrl}");
   const PageComponent = pageModule.default;
   let element;
