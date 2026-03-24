@@ -459,6 +459,9 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
       const hash = absoluteFullHref.includes("#")
         ? absoluteFullHref.slice(absoluteFullHref.indexOf("#"))
         : "";
+      if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
+        notifyRouterTransitionStart(navigateHref, replace ? "replace" : "push");
+      }
       if (replace) {
         window.history.replaceState(null, "", absoluteFullHref);
       } else {

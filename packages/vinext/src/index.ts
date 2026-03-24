@@ -68,6 +68,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
+import * as ts from "typescript";
 import commonjs from "vite-plugin-commonjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,20 +118,34 @@ function normalizeModuleId(id: string): string {
 }
 
 function wrapInstrumentationClientCodeForDev(code: string) {
-  let ast: any;
-  try {
-    ast = parseAst(code);
-  } catch {
+  const sourceFile = ts.createSourceFile(
+    "instrumentation-client.tsx",
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+
+  const parseDiagnostics = (
+    sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }
+  ).parseDiagnostics;
+  if (parseDiagnostics && parseDiagnostics.length > 0) {
     return null;
   }
 
   const output = new MagicString(code);
   let insertPos = 0;
 
-  for (const node of ast.body ?? []) {
-    const isDirective = node.type === "ExpressionStatement" && typeof node.directive === "string";
-    if (isDirective || node.type === "ImportDeclaration") {
-      insertPos = node.end;
+  for (const statement of sourceFile.statements) {
+    const isDirective =
+      ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression);
+    const isImportLike =
+      ts.isImportDeclaration(statement) ||
+      ts.isImportEqualsDeclaration(statement) ||
+      (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined);
+
+    if (isDirective || isImportLike) {
+      insertPos = statement.end;
       continue;
     }
     break;
@@ -1396,7 +1411,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
       enforce: "pre" as const,
       transform(code: string, id: string) {
         if (!isDevServer || !instrumentationClientPath) return null;
-        if (normalizeModuleId(id) !== instrumentationClientPath.replace(/\\/g, "/")) return null;
+        const normalizedId = normalizeModuleId(id);
+        const normalizedPath = instrumentationClientPath.replace(/\\/g, "/");
+        const normalizedRoot = root.replace(/\\/g, "/");
+        const projectRelativePath = normalizedPath.startsWith(normalizedRoot + "/")
+          ? normalizedPath.slice(normalizedRoot.length)
+          : null;
+        if (normalizedId !== normalizedPath && normalizedId !== projectRelativePath) return null;
         return wrapInstrumentationClientCodeForDev(code);
       },
     },
