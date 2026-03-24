@@ -1,17 +1,59 @@
+/**
+ * E2E test for instrumentation-client.ts HMR support.
+ *
+ * This runs under the Playwright app-router project so Chromium is available.
+ * It uses an isolated temporary fixture and its own Vite dev server to avoid
+ * mutating the shared app-basic fixture used by other app-router specs.
+ */
+
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { chromium, type Browser, type Page } from "playwright";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
-import { APP_FIXTURE_DIR, startFixtureServer, type TestServerResult } from "./helpers.js";
+import { test, expect } from "@playwright/test";
+import type { ViteDevServer } from "vite";
 
-describe("instrumentation-client HMR", () => {
+const APP_FIXTURE_DIR = path.resolve(__dirname, "../../fixtures/app-basic");
+
+interface TestServerResult {
+  server: ViteDevServer;
+  baseUrl: string;
+}
+
+async function startFixtureServer(fixtureDir: string): Promise<TestServerResult> {
+  const { createServer } = await import("vite");
+  const vinext = (await import("../../../packages/vinext/src/index.js")).default;
+
+  const server = await createServer({
+    root: fixtureDir,
+    configFile: false,
+    plugins: [vinext({ appDir: fixtureDir })],
+    optimizeDeps: {
+      holdUntilCrawlEnd: true,
+    },
+    server: {
+      port: 0,
+      cors: false,
+    },
+    logLevel: "silent",
+  });
+
+  await server.listen();
+  const addr = server.httpServer?.address();
+  if (!addr || typeof addr !== "object") {
+    throw new Error("Failed to determine fixture server address");
+  }
+
+  return {
+    server,
+    baseUrl: `http://localhost:${addr.port}`,
+  };
+}
+
+test.describe("instrumentation-client.ts HMR", () => {
   let tmpDir: string;
   let testServer: TestServerResult;
-  let browser: Browser;
-  let page: Page;
 
-  beforeEach(async () => {
+  test.beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vinext-inst-hmr-"));
     await fs.cp(APP_FIXTURE_DIR, tmpDir, {
       recursive: true,
@@ -22,23 +64,19 @@ describe("instrumentation-client HMR", () => {
     await fs.symlink(path.join(APP_FIXTURE_DIR, "node_modules"), path.join(tmpDir, "node_modules"));
 
     testServer = await startFixtureServer(tmpDir);
-    browser = await chromium.launch({ headless: true });
-    page = await browser.newPage();
-
-    await page.goto(`${testServer.baseUrl}/instrumentation-client-test`);
-    await page.waitForFunction(() => Boolean((window as any).__VINEXT_RSC_ROOT__));
   });
 
-  afterEach(async () => {
-    await page?.close();
-    await browser?.close();
+  test.afterEach(async () => {
     await testServer?.server.close();
     if (tmpDir) {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
 
-  it("reloads instrumentation-client when modified in dev", async () => {
+  test("reloads instrumentation-client when modified in dev", async ({ page }) => {
+    await page.goto(`${testServer.baseUrl}/instrumentation-client-test`);
+    await page.waitForFunction(() => Boolean((window as any).__VINEXT_RSC_ROOT__));
+
     const instrumentationPath = path.join(tmpDir, "src", "instrumentation-client.ts");
     const original = await fs.readFile(instrumentationPath, "utf8");
     const initialTime = await page.evaluate(
