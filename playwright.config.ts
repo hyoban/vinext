@@ -22,7 +22,7 @@ const projectServers = {
     testMatch: ["**/app-router/**/*.spec.ts", "**/og-image.spec.ts"],
     use: { baseURL: "http://localhost:4174" },
     server: {
-      command: "npx vp dev --port 4174",
+      command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4174",
       cwd: "./tests/fixtures/app-basic",
       port: 4174,
       reuseExistingServer: !process.env.CI,
@@ -103,6 +103,18 @@ const projectServers = {
       command: "npx vp dev --port 4179",
       cwd: "./examples/pages-router-cloudflare",
       port: 4179,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  },
+  "app-router-src": {
+    testDir: "./tests/e2e",
+    testMatch: ["**/app-router/instrumentation-client-src.spec.ts"],
+    use: { baseURL: "http://localhost:4180" },
+    server: {
+      command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4180",
+      cwd: "./tests/fixtures/app-with-src",
+      port: 4180,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

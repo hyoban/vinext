@@ -33,7 +33,11 @@ import {
 import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
 import { logRequest, now } from "./server/request-log.js";
 import { normalizePath } from "./server/normalize-path.js";
-import { findInstrumentationFile, runInstrumentation } from "./server/instrumentation.js";
+import {
+  findInstrumentationClientFile,
+  findInstrumentationFile,
+  runInstrumentation,
+} from "./server/instrumentation.js";
 import { PHASE_PRODUCTION_BUILD, PHASE_DEVELOPMENT_SERVER } from "./shims/constants.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
 import {
@@ -57,6 +61,7 @@ import {
 import { hasBasePath } from "./utils/base-path.js";
 import { asyncHooksStubPlugin } from "./plugins/async-hooks-stub.js";
 import { clientReferenceDedupPlugin } from "./plugins/client-reference-dedup.js";
+import { createInstrumentationClientTransformPlugin } from "./plugins/instrumentation-client.js";
 import { createOptimizeImportsPlugin } from "./plugins/optimize-imports.js";
 import { hasWranglerConfig, formatMissingCloudflarePluginError } from "./deploy.js";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -97,6 +102,10 @@ function resolveShimModulePath(shimsDir: string, moduleName: string): string {
     }
   }
   return path.join(shimsDir, `${moduleName}.js`);
+}
+
+function toRelativeFileEntry(root: string, absPath: string): string {
+  return path.relative(root, absPath).split(path.sep).join("/");
 }
 
 /**
@@ -1191,6 +1200,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let fileMatcher: ReturnType<typeof createValidFileMatcher>;
   let middlewarePath: string | null = null;
   let instrumentationPath: string | null = null;
+  let instrumentationClientPath: string | null = null;
   let hasCloudflarePlugin = false;
   let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
@@ -1864,6 +1874,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         nextConfig = await resolveNextConfig(rawConfig, root);
         fileMatcher = createValidFileMatcher(nextConfig.pageExtensions);
         instrumentationPath = findInstrumentationFile(root, fileMatcher);
+        instrumentationClientPath = findInstrumentationClientFile(root, fileMatcher);
         middlewarePath = findMiddlewareFile(root, fileMatcher);
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars
@@ -2011,7 +2022,14 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             "vinext/i18n-state": path.join(shimsDir, "i18n-state"),
             "vinext/i18n-context": path.join(shimsDir, "i18n-context"),
             "vinext/instrumentation": path.resolve(__dirname, "server", "instrumentation"),
+            "vinext/instrumentation-client": path.resolve(
+              __dirname,
+              "client",
+              "instrumentation-client",
+            ),
             "vinext/html": path.resolve(__dirname, "server", "html"),
+            "private-next-instrumentation-client":
+              instrumentationClientPath ?? path.resolve(__dirname, "client", "empty-module"),
           }).flatMap(([k, v]) =>
             k.startsWith("next/")
               ? [
@@ -2279,6 +2297,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           // The entries must be relative to the project root.
           const relAppDir = path.relative(root, appDir);
           const appEntries = [`${relAppDir}/**/*.{tsx,ts,jsx,js}`];
+          const explicitInstrumentationEntries = [
+            instrumentationPath,
+            instrumentationClientPath,
+          ].flatMap((entry) => (entry ? [toRelativeFileEntry(root, entry)] : []));
+          const optimizeEntries = [...new Set([...appEntries, ...explicitInstrumentationEntries])];
 
           viteConfig.environments = {
             rsc: {
@@ -2307,7 +2330,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                   }),
               optimizeDeps: {
                 exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
-                entries: appEntries,
+                entries: optimizeEntries,
               },
               build: {
                 outDir: options.rscOutDir ?? "dist/server",
@@ -2332,7 +2355,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                   }),
               optimizeDeps: {
                 exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
-                entries: appEntries,
+                entries: optimizeEntries,
               },
               build: {
                 outDir: options.ssrOutDir ?? "dist/server/ssr",
@@ -2364,7 +2387,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                 // Crawl app/ source files up front so client-only deps imported
                 // by user components are discovered during startup instead of
                 // triggering a late re-optimisation + full page reload.
-                entries: appEntries,
+                entries: optimizeEntries,
                 // React packages aren't crawled from app/ source files,
                 // so must be pre-included to avoid late discovery (#25).
                 include: [
@@ -2396,6 +2419,15 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             },
           };
         } else if (hasCloudflarePlugin) {
+          const pagesEntries = hasPagesDir
+            ? [toRelativeFileEntry(root, pagesDir) + "/**/*.{tsx,ts,jsx,js}"]
+            : [];
+          const optimizeEntries = [
+            ...pagesEntries,
+            ...[instrumentationPath, instrumentationClientPath].flatMap((entry) =>
+              entry ? [toRelativeFileEntry(root, entry)] : [],
+            ),
+          ];
           // Pages Router on Cloudflare Workers: add a client environment
           // so the multi-environment build produces client JS bundles
           // alongside the worker. Without this, only the worker is built
@@ -2403,6 +2435,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           viteConfig.environments = {
             client: {
               consumer: "client",
+              optimizeDeps: optimizeEntries.length > 0 ? { entries: optimizeEntries } : undefined,
               build: {
                 manifest: true,
                 ssrManifest: true,
@@ -2414,6 +2447,24 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
               },
             },
           };
+        }
+
+        if (!hasAppDir) {
+          const pagesEntries = hasPagesDir
+            ? [toRelativeFileEntry(root, pagesDir) + "/**/*.{tsx,ts,jsx,js}"]
+            : [];
+          const optimizeEntries = [
+            ...pagesEntries,
+            ...[instrumentationPath, instrumentationClientPath].flatMap((entry) =>
+              entry ? [toRelativeFileEntry(root, entry)] : [],
+            ),
+          ];
+          if (optimizeEntries.length > 0) {
+            viteConfig.optimizeDeps = {
+              ...viteConfig.optimizeDeps,
+              entries: optimizeEntries,
+            };
+          }
         }
 
         return viteConfig;
@@ -2599,6 +2650,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     },
     // Stub node:async_hooks in client builds — see src/plugins/async-hooks-stub.ts
     asyncHooksStubPlugin,
+    createInstrumentationClientTransformPlugin(() => instrumentationClientPath),
     // Dedup client references from RSC proxy modules — see src/plugins/client-reference-dedup.ts
     ...(options.experimental?.clientReferenceDedup ? [clientReferenceDedupPlugin()] : []),
     // Proxy plugin for @mdx-js/rollup. The real MDX plugin is created lazily

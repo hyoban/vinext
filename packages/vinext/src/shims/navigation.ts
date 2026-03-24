@@ -11,6 +11,7 @@
 // would throw at link time for missing bindings. With `import * as React`, the
 // bindings are just `undefined` on the namespace object and we can guard at runtime.
 import * as React from "react";
+import { getClientInstrumentationHooks } from "../client/instrumentation-client-state.js";
 import { toBrowserNavigationHref, toSameOriginAppPath } from "./url-utils.js";
 import { stripBasePath } from "../utils/base-path.js";
 import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
@@ -512,6 +513,13 @@ function restoreScrollPosition(state: unknown): void {
   }
 }
 
+function onRouterTransitionStart(
+  href: string,
+  navigationType: "push" | "replace" | "traverse",
+): void {
+  getClientInstrumentationHooks()?.onRouterTransitionStart?.(href, navigationType);
+}
+
 /**
  * Navigate to a URL, handling external URLs, hash-only changes, and RSC navigation.
  */
@@ -537,6 +545,7 @@ async function navigateImpl(
   }
 
   const fullHref = toBrowserNavigationHref(normalizedHref, window.location.href, __basePath);
+  onRouterTransitionStart(fullHref, mode);
 
   // Save scroll position before navigating (for back/forward restoration)
   if (mode === "push") {

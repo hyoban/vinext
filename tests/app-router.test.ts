@@ -1110,6 +1110,12 @@ describe("App Router integration", () => {
     expect(rscGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
     expect(ssrGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
     expect(clientGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
+    expect(rscGlob).toContain("instrumentation.ts");
+    expect(rscGlob).toContain("instrumentation-client.ts");
+    expect(ssrGlob).toContain("instrumentation.ts");
+    expect(ssrGlob).toContain("instrumentation-client.ts");
+    expect(clientGlob).toContain("instrumentation.ts");
+    expect(clientGlob).toContain("instrumentation-client.ts");
   });
 
   it("pre-includes framework dependencies in optimizeDeps.include to avoid late discovery", () => {
