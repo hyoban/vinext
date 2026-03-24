@@ -253,8 +253,8 @@ describe("Form client GET interception", () => {
       '<Form> received an `action` that contains search params: "/search?lang=en". This is not supported, and they will be ignored. If you need to pass in additional search params, use an `<input type="hidden" />` instead.',
     );
     expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(pushState).toHaveBeenCalledWith(null, "", "/search?q=react");
-    expect(navigate).toHaveBeenCalledWith("/search?q=react");
+    expect(pushState).toHaveBeenCalledWith(null, "", "http://localhost:3000/search?q=react");
+    expect(navigate).toHaveBeenCalledWith("http://localhost:3000/search?q=react");
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
   });
 
@@ -283,9 +283,11 @@ describe("Form client GET interception", () => {
     expect(pushState).toHaveBeenCalledWith(
       null,
       "",
-      "/search-alt?q=button&lang=fr&source=submitter-action",
+      "http://localhost:3000/search-alt?q=button&lang=fr&source=submitter-action",
     );
-    expect(navigate).toHaveBeenCalledWith("/search-alt?q=button&lang=fr&source=submitter-action");
+    expect(navigate).toHaveBeenCalledWith(
+      "http://localhost:3000/search-alt?q=button&lang=fr&source=submitter-action",
+    );
   });
 
   it("falls back to appending submitter name/value when FormData submitter overload is unavailable", async () => {
@@ -309,7 +311,7 @@ describe("Form client GET interception", () => {
     await onSubmit(event);
 
     expect(navigate).toHaveBeenCalledWith(
-      "/search-alt?q=fallback&lang=de&source=fallback-submitter",
+      "http://localhost:3000/search-alt?q=fallback&lang=de&source=fallback-submitter",
     );
   });
 
@@ -351,9 +353,11 @@ describe("Form client GET interception", () => {
     expect(pushState).toHaveBeenCalledWith(
       null,
       "",
-      "/search-alt?q=button&source=submitter-action",
+      "http://localhost:3000/search-alt?q=button&source=submitter-action",
     );
-    expect(navigate).toHaveBeenCalledWith("/search-alt?q=button&source=submitter-action");
+    expect(navigate).toHaveBeenCalledWith(
+      "http://localhost:3000/search-alt?q=button&source=submitter-action",
+    );
   });
 
   it("does not intercept submitters with unsupported formTarget overrides", async () => {

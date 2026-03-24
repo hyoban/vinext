@@ -19,6 +19,7 @@
  */
 
 import { forwardRef, useActionState, type FormHTMLAttributes, type ForwardedRef } from "react";
+import { notifyRouterTransitionStart } from "../client/instrumentation-client.js";
 import { isDangerousScheme } from "./url-safety.js";
 import { toSameOriginPath } from "./url-utils.js";
 
@@ -220,16 +221,19 @@ const Form = forwardRef(function Form(props: FormProps, ref: ForwardedRef<HTMLFo
 
     e.preventDefault();
     const url = createFormSubmitDestinationUrl(effectiveAction, e.currentTarget, submitter);
+    const targetHref = new URL(url, window.location.href).href;
 
     // Navigate client-side
     if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
-      // App Router: RSC navigation. Await so scroll happens after new content renders.
+      // App Router: mirror Next.js by emitting the transition hook before
+      // dispatching the client-side navigation.
+      notifyRouterTransitionStart(targetHref, replace ? "replace" : "push");
       if (replace) {
-        window.history.replaceState(null, "", url);
+        window.history.replaceState(null, "", targetHref);
       } else {
-        window.history.pushState(null, "", url);
+        window.history.pushState(null, "", targetHref);
       }
-      await window.__VINEXT_RSC_NAVIGATE__(url);
+      await window.__VINEXT_RSC_NAVIGATE__(targetHref);
     } else {
       // Pages Router: use router or fallback
       if (replace) {

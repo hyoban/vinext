@@ -66,6 +66,29 @@ test.describe("next/form GET interception", () => {
     expect(url.searchParams.get("q")).toBe("react");
   });
 
+  test("Form GET submission triggers instrumentation-client navigation hook", async ({ page }) => {
+    await page.goto(`${BASE}/search`);
+    await expect(page.locator("h1")).toHaveText("Search");
+    await waitForHydration(page);
+
+    await page.evaluate(() => {
+      (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__ = [];
+    });
+
+    await page.fill("#search-input", "instrumented");
+    await page.locator("#search-button").click({ noWaitAfter: true });
+
+    await expect(page.locator("#search-result")).toHaveText("Results for: instrumented", {
+      timeout: 10_000,
+    });
+
+    const navs = await page.evaluate(() => (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__);
+    expect(navs).toHaveLength(1);
+    expect(navs[0].navigationType).toBe("push");
+    expect(navs[0].pathname).toBe("/search");
+    expect(new URL(navs[0].href).searchParams.get("q")).toBe("instrumented");
+  });
+
   test("Form GET submission includes hidden inputs in the destination URL", async ({ page }) => {
     await page.goto(`${BASE}/search`);
     await expect(page.locator("h1")).toHaveText("Search");
