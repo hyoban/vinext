@@ -104,3 +104,52 @@ describe("client instrumentation runtime", () => {
     expect(getClientInstrumentationHooks()?.onRouterTransitionStart).toBe(onRouterTransitionStart);
   });
 });
+
+describe("client instrumentation loader", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("logs the slow-execution warning in development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(globalThis.performance, "now").mockReturnValueOnce(10).mockReturnValueOnce(31);
+
+    const { beginClientInstrumentationTiming, endClientInstrumentationTiming } =
+      await import("../packages/vinext/src/client/require-instrumentation-client.js");
+    beginClientInstrumentationTiming();
+    endClientInstrumentationTiming();
+
+    expect(logSpy).toHaveBeenCalledWith(
+      "[Client Instrumentation Hook] Slow execution detected: 21ms (Note: Code download overhead is not included in this measurement)",
+    );
+  });
+
+  it("skips the warning outside development", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { beginClientInstrumentationTiming, endClientInstrumentationTiming } =
+      await import("../packages/vinext/src/client/require-instrumentation-client.js");
+    beginClientInstrumentationTiming();
+    endClientInstrumentationTiming();
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when end runs without a recorded start", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { endClientInstrumentationTiming } =
+      await import("../packages/vinext/src/client/require-instrumentation-client.js");
+    endClientInstrumentationTiming();
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+});

@@ -10,12 +10,19 @@ import { fileURLToPath } from "node:url";
  * published packages.
  */
 export function resolveRuntimeEntryModule(name: string): string {
+  return resolveRuntimeModule(`../server/${name}`);
+}
+
+export function resolveRuntimeModule(relativePathWithoutExt: string): string {
   for (const ext of [".ts", ".js", ".mts", ".mjs"]) {
-    const filePath = fileURLToPath(new URL(`../server/${name}${ext}`, import.meta.url));
+    const filePath = fileURLToPath(new URL(`${relativePathWithoutExt}${ext}`, import.meta.url));
     if (fs.existsSync(filePath)) {
       return filePath.replace(/\\/g, "/");
     }
   }
 
-  return fileURLToPath(new URL(`../server/${name}.js`, import.meta.url)).replace(/\\/g, "/");
+  return fileURLToPath(new URL(`${relativePathWithoutExt}.js`, import.meta.url)).replace(
+    /\\/g,
+    "/",
+  );
 }

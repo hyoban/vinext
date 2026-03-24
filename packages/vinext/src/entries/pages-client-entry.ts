@@ -17,6 +17,7 @@ import {
 import { createValidFileMatcher } from "../routing/file-matcher.js";
 import { type ResolvedNextConfig } from "../config/next-config.js";
 import { findFileWithExts } from "./pages-entry-helpers.js";
+import { resolveRuntimeModule } from "./runtime-entry-module.js";
 
 export async function generateClientEntry(
   pagesDir: string,
@@ -25,6 +26,9 @@ export async function generateClientEntry(
   instrumentationClientPath?: string | null,
 ): Promise<string> {
   const pageRoutes = await pagesRouter(pagesDir, nextConfig?.pageExtensions, fileMatcher);
+  const instrumentationTimingPath = resolveRuntimeModule(
+    "../client/require-instrumentation-client",
+  );
 
   const appFilePath = findFileWithExts(pagesDir, "_app", fileMatcher);
   const hasApp = appFilePath !== null;
@@ -43,9 +47,22 @@ export async function generateClientEntry(
 
   const appFileBase = appFilePath?.replace(/\\/g, "/");
   const normalizedInstrumentationPath = instrumentationClientPath?.replace(/\\/g, "/");
+  const instrumentationTimingStartImport = normalizedInstrumentationPath
+    ? `import ${JSON.stringify(`${instrumentationTimingPath}?vinext-instrumentation=start`)};`
+    : "";
   const instrumentationClientImport = normalizedInstrumentationPath
-    ? `import * as __instrumentationClient from ${JSON.stringify(normalizedInstrumentationPath)};`
-    : `const __instrumentationClient = null;`;
+    ? `import ${JSON.stringify(normalizedInstrumentationPath)};`
+    : "";
+  const instrumentationTimingEndImport = normalizedInstrumentationPath
+    ? `import ${JSON.stringify(`${instrumentationTimingPath}?vinext-instrumentation=end`)};`
+    : "";
+  const instrumentationClientHmr = normalizedInstrumentationPath
+    ? `
+if (import.meta.hot) {
+  import.meta.hot.accept(${JSON.stringify(normalizedInstrumentationPath)});
+}
+`
+    : "";
 
   return `
 import React from "react";
@@ -56,11 +73,14 @@ import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 // navigateClient() is never invoked on history changes.
 import "next/router";
 
+${instrumentationTimingStartImport}
 ${instrumentationClientImport}
+${instrumentationTimingEndImport}
 // Next.js only wires onRouterTransitionStart through the App Router.
 // Pages Router still executes instrumentation-client for side effects,
 // but it does not register transition hooks from that module.
 setClientInstrumentationHooks();
+${instrumentationClientHmr}
 
 const pageLoaders = {
 ${loaderEntries.join(",\n")}

@@ -4,7 +4,9 @@ exports[`App Router entry templates > generateBrowserEntry snapshot (with instru
 "import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
 
+import "<ROOT>/packages/vinext/src/client/require-instrumentation-client.ts?vinext-instrumentation=start";
 import * as __instrumentationClient from "/tmp/test/src/instrumentation-client.ts";
+import "<ROOT>/packages/vinext/src/client/require-instrumentation-client.ts?vinext-instrumentation=end";
 setClientInstrumentationHooks(__instrumentationClient);
 
 if (import.meta.hot) {
@@ -22,7 +24,9 @@ exports[`App Router entry templates > generateBrowserEntry snapshot 1`] = `
 "import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { bootstrapAppBrowserEntry } from "<ROOT>/packages/vinext/src/server/app-browser-entry.ts";
 
+
 const __instrumentationClient = null;
+
 setClientInstrumentationHooks(__instrumentationClient);
 
 
@@ -13617,11 +13621,18 @@ import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 // navigateClient() is never invoked on history changes.
 import "next/router";
 
-import * as __instrumentationClient from "<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts";
+import "<ROOT>/packages/vinext/src/client/require-instrumentation-client.ts?vinext-instrumentation=start";
+import "<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts";
+import "<ROOT>/packages/vinext/src/client/require-instrumentation-client.ts?vinext-instrumentation=end";
 // Next.js only wires onRouterTransitionStart through the App Router.
 // Pages Router still executes instrumentation-client for side effects,
 // but it does not register transition hooks from that module.
 setClientInstrumentationHooks();
+
+if (import.meta.hot) {
+  import.meta.hot.accept("<ROOT>/tests/fixtures/pages-basic/instrumentation-client.ts");
+}
+
 
 const pageLoaders = {
   "/": () => import("<ROOT>/tests/fixtures/pages-basic/pages/index.tsx"),

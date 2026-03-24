@@ -68,7 +68,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
-import * as ts from "typescript";
 import commonjs from "vite-plugin-commonjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,74 +98,6 @@ function resolveShimModulePath(shimsDir: string, moduleName: string): string {
     }
   }
   return path.join(shimsDir, `${moduleName}.js`);
-}
-
-function stripQueryAndHash(id: string): string {
-  const queryIndex = id.indexOf("?");
-  const hashIndex = id.indexOf("#");
-  let end = id.length;
-  if (queryIndex !== -1) end = Math.min(end, queryIndex);
-  if (hashIndex !== -1) end = Math.min(end, hashIndex);
-  return id.slice(0, end);
-}
-
-function normalizeModuleId(id: string): string {
-  const strippedId = stripQueryAndHash(id);
-  const cleanedId = strippedId.startsWith("\u0000") ? strippedId.slice(1) : strippedId;
-  const fsId = cleanedId.startsWith("/@fs/") ? cleanedId.slice(4) : cleanedId;
-  return fsId.replace(/\\/g, "/");
-}
-
-function wrapInstrumentationClientCodeForDev(code: string) {
-  const sourceFile = ts.createSourceFile(
-    "instrumentation-client.tsx",
-    code,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-
-  const parseDiagnostics = (
-    sourceFile as ts.SourceFile & { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }
-  ).parseDiagnostics;
-  if (parseDiagnostics && parseDiagnostics.length > 0) {
-    return null;
-  }
-
-  const output = new MagicString(code);
-  let insertPos = 0;
-
-  for (const statement of sourceFile.statements) {
-    const isDirective =
-      ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression);
-    const isImportLike =
-      ts.isImportDeclaration(statement) ||
-      ts.isImportEqualsDeclaration(statement) ||
-      (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined);
-
-    if (isDirective || isImportLike) {
-      insertPos = statement.end;
-      continue;
-    }
-    break;
-  }
-
-  output.appendLeft(insertPos, `\nconst __vinextInstrumentationClientStart = performance.now();\n`);
-  output.append(
-    `\nconst __vinextInstrumentationClientDuration = performance.now() - __vinextInstrumentationClientStart;\n` +
-      `if (__vinextInstrumentationClientDuration > 16) {\n` +
-      `  console.log(\n` +
-      `    "[Client Instrumentation Hook] Slow execution detected: " +\n` +
-      `      __vinextInstrumentationClientDuration.toFixed(0) +\n` +
-      `      "ms (Note: Code download overhead is not included in this measurement)",\n` +
-      `  );\n` +
-      `}\n`,
-  );
-
-  return {
-    code: output.toString(),
-    map: output.generateMap({ hires: true }),
-  };
 }
 
 /**
@@ -1262,7 +1193,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let middlewarePath: string | null = null;
   let instrumentationPath: string | null = null;
   let instrumentationClientPath: string | null = null;
-  let isDevServer = false;
   let hasCloudflarePlugin = false;
   let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
@@ -1406,21 +1336,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     // Transform CJS require()/module.exports to ESM before other plugins
     // analyze imports (RSC directive scanning, shim resolution, etc.)
     commonjs(),
-    {
-      name: "vinext:instrumentation-client-dev-timing",
-      enforce: "pre" as const,
-      transform(code: string, id: string) {
-        if (!isDevServer || !instrumentationClientPath) return null;
-        const normalizedId = normalizeModuleId(id);
-        const normalizedPath = instrumentationClientPath.replace(/\\/g, "/");
-        const normalizedRoot = root.replace(/\\/g, "/");
-        const projectRelativePath = normalizedPath.startsWith(normalizedRoot + "/")
-          ? normalizedPath.slice(normalizedRoot.length)
-          : null;
-        if (normalizedId !== normalizedPath && normalizedId !== projectRelativePath) return null;
-        return wrapInstrumentationClientCodeForDev(code);
-      },
-    },
     // Fix 'use server' closure variable collision with local declarations.
     //
     // @vitejs/plugin-rsc uses `periscopic` to find closure variables for
@@ -2104,6 +2019,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
               "client",
               "instrumentation-client",
             ),
+            "vinext/require-instrumentation-client": path.resolve(
+              __dirname,
+              "client",
+              "require-instrumentation-client",
+            ),
             "vinext/html": path.resolve(__dirname, "server", "html"),
           }).flatMap(([k, v]) =>
             k.startsWith("next/")
@@ -2523,8 +2443,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
       },
 
       configResolved(config) {
-        isDevServer = config.command === "serve";
-
         // Detect double React plugin registration. When vinext auto-injects
         // @vitejs/plugin-react AND the user also registers it manually, the
         // React transform / refresh pipeline runs twice.
