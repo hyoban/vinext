@@ -544,6 +544,8 @@ async function navigateImpl(
     saveScrollPosition();
   }
 
+  notifyRouterTransitionStart(href, mode);
+
   // Hash-only change: update URL and scroll to target, skip RSC fetch
   if (isHashOnlyChange(fullHref)) {
     const hash = fullHref.includes("#") ? fullHref.slice(fullHref.indexOf("#")) : "";
@@ -562,8 +564,6 @@ async function navigateImpl(
   // Extract hash for post-navigation scrolling
   const hashIdx = fullHref.indexOf("#");
   const hash = hashIdx !== -1 ? fullHref.slice(hashIdx) : "";
-
-  notifyRouterTransitionStart(href, mode);
 
   if (mode === "replace") {
     window.history.replaceState(null, "", fullHref);

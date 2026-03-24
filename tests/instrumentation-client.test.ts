@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test"
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createValidFileMatcher } from "../packages/vinext/src/routing/file-matcher.js";
 
 describe("findInstrumentationClientFile", () => {
   let tmpDir: string;
@@ -23,7 +22,7 @@ describe("findInstrumentationClientFile", () => {
     const { findInstrumentationClientFile } =
       await import("../packages/vinext/src/server/instrumentation-client.js");
 
-    expect(findInstrumentationClientFile(tmpDir, createValidFileMatcher())).toBe(
+    expect(findInstrumentationClientFile(tmpDir)).toBe(
       path.join(tmpDir, "src", "instrumentation-client.ts"),
     );
   });
@@ -34,7 +33,18 @@ describe("findInstrumentationClientFile", () => {
     const { findInstrumentationClientFile } =
       await import("../packages/vinext/src/server/instrumentation-client.js");
 
-    expect(findInstrumentationClientFile(tmpDir, createValidFileMatcher())).toBe(
+    expect(findInstrumentationClientFile(tmpDir)).toBe(
+      path.join(tmpDir, "instrumentation-client.ts"),
+    );
+  });
+
+  it("finds instrumentation-client even when pageExtensions would not include .ts", async () => {
+    fs.writeFileSync(path.join(tmpDir, "instrumentation-client.ts"), "");
+
+    const { findInstrumentationClientFile } =
+      await import("../packages/vinext/src/server/instrumentation-client.js");
+
+    expect(findInstrumentationClientFile(tmpDir)).toBe(
       path.join(tmpDir, "instrumentation-client.ts"),
     );
   });
@@ -43,7 +53,7 @@ describe("findInstrumentationClientFile", () => {
     const { findInstrumentationClientFile } =
       await import("../packages/vinext/src/server/instrumentation-client.js");
 
-    expect(findInstrumentationClientFile(tmpDir, createValidFileMatcher())).toBeNull();
+    expect(findInstrumentationClientFile(tmpDir)).toBeNull();
   });
 });
 

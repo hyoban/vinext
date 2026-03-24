@@ -19,6 +19,9 @@ export function InstrumentationClientControls() {
       <Link href="/about" id="push-about">
         Push About
       </Link>
+      <Link href="#hash-link-target" id="push-hash-link">
+        Push Hash Link
+      </Link>
       <button
         id="replace-dashboard"
         onClick={() => {
@@ -26,6 +29,14 @@ export function InstrumentationClientControls() {
         }}
       >
         Replace Dashboard
+      </button>
+      <button
+        id="push-hash-router"
+        onClick={() => {
+          router.push("#hash-router-target");
+        }}
+      >
+        Push Hash Router
       </button>
     </div>
   );

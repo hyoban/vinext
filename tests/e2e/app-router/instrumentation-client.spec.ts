@@ -68,10 +68,14 @@ test.describe("instrumentation-client.ts (App Router)", () => {
     const navs = await page.evaluate(() => (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__);
     expect(
       navs.map(
-        (entry: { navigationType: string; pathname: string }) =>
-          `${entry.navigationType}:${entry.pathname}`,
+        (entry: { navigationType: string; pathname: string; href: string }) =>
+          `${entry.navigationType}:${entry.href}:${entry.pathname}`,
       ),
-    ).toEqual(["push:/about", "traverse:/instrumentation-client-test", "traverse:/about"]);
+    ).toEqual([
+      "push:/about:/about",
+      `traverse:${page.url().replace("/about", "/instrumentation-client-test")}:/instrumentation-client-test`,
+      `traverse:${page.url()}:/about`,
+    ]);
   });
 
   test("onRouterTransitionStart fires for replace", async ({ page }) => {
@@ -92,5 +96,49 @@ test.describe("instrumentation-client.ts (App Router)", () => {
           `${entry.navigationType}:${entry.pathname}`,
       ),
     ).toEqual(["replace:/dashboard"]);
+  });
+
+  test("onRouterTransitionStart fires for hash-only router.push navigations", async ({ page }) => {
+    await page.goto("/instrumentation-client-test");
+    await waitForHydration(page);
+
+    await page.evaluate(() => {
+      (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__ = [];
+    });
+
+    await page.click("#push-hash-router");
+    await expect(page).toHaveURL(/#hash-router-target$/);
+
+    const navs = await page.evaluate(() => (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__);
+    expect(navs).toEqual([
+      {
+        href: "#hash-router-target",
+        navigationType: "push",
+        pathname: "/instrumentation-client-test",
+      },
+    ]);
+  });
+
+  test("onRouterTransitionStart fires for hash-only Link navigations with the raw href", async ({
+    page,
+  }) => {
+    await page.goto("/instrumentation-client-test");
+    await waitForHydration(page);
+
+    await page.evaluate(() => {
+      (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__ = [];
+    });
+
+    await page.click("#push-hash-link");
+    await expect(page).toHaveURL(/#hash-link-target$/);
+
+    const navs = await page.evaluate(() => (window as any).__VINEXT_APP_INSTRUMENTATION_NAVS__);
+    expect(navs).toEqual([
+      {
+        href: "#hash-link-target",
+        navigationType: "push",
+        pathname: "/instrumentation-client-test",
+      },
+    ]);
   });
 });

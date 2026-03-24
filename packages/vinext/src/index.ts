@@ -1866,7 +1866,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         nextConfig = await resolveNextConfig(rawConfig, root);
         fileMatcher = createValidFileMatcher(nextConfig.pageExtensions);
         instrumentationPath = findInstrumentationFile(root, fileMatcher);
-        instrumentationClientPath = findInstrumentationClientFile(root, fileMatcher);
+        instrumentationClientPath = findInstrumentationClientFile(root);
         middlewarePath = findMiddlewareFile(root, fileMatcher);
 
         // Merge env from next.config.js with NEXT_PUBLIC_* env vars
