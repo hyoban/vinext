@@ -2,6 +2,13 @@
 (window as any).__VINEXT_PAGES_INSTRUMENTATION_NAVS__ =
   (window as any).__VINEXT_PAGES_INSTRUMENTATION_NAVS__ ?? [];
 
+if (window.location.pathname === "/") {
+  const start = performance.now();
+  while (performance.now() - start < 20) {
+    // Intentionally block for >16ms to exercise the dev slow-hook warning.
+  }
+}
+
 export function onRouterTransitionStart(href: string, navigationType: string) {
   (window as any).__VINEXT_PAGES_INSTRUMENTATION_NAVS__.push({
     href,

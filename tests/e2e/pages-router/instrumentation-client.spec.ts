@@ -26,6 +26,22 @@ test.describe("instrumentation-client.ts (Pages Router)", () => {
     expect(timings.instrumentation).toBeLessThan(timings.hydration);
   });
 
+  test("logs the dev slow-hook warning when instrumentation-client is slow", async ({ page }) => {
+    const logs: string[] = [];
+    page.on("console", (message) => {
+      logs.push(message.text());
+    });
+
+    await page.goto("/");
+    await page.waitForFunction(() => Boolean((window as any).__VINEXT_ROOT__));
+
+    expect(
+      logs.some((message) =>
+        message.startsWith("[Client Instrumentation Hook] Slow execution detected:"),
+      ),
+    ).toBe(true);
+  });
+
   test("ignores exported onRouterTransitionStart for router.push and Link navigations", async ({
     page,
   }) => {

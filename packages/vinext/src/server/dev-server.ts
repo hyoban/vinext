@@ -856,6 +856,11 @@ export function createSSRHandler(
         const instrumentationClientModuleUrl = instrumentationClientPath
           ? "/" + path.relative(viteRoot, instrumentationClientPath)
           : null;
+        const instrumentationClientImports = instrumentationClientModuleUrl
+          ? `import "vinext/require-instrumentation-client?vinext-instrumentation=start";
+import ${JSON.stringify(instrumentationClientModuleUrl)};
+import "vinext/require-instrumentation-client?vinext-instrumentation=end";`
+          : `const __instrumentationClient = null;`;
 
         // Hydration entry: inline script that imports the page and hydrates.
         // Stores the React root and page loader for client-side navigation.
@@ -865,7 +870,7 @@ import React from "react";
 import { hydrateRoot } from "react-dom/client";
 import { setClientInstrumentationHooks } from "vinext/client-instrumentation";
 import { wrapWithRouterContext } from "next/router";
-${instrumentationClientModuleUrl ? `import * as __instrumentationClient from ${JSON.stringify(instrumentationClientModuleUrl)};` : `const __instrumentationClient = null;`}
+${instrumentationClientImports}
 
 const nextData = window.__NEXT_DATA__;
 const { pageProps } = nextData.props;
