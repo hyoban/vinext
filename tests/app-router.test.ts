@@ -1112,6 +1112,16 @@ describe("App Router integration", () => {
     expect(clientGlob).toMatch(/app\/\*\*\/\*\.\{tsx,ts,jsx,js\}/);
   });
 
+  it("adds instrumentation files to optimizeDeps.entries when present", () => {
+    const rscEntries = server.config.environments.rsc?.optimizeDeps?.entries as string[];
+    const ssrEntries = server.config.environments.ssr?.optimizeDeps?.entries as string[];
+    const clientEntries = server.config.environments.client?.optimizeDeps?.entries as string[];
+
+    expect(rscEntries).toContain("instrumentation.{tsx,ts,jsx,js}");
+    expect(ssrEntries).toContain("instrumentation.{tsx,ts,jsx,js}");
+    expect(clientEntries).toContain("instrumentation-client.{tsx,ts,jsx,js}");
+  });
+
   it("pre-includes framework dependencies in optimizeDeps.include to avoid late discovery", () => {
     // Framework deps that are imported by virtual modules (not user code)
     // won't be found by crawling optimizeDeps.entries. They must be

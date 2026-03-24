@@ -2287,6 +2287,16 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           // The entries must be relative to the project root.
           const relAppDir = path.relative(root, appDir);
           const appEntries = [`${relAppDir}/**/*.{tsx,ts,jsx,js}`];
+          const serverOptimizeEntries = [
+            ...appEntries,
+            "instrumentation.{tsx,ts,jsx,js}",
+            "src/instrumentation.{tsx,ts,jsx,js}",
+          ];
+          const clientOptimizeEntries = [
+            ...appEntries,
+            "instrumentation-client.{tsx,ts,jsx,js}",
+            "src/instrumentation-client.{tsx,ts,jsx,js}",
+          ];
 
           viteConfig.environments = {
             rsc: {
@@ -2315,7 +2325,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                   }),
               optimizeDeps: {
                 exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
-                entries: appEntries,
+                entries: serverOptimizeEntries,
               },
               build: {
                 outDir: options.rscOutDir ?? "dist/server",
@@ -2340,7 +2350,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                   }),
               optimizeDeps: {
                 exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
-                entries: appEntries,
+                entries: serverOptimizeEntries,
               },
               build: {
                 outDir: options.ssrOutDir ?? "dist/server/ssr",
@@ -2372,7 +2382,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
                 // Crawl app/ source files up front so client-only deps imported
                 // by user components are discovered during startup instead of
                 // triggering a late re-optimisation + full page reload.
-                entries: appEntries,
+                entries: clientOptimizeEntries,
                 // React packages aren't crawled from app/ source files,
                 // so must be pre-included to avoid late discovery (#25).
                 include: [
