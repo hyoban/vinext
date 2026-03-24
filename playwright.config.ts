@@ -107,9 +107,8 @@ const projectServers = {
       timeout: 30_000,
     },
   },
-  "app-router-src": {
-    testDir: "./tests/e2e",
-    testMatch: ["**/app-router/instrumentation-client-src.spec.ts"],
+  "app-with-src": {
+    testDir: "./tests/e2e/app-with-src",
     use: { baseURL: "http://localhost:4180" },
     server: {
       command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4180",
