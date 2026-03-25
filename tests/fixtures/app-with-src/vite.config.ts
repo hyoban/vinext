@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import vinext from "../../../packages/vinext/src/index.js";
+import vinext from "vinext";
 
 export default defineConfig({
   plugins: [vinext({ appDir: `${import.meta.dirname}/src` })],

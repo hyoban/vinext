@@ -2286,6 +2286,16 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
           ...(incomingInclude.length > 0 ? { include: incomingInclude } : {}),
         };
+        const pagesOptimizeEntries = !hasAppDir
+          ? [
+              ...(hasPagesDir
+                ? [toRelativeFileEntry(root, pagesDir) + "/**/*.{tsx,ts,jsx,js}"]
+                : []),
+              ...[instrumentationPath, instrumentationClientPath].flatMap((entry) =>
+                entry ? [toRelativeFileEntry(root, entry)] : [],
+              ),
+            ]
+          : [];
 
         // If app/ directory exists, configure RSC environments
         if (hasAppDir) {
@@ -2419,15 +2429,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             },
           };
         } else if (hasCloudflarePlugin) {
-          const pagesEntries = hasPagesDir
-            ? [toRelativeFileEntry(root, pagesDir) + "/**/*.{tsx,ts,jsx,js}"]
-            : [];
-          const optimizeEntries = [
-            ...pagesEntries,
-            ...[instrumentationPath, instrumentationClientPath].flatMap((entry) =>
-              entry ? [toRelativeFileEntry(root, entry)] : [],
-            ),
-          ];
           // Pages Router on Cloudflare Workers: add a client environment
           // so the multi-environment build produces client JS bundles
           // alongside the worker. Without this, only the worker is built
@@ -2435,7 +2436,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           viteConfig.environments = {
             client: {
               consumer: "client",
-              optimizeDeps: optimizeEntries.length > 0 ? { entries: optimizeEntries } : undefined,
+              optimizeDeps:
+                pagesOptimizeEntries.length > 0 ? { entries: pagesOptimizeEntries } : undefined,
               build: {
                 manifest: true,
                 ssrManifest: true,
@@ -2449,22 +2451,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           };
         }
 
-        if (!hasAppDir) {
-          const pagesEntries = hasPagesDir
-            ? [toRelativeFileEntry(root, pagesDir) + "/**/*.{tsx,ts,jsx,js}"]
-            : [];
-          const optimizeEntries = [
-            ...pagesEntries,
-            ...[instrumentationPath, instrumentationClientPath].flatMap((entry) =>
-              entry ? [toRelativeFileEntry(root, entry)] : [],
-            ),
-          ];
-          if (optimizeEntries.length > 0) {
-            viteConfig.optimizeDeps = {
-              ...viteConfig.optimizeDeps,
-              entries: optimizeEntries,
-            };
-          }
+        if (pagesOptimizeEntries.length > 0) {
+          viteConfig.optimizeDeps = {
+            ...viteConfig.optimizeDeps,
+            entries: pagesOptimizeEntries,
+          };
         }
 
         return viteConfig;

@@ -10,7 +10,7 @@ const projectServers = {
     testDir: "./tests/e2e/pages-router",
     use: { baseURL: "http://localhost:4173" },
     server: {
-      command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4173",
+      command: "npx vp run vinext#build && npx vp dev --port 4173",
       cwd: "./tests/fixtures/pages-basic",
       port: 4173,
       reuseExistingServer: !process.env.CI,
@@ -22,7 +22,7 @@ const projectServers = {
     testMatch: ["**/app-router/**/*.spec.ts", "**/og-image.spec.ts"],
     use: { baseURL: "http://localhost:4174" },
     server: {
-      command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4174",
+      command: "npx vp run vinext#build && npx vp dev --port 4174",
       cwd: "./tests/fixtures/app-basic",
       port: 4174,
       reuseExistingServer: !process.env.CI,
@@ -111,7 +111,7 @@ const projectServers = {
     testDir: "./tests/e2e/app-with-src",
     use: { baseURL: "http://localhost:4180" },
     server: {
-      command: "npx tsc -p ../../../packages/vinext/tsconfig.json && npx vp dev --port 4180",
+      command: "npx vp run vinext#build && npx vp dev --port 4180",
       cwd: "./tests/fixtures/app-with-src",
       port: 4180,
       reuseExistingServer: !process.env.CI,
