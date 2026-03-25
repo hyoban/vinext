@@ -2451,7 +2451,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           };
         }
 
-        if (pagesOptimizeEntries.length > 0) {
+        if (pagesOptimizeEntries.length > 0 && !hasCloudflarePlugin) {
           viteConfig.optimizeDeps = {
             ...viteConfig.optimizeDeps,
             entries: pagesOptimizeEntries,

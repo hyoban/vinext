@@ -5,9 +5,11 @@ const instrumentationWindow = window as Window & {
 
 instrumentationWindow.__INSTRUMENTATION_CLIENT_EXECUTED_AT = performance.now();
 
-const start = performance.now();
-while (performance.now() - start < 20) {
-  // Intentionally block for 20ms to verify slow-execution logging in dev.
+if (window.location.pathname.startsWith("/instrumentation-client")) {
+  const start = performance.now();
+  while (performance.now() - start < 20) {
+    // Intentionally block for 20ms to verify slow-execution logging in dev.
+  }
 }
 
 export function onRouterTransitionStart(href: string, navigationType: string): void {

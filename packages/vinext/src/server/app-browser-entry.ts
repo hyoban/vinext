@@ -12,7 +12,7 @@ import {
 import { flushSync } from "react-dom";
 import { hydrateRoot } from "react-dom/client";
 import "../client/instrumentation-client.js";
-import { getClientInstrumentationHooks } from "../client/instrumentation-client-state.js";
+import { notifyAppRouterTransitionStart } from "../client/instrumentation-client-state.js";
 import {
   PREFETCH_CACHE_TTL,
   getPrefetchCache,
@@ -265,7 +265,7 @@ async function main(): Promise<void> {
   };
 
   window.addEventListener("popstate", () => {
-    getClientInstrumentationHooks()?.onRouterTransitionStart?.(window.location.href, "traverse");
+    notifyAppRouterTransitionStart(window.location.href, "traverse");
     const pendingNavigation =
       window.__VINEXT_RSC_NAVIGATE__?.(window.location.href) ?? Promise.resolve();
     window.__VINEXT_RSC_PENDING__ = pendingNavigation;
