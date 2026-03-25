@@ -5,7 +5,7 @@ let clientInstrumentationHooks: ClientInstrumentationHooks | null = null;
 export function normalizeClientInstrumentationHooks(
   hooks: ClientInstrumentationHooks,
 ): ClientInstrumentationHooks | null {
-  return typeof hooks.onRouterTransitionStart === "function" ? hooks : null;
+  return Object.values(hooks).some((value) => typeof value === "function") ? hooks : null;
 }
 
 export function setClientInstrumentationHooks(

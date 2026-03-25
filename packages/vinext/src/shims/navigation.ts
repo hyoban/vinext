@@ -538,6 +538,8 @@ async function navigateImpl(
   }
 
   const fullHref = toBrowserNavigationHref(normalizedHref, window.location.href, __basePath);
+  // Match Next.js: App Router reports navigation start before dispatching,
+  // including hash-only navigations that short-circuit after URL update.
   notifyAppRouterTransitionStart(fullHref, mode);
 
   // Save scroll position before navigating (for back/forward restoration)

@@ -18,6 +18,8 @@ export function createInstrumentationClientTransformPlugin(
 
       const ast = parseAst(code);
       let insertPos = 0;
+      // When the module has no imports, inject the timer at the top so the
+      // measurement still wraps the full module body execution.
       for (const node of ast.body) {
         if (node.type === "ImportDeclaration") {
           insertPos = node.end;
