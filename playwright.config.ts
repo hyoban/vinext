@@ -22,7 +22,7 @@ const projectServers = {
     testMatch: ["**/app-router/**/*.spec.ts", "**/og-image.spec.ts"],
     use: { baseURL: "http://localhost:4174" },
     server: {
-      command: "npx vp run vinext#build && npx vp dev --port 4174",
+      command: "npx vp dev --port 4174",
       cwd: "./tests/fixtures/app-basic",
       port: 4174,
       reuseExistingServer: !process.env.CI,
@@ -107,13 +107,28 @@ const projectServers = {
       timeout: 30_000,
     },
   },
-  "app-with-src": {
-    testDir: "./tests/e2e/app-with-src",
+  "static-export": {
+    testDir: "./tests/e2e/static-export",
     use: { baseURL: "http://localhost:4180" },
     server: {
-      command: "npx vp run vinext#build && npx vp dev --port 4180",
-      cwd: "./tests/fixtures/app-with-src",
+      // Build the static export fixture, then serve the output with a
+      // lightweight static file server. No vinext runtime is needed —
+      // the output is pure pre-rendered HTML files.
+      command:
+        "npx tsc -p ../../../packages/vinext/tsconfig.json && node ../../../packages/vinext/dist/cli.js build && node ../../../tests/e2e/static-export/serve-static.mjs dist/client 4180",
+      cwd: "./tests/fixtures/static-export",
       port: 4180,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+  },
+  "app-with-src": {
+    testDir: "./tests/e2e/app-with-src",
+    use: { baseURL: "http://localhost:4181" },
+    server: {
+      command: "npx vp dev --port 4181",
+      cwd: "./tests/fixtures/app-with-src",
+      port: 4181,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },

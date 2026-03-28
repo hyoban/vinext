@@ -14,7 +14,7 @@ export function createInstrumentationClientTransformPlugin(
 
       const normalizedId = normalizePath(id.split("?", 1)[0]);
       if (normalizedId !== normalizePath(instrumentationClientPath)) return null;
-      if (code.includes("__vinextInstrumentationClientDuration")) return null;
+      if (code.includes("__vinextInstrumentationClientStart")) return null;
 
       const ast = parseAst(code);
       let insertPos = 0;

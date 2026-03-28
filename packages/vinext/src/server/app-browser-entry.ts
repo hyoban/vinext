@@ -181,7 +181,7 @@ async function main(): Promise<void> {
   registerServerActionCallback();
 
   const rscStream = await readInitialRscStream();
-  const root = await createFromReadableStream(rscStream);
+  const root = createFromReadableStream(rscStream);
 
   reactRoot = hydrateRoot(
     document,
