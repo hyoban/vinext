@@ -393,13 +393,12 @@ describe("generateAppRouterWorkerEntry", () => {
     expect(content).toContain("handler.fetch(request, env, ctx)");
   });
 
-  it("resolves static asset signals via the ASSETS binding", () => {
+  it("does not duplicate static asset signal resolution in the generated worker", () => {
     const content = generateAppRouterWorkerEntry();
-    expect(content).toContain(
+    expect(content).not.toContain(
       'import { resolveStaticAssetSignal } from "vinext/server/worker-utils"',
     );
-    expect(content).toContain("await resolveStaticAssetSignal(response, {");
-    expect(content).toContain("env.ASSETS.fetch(new Request(new URL(path, request.url)))");
+    expect(content).not.toContain("resolveStaticAssetSignal(response");
   });
 
   it("includes auto-generated comment", () => {

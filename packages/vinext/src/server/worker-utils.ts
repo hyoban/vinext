@@ -134,6 +134,9 @@ export async function resolveStaticAssetSignal(
 
   cancelResponseBody(signalResponse);
   const assetResponse = await options.fetchAsset(assetPath);
+  // Only preserve the middleware/status-layer override when we actually got a
+  // real asset response back. If the asset lookup misses (404/other non-ok),
+  // keep that filesystem result instead of masking it with the signal status.
   const statusOverride =
     assetResponse.ok && signalResponse.status !== 200 ? signalResponse.status : undefined;
   return mergeHeaders(assetResponse, extraHeaders, statusOverride);
