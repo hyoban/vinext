@@ -75,6 +75,17 @@ function resolvePackageJsonPath(packageName: string, resolver: NodeRequire): str
   try {
     return resolver.resolve(`${packageName}/package.json`);
   } catch {
+    const lookupPaths = resolver.resolve.paths(packageName) ?? [];
+    for (const lookupPath of lookupPaths) {
+      const candidate = path.join(lookupPath, packageName, "package.json");
+      if (fs.existsSync(candidate)) {
+        const pkg = readPackageJson(candidate);
+        if (pkg.name === packageName) {
+          return candidate;
+        }
+      }
+    }
+
     // Some packages do not export ./package.json via exports map.
     // Fallback: resolve package entry and walk up to the nearest matching package.json.
     try {
