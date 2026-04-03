@@ -56,6 +56,7 @@ const appPageBoundaryRenderPath = resolveEntryPath(
   import.meta.url,
 );
 const appPageRenderPath = resolveEntryPath("../server/app-page-render.js", import.meta.url);
+const appPageResponsePath = resolveEntryPath("../server/app-page-response.js", import.meta.url);
 const appPageRequestPath = resolveEntryPath("../server/app-page-request.js", import.meta.url);
 const appRouteHandlerResponsePath = resolveEntryPath(
   "../server/app-route-handler-response.js",
@@ -381,6 +382,9 @@ import {
 import {
   renderAppPageLifecycle as __renderAppPageLifecycle,
 } from ${JSON.stringify(appPageRenderPath)};
+import {
+  mergeMiddlewareResponseHeaders as __mergeMiddlewareResponseHeaders,
+} from ${JSON.stringify(appPageResponsePath)};
 import {
   buildAppPageElement as __buildAppPageElement,
   resolveAppPageIntercept as __resolveAppPageIntercept,
@@ -1911,10 +1915,14 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         const redirectHeaders = new Headers({
           "Content-Type": "text/x-component; charset=utf-8",
           "Vary": "RSC, Accept",
-          "x-action-redirect": actionRedirect.url,
-          "x-action-redirect-type": actionRedirect.type,
-          "x-action-redirect-status": String(actionRedirect.status),
         });
+        // Merge middleware headers first so the framework's own redirect control
+        // headers below are always authoritative and cannot be clobbered by
+        // middleware that happens to set x-action-redirect* keys.
+        __mergeMiddlewareResponseHeaders(redirectHeaders, _mwCtx.headers);
+        redirectHeaders.set("x-action-redirect", actionRedirect.url);
+        redirectHeaders.set("x-action-redirect-type", actionRedirect.type);
+        redirectHeaders.set("x-action-redirect-status", String(actionRedirect.status));
         for (const cookie of actionPendingCookies) {
           redirectHeaders.append("Set-Cookie", cookie);
         }
@@ -1957,15 +1965,15 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       const actionPendingCookies = getAndClearPendingCookies();
       const actionDraftCookie = getDraftModeCookieHeader();
 
-      const actionHeaders = { "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" };
-      const actionResponse = new Response(rscStream, { headers: actionHeaders });
+      const actionHeaders = new Headers({ "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" });
+      __mergeMiddlewareResponseHeaders(actionHeaders, _mwCtx.headers);
       if (actionPendingCookies.length > 0 || actionDraftCookie) {
         for (const cookie of actionPendingCookies) {
-          actionResponse.headers.append("Set-Cookie", cookie);
+          actionHeaders.append("Set-Cookie", cookie);
         }
-        if (actionDraftCookie) actionResponse.headers.append("Set-Cookie", actionDraftCookie);
+        if (actionDraftCookie) actionHeaders.append("Set-Cookie", actionDraftCookie);
       }
-      return actionResponse;
+      return new Response(rscStream, { status: _mwCtx.status ?? 200, headers: actionHeaders });
     } catch (err) {
       getAndClearPendingCookies(); // Clear pending cookies on error
       console.error("[vinext] Server action error:", err);
@@ -2364,8 +2372,11 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       // by the client, and async server components that run during consumption need the
       // context to still be live. The AsyncLocalStorage scope from runWithRequestContext
       // handles cleanup naturally when all async continuations complete.
+      const interceptHeaders = new Headers({ "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" });
+      __mergeMiddlewareResponseHeaders(interceptHeaders, _mwCtx.headers);
       return new Response(interceptStream, {
-        headers: { "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" },
+        status: _mwCtx.status ?? 200,
+        headers: interceptHeaders,
       });
     },
     searchParams: url.searchParams,
@@ -2416,6 +2427,19 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   // rscCssTransform — no manual loadCss() call needed.
   const _hasLoadingBoundary = !!(route.loading && route.loading.default);
   const _asyncLayoutParams = makeThenableParams(params);
+  // Convert URLSearchParams to a plain object then wrap in makeThenableParams()
+  // so probePage() passes the same shape that buildPageElement() gives to the
+  // real render. Without this, pages that destructure await-ed searchParams
+  // throw TypeError during probe.
+  const _probeSearchObj = {};
+  url.searchParams.forEach(function(v, k) {
+    if (k in _probeSearchObj) {
+      _probeSearchObj[k] = Array.isArray(_probeSearchObj[k]) ? _probeSearchObj[k].concat(v) : [_probeSearchObj[k], v];
+    } else {
+      _probeSearchObj[k] = v;
+    }
+  });
+  const _asyncSearchParams = makeThenableParams(_probeSearchObj);
   return __renderAppPageLifecycle({
     cleanPathname,
     clearRequestContext() {
@@ -2461,7 +2485,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       return LayoutComp({ params: _asyncLayoutParams, children: null });
     },
     probePage() {
-      return PageComponent({ params });
+      return PageComponent({ params: _asyncLayoutParams, searchParams: _asyncSearchParams });
     },
     revalidateSeconds,
     renderErrorBoundaryResponse(renderErr) {
