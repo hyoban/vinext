@@ -4071,8 +4071,6 @@ function findFileWithExts(
 
 /** Module-level cache for hasMdxFiles — avoids re-scanning per Vite environment. */
 const _mdxScanCache = new Map<string, boolean>();
-const _publicFileRoutesCache = new Map<string, string[]>();
-
 /**
  * Check if the project has .mdx files in app/ or pages/ directories.
  */
@@ -4110,20 +4108,41 @@ function scanDirForMdx(dir: string): boolean {
 
 function scanPublicFileRoutes(root: string): string[] {
   const publicDir = path.join(root, "public");
-  if (_publicFileRoutesCache.has(publicDir)) return _publicFileRoutesCache.get(publicDir)!;
-
   const routes: string[] = [];
+  const visitedDirs = new Set<string>();
 
   function walk(dir: string): void {
+    let realDir: string;
+    try {
+      realDir = fs.realpathSync(dir);
+    } catch {
+      return;
+    }
+    if (visitedDirs.has(realDir)) return;
+    visitedDirs.add(realDir);
+
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name === "node_modules") continue;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath);
         continue;
       }
-      if (!entry.isFile()) continue;
+      if (entry.isSymbolicLink()) {
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(fullPath);
+        } catch {
+          continue;
+        }
+        if (stat.isDirectory()) {
+          walk(fullPath);
+          continue;
+        }
+        if (!stat.isFile()) continue;
+      } else if (!entry.isFile()) {
+        continue;
+      }
       const relativePath = path.relative(publicDir, fullPath).split(path.sep).join("/");
       routes.push("/" + relativePath);
     }
@@ -4138,7 +4157,6 @@ function scanPublicFileRoutes(root: string): string[] {
   }
 
   routes.sort();
-  _publicFileRoutesCache.set(publicDir, routes);
   return routes;
 }
 
@@ -4168,7 +4186,7 @@ export { resolvePostcssStringPlugins as _resolvePostcssStringPlugins };
 export { _postcssCache };
 export { hasMdxFiles as _hasMdxFiles };
 export { _mdxScanCache };
-export { scanPublicFileRoutes as _scanPublicFileRoutes, _publicFileRoutesCache };
+export { scanPublicFileRoutes as _scanPublicFileRoutes };
 export { parseStaticObjectLiteral as _parseStaticObjectLiteral };
 export { _findBalancedObject, _findCallEnd };
 export { stripServerExports as _stripServerExports };

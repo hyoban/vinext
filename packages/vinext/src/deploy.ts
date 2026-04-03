@@ -454,6 +454,7 @@ import { setCacheHandler } from "vinext/shims/cache";
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import type { ImageConfig } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { resolveStaticAssetSignal } from "vinext/server/worker-utils";
 ${isrImports}
 interface Env {
   ASSETS: Fetcher;${isrEnvField}
@@ -498,7 +499,12 @@ ${isrSetup}    const url = new URL(request.url);
     // Delegate everything else to vinext, forwarding ctx so that
     // ctx.waitUntil() is available to background cache writes and
     // other deferred work via getRequestExecutionContext().
-    return handler.fetch(request, env, ctx);
+    const response = await handler.fetch(request, env, ctx);
+    return (
+      (await resolveStaticAssetSignal(response, {
+        fetchAsset: (path) => Promise.resolve(env.ASSETS.fetch(new Request(new URL(path, request.url)))),
+      })) ?? response
+    );
   },
 };
 `;

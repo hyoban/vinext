@@ -35,6 +35,21 @@ function cancelResponseBody(response: Response): void {
   });
 }
 
+function buildHeaderRecord(
+  response: Response,
+  omitNames: readonly string[] = [],
+): Record<string, string | string[]> {
+  const omitted = new Set(omitNames.map((name) => name.toLowerCase()));
+  const headers: Record<string, string | string[]> = {};
+  response.headers.forEach((value, key) => {
+    if (omitted.has(key.toLowerCase()) || key === "set-cookie") return;
+    headers[key] = value;
+  });
+  const cookies = response.headers.getSetCookie?.() ?? [];
+  if (cookies.length > 0) headers["set-cookie"] = cookies;
+  return headers;
+}
+
 export function mergeHeaders(
   response: Response,
   extraHeaders: Record<string, string | string[]>,
@@ -92,4 +107,34 @@ export function mergeHeaders(
     statusText: status === response.status ? response.statusText : undefined,
     headers: merged,
   });
+}
+
+export async function resolveStaticAssetSignal(
+  signalResponse: Response,
+  options: {
+    fetchAsset(path: string): Promise<Response>;
+  },
+): Promise<Response | null> {
+  const signal = signalResponse.headers.get("x-vinext-static-file");
+  if (!signal) return null;
+
+  let assetPath = "/";
+  try {
+    assetPath = decodeURIComponent(signal);
+  } catch {
+    assetPath = signal;
+  }
+
+  const extraHeaders = buildHeaderRecord(signalResponse, [
+    "x-vinext-static-file",
+    "content-encoding",
+    "content-length",
+    "content-type",
+  ]);
+
+  cancelResponseBody(signalResponse);
+  const assetResponse = await options.fetchAsset(assetPath);
+  const statusOverride =
+    assetResponse.ok && signalResponse.status !== 200 ? signalResponse.status : undefined;
+  return mergeHeaders(assetResponse, extraHeaders, statusOverride);
 }
