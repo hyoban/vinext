@@ -75,6 +75,10 @@ function resolvePackageJsonPath(packageName: string, resolver: NodeRequire): str
   try {
     return resolver.resolve(`${packageName}/package.json`);
   } catch {
+    // Some packages only expose subpath exports (for example `rsc-html-stream`,
+    // which exports `./server` but not `.` or `./package.json`). resolver.resolve()
+    // cannot access those hidden paths, but Node still exposes the installed
+    // node_modules lookup locations via resolve.paths().
     const lookupPaths = resolver.resolve.paths(packageName) ?? [];
     for (const lookupPath of lookupPaths) {
       const candidate = path.join(lookupPath, packageName, "package.json");
