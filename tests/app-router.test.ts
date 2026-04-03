@@ -1612,6 +1612,73 @@ describe("App Router Production server (startProdServer)", () => {
     expect(res.headers.get("cache-control")).toContain("immutable");
   });
 
+  it("serves public files from the build output", async () => {
+    // Ported from Next.js: test/production/export/index.test.ts
+    // https://github.com/vercel/next.js/blob/canary/test/production/export/index.test.ts
+    const res = await fetch(`${baseUrl}/logo/logo.svg`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/svg+xml");
+    expect(await res.text()).toContain("vinext");
+  });
+
+  it("serves public files under basePath and 404s without it", async () => {
+    // Ported from Next.js: test/e2e/basepath/basepath.test.ts
+    // https://github.com/vercel/next.js/blob/canary/test/e2e/basepath/basepath.test.ts
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vinext-app-public-basepath-"));
+    const fixtureRoot = path.join(tmpDir, "fixture");
+    let basePathServer: import("node:http").Server | undefined;
+
+    try {
+      fs.cpSync(APP_FIXTURE_DIR, fixtureRoot, { recursive: true });
+      const fixtureNodeModules = path.join(fixtureRoot, "node_modules");
+      if (!fs.existsSync(fixtureNodeModules)) {
+        fs.symlinkSync(
+          path.resolve(__dirname, "..", "node_modules"),
+          fixtureNodeModules,
+          "junction",
+        );
+      }
+
+      const nextConfigPath = path.join(fixtureRoot, "next.config.ts");
+      const nextConfig = fs.readFileSync(nextConfigPath, "utf-8");
+      fs.writeFileSync(
+        nextConfigPath,
+        nextConfig.replace(
+          "const nextConfig: NextConfig = {",
+          'const nextConfig: NextConfig = {\n  basePath: "/app",',
+        ),
+      );
+
+      const builder = await createBuilder({
+        root: fixtureRoot,
+        configFile: false,
+        plugins: [vinext({ appDir: fixtureRoot })],
+        logLevel: "silent",
+      });
+      await builder.buildApp();
+
+      const { startProdServer } = await import("../packages/vinext/src/server/prod-server.js");
+      ({ server: basePathServer } = await startProdServer({
+        port: 0,
+        outDir: path.join(fixtureRoot, "dist"),
+        noCompression: true,
+      }));
+      const addr = basePathServer.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      const tmpBaseUrl = `http://localhost:${port}`;
+
+      const withBasePathRes = await fetch(`${tmpBaseUrl}/app/logo/logo.svg`);
+      expect(withBasePathRes.status).toBe(200);
+      expect(withBasePathRes.headers.get("content-type")).toContain("image/svg+xml");
+
+      const withoutBasePathRes = await fetch(`${tmpBaseUrl}/logo/logo.svg`);
+      expect(withoutBasePathRes.status).toBe(404);
+    } finally {
+      basePathServer?.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("supports gzip compression for HTML", async () => {
     const res = await fetch(`${baseUrl}/`, {
       headers: { "Accept-Encoding": "gzip" },

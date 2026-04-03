@@ -93,6 +93,8 @@ export type AppRouterConfig = {
    * `virtual:vinext-server-entry` when this flag is set.
    */
   hasPagesDir?: boolean;
+  /** Exact public/ file routes, using normalized leading-slash pathnames. */
+  publicFiles?: string[];
 };
 
 /**
@@ -122,6 +124,7 @@ export function generateRscEntry(
   const bodySizeLimit = config?.bodySizeLimit ?? 1 * 1024 * 1024;
   const i18nConfig = config?.i18n ?? null;
   const hasPagesDir = config?.hasPagesDir ?? false;
+  const publicFiles = config?.publicFiles ?? [];
   // Build import map for all page and layout files
   const imports: string[] = [];
   const importMap: Map<string, string> = new Map();
@@ -841,6 +844,21 @@ function matchRoute(url) {
   return _trieMatch(_routeTrie, urlParts);
 }
 
+function __createStaticFileSignal(pathname, _mwCtx) {
+  const headers = new Headers({
+    "x-vinext-static-file": encodeURIComponent(pathname),
+  });
+  if (_mwCtx.headers) {
+    for (const [key, value] of _mwCtx.headers) {
+      headers.append(key, value);
+    }
+  }
+  return new Response(null, {
+    status: _mwCtx.status ?? 200,
+    headers,
+  });
+}
+
 // matchPattern is kept for findIntercept (linear scan over small interceptLookup array).
 function matchPattern(urlParts, patternParts) {
   const params = Object.create(null);
@@ -1210,6 +1228,7 @@ const __i18nConfig = ${JSON.stringify(i18nConfig)};
 const __configRedirects = ${JSON.stringify(redirects)};
 const __configRewrites = ${JSON.stringify(rewrites)};
 const __configHeaders = ${JSON.stringify(headers)};
+const __publicFiles = new Set(${JSON.stringify(publicFiles)});
 const __allowedOrigins = ${JSON.stringify(allowedOrigins)};
 
 ${generateDevOriginCheckCode(config?.allowedDevOrigins)}
@@ -1420,6 +1439,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   ${
     bp
       ? `
+  if (!hasBasePath(pathname, __basePath) && !pathname.startsWith("/__vinext/")) {
+    return new Response("Not Found", { status: 404 });
+  }
   // Strip basePath prefix
   pathname = stripBasePath(pathname, __basePath);
   `
@@ -1775,6 +1797,18 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         return new Response("Not Found", { status: 404 });
       }
     }
+  }
+
+  // Serve public/ files as filesystem routes after middleware and before
+  // afterFiles/fallback rewrites, matching Next.js routing semantics.
+  if (
+    (request.method === "GET" || request.method === "HEAD") &&
+    !pathname.endsWith(".rsc") &&
+    __publicFiles.has(cleanPathname)
+  ) {
+    setHeadersContext(null);
+    setNavigationContext(null);
+    return __createStaticFileSignal(cleanPathname, _mwCtx);
   }
 
   // Set navigation context for Server Components.

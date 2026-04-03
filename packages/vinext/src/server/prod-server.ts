@@ -1044,6 +1044,45 @@ async function startAppRouterServer(options: AppRouterServerOptions) {
       const request = nodeToWebRequest(req, normalizedUrl);
       const response = await rscHandler(request);
 
+      const staticFileSignal = response.headers.get("x-vinext-static-file");
+      if (staticFileSignal) {
+        let staticFilePath = "/";
+        try {
+          staticFilePath = decodeURIComponent(staticFileSignal);
+        } catch {
+          staticFilePath = staticFileSignal;
+        }
+
+        const staticResponseHeaders = omitHeadersCaseInsensitive(
+          mergeResponseHeaders({}, response),
+          ["x-vinext-static-file", "content-encoding", "content-length", "content-type"],
+        );
+
+        const served = await tryServeStatic(
+          req,
+          res,
+          clientDir,
+          staticFilePath,
+          compress,
+          staticCache,
+          staticResponseHeaders,
+        );
+        cancelResponseBody(response);
+        if (served) {
+          return;
+        }
+        await sendWebResponse(
+          new Response("Not Found", {
+            status: 404,
+            headers: toWebHeaders(staticResponseHeaders),
+          }),
+          req,
+          res,
+          compress,
+        );
+        return;
+      }
+
       // Stream the Web Response back to the Node.js response
       await sendWebResponse(response, req, res, compress);
     } catch (e) {
