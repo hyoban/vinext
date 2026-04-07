@@ -1444,6 +1444,51 @@ describe("Plugin config", () => {
     expect(defaultHandler).toHaveBeenCalledWith(otherWarning);
   });
 
+  it("suppresses IMPORT_IS_UNDEFINED noise for generated proxy/middleware default fallbacks", async () => {
+    const plugins = vinext() as any[];
+    const configPlugin = plugins.find((p) => p.name === "vinext:config");
+    expect(configPlugin).toBeDefined();
+
+    const result = await configPlugin.config({ root: FIXTURE_DIR, plugins: [] });
+
+    expect(result.build).toBeDefined();
+    const bundlerOptions = getBuildBundlerOptions(result);
+    expect(bundlerOptions).toBeDefined();
+    expect(bundlerOptions.onwarn).toBeDefined();
+
+    const defaultHandler = vi.fn();
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `default` will always be undefined because there is no matching export in 'proxy.ts'\\n      ╭─[ \\0virtual:vinext-rsc-entry:2632:34 ]",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).not.toHaveBeenCalled();
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `default` will always be undefined because there is no matching export in 'middleware.ts'\\n      ╭─[ \\0virtual:vinext-server-entry:168:34 ]",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).not.toHaveBeenCalled();
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `default` will always be undefined because there is no matching export in 'some-user-file.ts'",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves user-supplied build.rollupOptions.onwarn", async () => {
     const plugins = vinext() as any[];
     const configPlugin = plugins.find((p) => p.name === "vinext:config");
