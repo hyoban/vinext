@@ -1444,7 +1444,7 @@ describe("Plugin config", () => {
     expect(defaultHandler).toHaveBeenCalledWith(otherWarning);
   });
 
-  it("suppresses IMPORT_IS_UNDEFINED noise for generated proxy/middleware default fallbacks", async () => {
+  it("suppresses IMPORT_IS_UNDEFINED noise for generated proxy/middleware fallback probes", async () => {
     const plugins = vinext() as any[];
     const configPlugin = plugins.find((p) => p.name === "vinext:config");
     expect(configPlugin).toBeDefined();
@@ -1482,11 +1482,41 @@ describe("Plugin config", () => {
       {
         code: "IMPORT_IS_UNDEFINED",
         message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `proxy` will always be undefined because there is no matching export in 'proxy.tsx'\\n      ╭─[ \\0virtual:vinext-rsc-entry:2632:34 ]",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).not.toHaveBeenCalled();
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `middleware` will always be undefined because there is no matching export in 'middleware.jsx'\\n      ╭─[ \\0virtual:vinext-server-entry:168:34 ]",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).not.toHaveBeenCalled();
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
           "[IMPORT_IS_UNDEFINED] Warning: Import `default` will always be undefined because there is no matching export in 'some-user-file.ts'",
       },
       defaultHandler,
     );
     expect(defaultHandler).toHaveBeenCalledTimes(1);
+
+    bundlerOptions.onwarn(
+      {
+        code: "IMPORT_IS_UNDEFINED",
+        message:
+          "[IMPORT_IS_UNDEFINED] Warning: Import `proxy` will always be undefined because there is no matching export in 'some-user-file.ts'",
+      },
+      defaultHandler,
+    );
+    expect(defaultHandler).toHaveBeenCalledTimes(2);
   });
 
   it("preserves user-supplied build.rollupOptions.onwarn", async () => {
