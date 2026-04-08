@@ -177,6 +177,10 @@ export function middleware(request: NextRequest, event: NextFetchEvent) {
       "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
     );
   }
+  if (pathname === "/revalidate-test" && request.nextUrl.searchParams.has("csp-nonce")) {
+    const nonce = request.nextUrl.searchParams.get("csp-nonce") ?? "vinext-test-nonce";
+    r.headers.set("content-security-policy", `script-src 'nonce-${nonce}' 'strict-dynamic';`);
+  }
   r.headers.set("x-mw-pathname", pathname);
   r.headers.set("x-mw-ran", "true");
   if (sessionToken) {
@@ -199,6 +203,7 @@ export const config = {
     "/headers/override-from-middleware",
     "/header-override-delete",
     "/pages-header-override-delete",
+    "/revalidate-test",
     "/use-client-page-pathname/:path*",
     "/",
     "/mw-gated-before",

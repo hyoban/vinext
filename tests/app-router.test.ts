@@ -1657,6 +1657,27 @@ describe("App Router Production server (startProdServer)", () => {
     expect(html).toContain("<script");
   });
 
+  it("does not reuse cached HTML across requests with different CSP nonces", async () => {
+    const firstRes = await fetch(`${baseUrl}/revalidate-test?csp-nonce=first`);
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.headers.get("cache-control")).toBe("no-store, must-revalidate");
+    expect(firstRes.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-first' 'strict-dynamic';",
+    );
+    const firstHtml = await firstRes.text();
+    expect(firstHtml).toContain('<script nonce="first">self.__VINEXT_RSC_PARAMS__={}</script>');
+
+    const secondRes = await fetch(`${baseUrl}/revalidate-test?csp-nonce=second`);
+    expect(secondRes.status).toBe(200);
+    expect(secondRes.headers.get("cache-control")).toBe("no-store, must-revalidate");
+    expect(secondRes.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-second' 'strict-dynamic';",
+    );
+    const secondHtml = await secondRes.text();
+    expect(secondHtml).toContain('<script nonce="second">self.__VINEXT_RSC_PARAMS__={}</script>');
+    expect(secondHtml).not.toContain('nonce="first"');
+  });
+
   it("does not collapse encoded slashes onto nested routes in production", async () => {
     const encodedRes = await fetch(`${baseUrl}/headers%2Foverride-from-middleware`);
     expect(encodedRes.status).toBe(404);
@@ -3998,6 +4019,7 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("readAppPageCacheResponse as __readAppPageCacheResponse");
     expect(code).toContain("scheduleBackgroundRegeneration: __triggerBackgroundRegeneration");
     expect(code).toContain("renderFreshPageForCache: async function()");
+    expect(code).toContain("(isRscRequest || !_scriptNonce)");
   });
 
   it("generated code uses request execution context for background cache write", () => {
@@ -4010,7 +4032,7 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("teeAppPageRscStreamForCapture as __teeAppPageRscStreamForCapture");
     expect(code).toContain("readAppPageTextStream as __readAppPageTextStream");
     expect(code).toContain("const __revalRscCapture = __teeAppPageRscStreamForCapture(");
-    expect(code).toContain(
+    expect(code).not.toContain(
       "{ scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers) }",
     );
     expect(code).toContain("renderAppPageLifecycle as __renderAppPageLifecycle");

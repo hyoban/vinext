@@ -2080,6 +2080,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   if (
     process.env.NODE_ENV === "production" &&
     !isForceDynamic &&
+    (isRscRequest || !_scriptNonce) &&
     revalidateSeconds !== null && revalidateSeconds > 0 && revalidateSeconds !== Infinity
   ) {
     const __cachedPageResponse = await __readAppPageCacheResponse({
@@ -2118,7 +2119,6 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
             __revalRscCapture.responseStream,
             _getNavigationContext(),
             __revalFontData,
-            { scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers) },
           );
           setHeadersContext(null);
           setNavigationContext(null);

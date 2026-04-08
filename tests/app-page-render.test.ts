@@ -317,4 +317,21 @@ describe("app page render lifecycle", () => {
       { scriptNonce: "vinext-test-nonce" },
     );
   });
+
+  it("disables HTML ISR caching when the response carries a script nonce", async () => {
+    const common = createCommonOptions();
+
+    const response = await renderAppPageLifecycle({
+      ...common.options,
+      isProduction: true,
+      revalidateSeconds: 30,
+      scriptNonce: "vinext-test-nonce",
+    });
+
+    expect(response.headers.get("cache-control")).toBe("no-store, must-revalidate");
+    expect(response.headers.get("x-vinext-cache")).toBeNull();
+    await expect(response.text()).resolves.toBe("<html>page</html>");
+    expect(common.waitUntilPromises).toHaveLength(0);
+    expect(common.isrSet).not.toHaveBeenCalled();
+  });
 });

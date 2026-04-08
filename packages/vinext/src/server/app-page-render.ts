@@ -276,6 +276,7 @@ export async function renderAppPageLifecycle(
 
   const htmlResponsePolicy = resolveAppPageHtmlResponsePolicy({
     dynamicUsedDuringRender,
+    hasScriptNonce: Boolean(options.scriptNonce),
     isDynamicError: options.isDynamicError,
     isForceDynamic: options.isForceDynamic,
     isForceStatic: options.isForceStatic,

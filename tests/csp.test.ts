@@ -24,6 +24,20 @@ describe("CSP nonce helpers", () => {
     ).toBe("script");
   });
 
+  it("parses the first matching nonce across extra whitespace and additional nonces", () => {
+    expect(
+      getScriptNonceFromHeader(
+        "   script-src   'self'   'nonce-first'   'nonce-second'   'strict-dynamic' ",
+      ),
+    ).toBe("first");
+  });
+
+  it("returns undefined when script-src/default-src does not contain a valid nonce", () => {
+    expect(getScriptNonceFromHeader("script-src 'nonce-'")).toBeUndefined();
+    expect(getScriptNonceFromHeader("style-src 'nonce-test-nonce'")).toBeUndefined();
+    expect(getScriptNonceFromHeader("")).toBeUndefined();
+  });
+
   it("reads Content-Security-Policy-Report-Only when CSP is absent", () => {
     const headers = new Headers({
       "content-security-policy-report-only": "script-src 'nonce-test-nonce' 'strict-dynamic';",

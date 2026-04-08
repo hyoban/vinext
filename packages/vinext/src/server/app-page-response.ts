@@ -31,6 +31,7 @@ export type ResolveAppPageRscResponsePolicyOptions = {
 
 export type ResolveAppPageHtmlResponsePolicyOptions = {
   dynamicUsedDuringRender: boolean;
+  hasScriptNonce: boolean;
 } & ResolveAppPageResponsePolicyBaseOptions;
 
 export type AppPageHtmlResponsePolicy = {
@@ -120,6 +121,13 @@ export function resolveAppPageHtmlResponsePolicy(
   options: ResolveAppPageHtmlResponsePolicyOptions,
 ): AppPageHtmlResponsePolicy {
   if (options.isForceDynamic) {
+    return {
+      cacheControl: NO_STORE_CACHE_CONTROL,
+      shouldWriteToCache: false,
+    };
+  }
+
+  if (options.hasScriptNonce) {
     return {
       cacheControl: NO_STORE_CACHE_CONTROL,
       shouldWriteToCache: false,
