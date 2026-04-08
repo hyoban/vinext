@@ -186,6 +186,56 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
       '<script nonce="request-report-only">self.__VINEXT_RSC_PARAMS__={}</script>',
     );
   });
+
+  it("ignores invalid or non-script CSP policies during rendering", async () => {
+    const policies = [`script-src 'nonce-'`, `style-src "nonce-cmFuZG9tCg=="`, ``];
+
+    for (const policy of policies) {
+      const res = await fetch(`${_baseUrl}${ROUTE}`, {
+        headers: policy ? { "content-security-policy": policy } : undefined,
+      });
+      expect(res.status).toBe(200);
+
+      const html = await res.text();
+      const nonceTags = [...html.matchAll(/<script\b[^>]*nonce=/g)];
+      expect(nonceTags).toHaveLength(0);
+    }
+  });
+
+  it("parses nonce variants from incoming request headers the same way Next.js does", async () => {
+    const policies = [
+      `script-src 'nonce-cmFuZG9tCg=='`,
+      `   script-src   'nonce-cmFuZG9tCg==' `,
+      `style-src 'self'; script-src 'nonce-cmFuZG9tCg=='`,
+      `script-src 'self' 'nonce-cmFuZG9tCg==' 'nonce-othernonce'`,
+      `default-src 'nonce-othernonce'; script-src 'nonce-cmFuZG9tCg==';`,
+      `default-src 'nonce-cmFuZG9tCg=='`,
+    ];
+
+    for (const policy of policies) {
+      const res = await fetch(`${_baseUrl}${ROUTE}`, {
+        headers: { "content-security-policy": policy },
+      });
+      expect(res.status).toBe(200);
+
+      const html = await res.text();
+      const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
+      expect(scriptTags.length).toBeGreaterThan(0);
+      for (const tag of scriptTags) {
+        expect(tag).toContain('nonce="cmFuZG9tCg=="');
+      }
+    }
+  });
+
+  it("returns 500 when the nonce contains HTML escape characters", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}`, {
+      headers: {
+        "content-security-policy": `script-src 'nonce-"><script></script>"'`,
+      },
+    });
+
+    expect(res.status).toBe(500);
+  });
 });
 
 // ── Dynamic route: "use client" page with useParams() ─────────────────────

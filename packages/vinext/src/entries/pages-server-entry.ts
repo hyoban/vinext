@@ -31,6 +31,7 @@ const _pagesPageDataPath = resolveEntryPath("../server/pages-page-data.js", impo
 const _pagesNodeCompatPath = resolveEntryPath("../server/pages-node-compat.js", import.meta.url);
 const _pagesApiRoutePath = resolveEntryPath("../server/pages-api-route.js", import.meta.url);
 const _isrCachePath = resolveEntryPath("../server/isr-cache.js", import.meta.url);
+const _cspPath = resolveEntryPath("../server/csp.js", import.meta.url);
 
 /**
  * Generate the virtual SSR server entry module.
@@ -289,6 +290,7 @@ import {
   isrCacheKey as __sharedIsrCacheKey,
   triggerBackgroundRegeneration as __sharedTriggerBackgroundRegeneration,
 } from ${JSON.stringify(_isrCachePath)};
+import { getScriptNonceFromHeaders as __getScriptNonceFromHeaders } from ${JSON.stringify(_cspPath)};
 import { resolvePagesPageData as __resolvePagesPageData } from ${JSON.stringify(_pagesPageDataPath)};
 import { renderPagesPageResponse as __renderPagesPageResponse } from ${JSON.stringify(_pagesPageResponsePath)};
 ${instrumentationImportCode}
@@ -387,13 +389,16 @@ function patternToNextFormat(pattern) {
     .replace(/:([\\w]+)/g, "[$1]");
 }
 
-function collectAssetTags(manifest, moduleIds) {
+function collectAssetTags(manifest, moduleIds, scriptNonce) {
   // Fall back to embedded manifest (set by vinext:cloudflare-build for Workers)
   const m = (manifest && Object.keys(manifest).length > 0)
     ? manifest
     : (typeof globalThis !== "undefined" && globalThis.__VINEXT_SSR_MANIFEST__) || null;
   const tags = [];
   const seen = new Set();
+  const nonceAttr = scriptNonce
+    ? ' nonce="' + String(scriptNonce).replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"'
+    : "";
 
   // Load the set of lazy chunk filenames (only reachable via dynamic imports).
   // These should NOT get <link rel="modulepreload"> or <script type="module">
@@ -406,8 +411,8 @@ function collectAssetTags(manifest, moduleIds) {
   if (typeof globalThis !== "undefined" && globalThis.__VINEXT_CLIENT_ENTRY__) {
     const entry = globalThis.__VINEXT_CLIENT_ENTRY__;
     seen.add(entry);
-    tags.push('<link rel="modulepreload" href="/' + entry + '" />');
-    tags.push('<script type="module" src="/' + entry + '" crossorigin></script>');
+    tags.push('<link rel="modulepreload"' + nonceAttr + ' href="/' + entry + '" />');
+    tags.push('<script type="module"' + nonceAttr + ' src="/' + entry + '" crossorigin></script>');
   }
   if (m) {
     // Always inject shared chunks (framework, vinext runtime, entry) and
@@ -482,13 +487,13 @@ function collectAssetTags(manifest, moduleIds) {
       if (seen.has(tf)) continue;
       seen.add(tf);
       if (tf.endsWith(".css")) {
-        tags.push('<link rel="stylesheet" href="/' + tf + '" />');
+        tags.push('<link rel="stylesheet"' + nonceAttr + ' href="/' + tf + '" />');
       } else if (tf.endsWith(".js")) {
         // Skip lazy chunks — they are behind dynamic import() boundaries
         // (React.lazy, next/dynamic) and should only be fetched on demand.
         if (lazySet && lazySet.has(tf)) continue;
-        tags.push('<link rel="modulepreload" href="/' + tf + '" />');
-        tags.push('<script type="module" src="/' + tf + '" crossorigin></script>');
+        tags.push('<link rel="modulepreload"' + nonceAttr + ' href="/' + tf + '" />');
+        tags.push('<script type="module"' + nonceAttr + ' src="/' + tf + '" crossorigin></script>');
       }
     }
   }
@@ -605,11 +610,12 @@ async function _renderPage(request, url, manifest) {
       });
     }
 
-    const pageModule = route.module;
-    const PageComponent = pageModule.default;
+	    const pageModule = route.module;
+	    const PageComponent = pageModule.default;
 	    if (!PageComponent) {
 	      return new Response("Page has no default export", { status: 500 });
 	    }
+	    const scriptNonce = __getScriptNonceFromHeaders(request.headers);
 	    // Build font Link header early so it's available for ISR cached responses too.
 	    // Font preloads are module-level state populated at import time and persist across requests.
 	    var _fontLinkHeader = "";
@@ -696,7 +702,7 @@ async function _renderPage(request, url, manifest) {
 	    let isrRevalidateSeconds = pageDataResult.isrRevalidateSeconds;
 
 	    const pageModuleIds = route.filePath ? [route.filePath] : [];
-	    const assetTags = collectAssetTags(manifest, pageModuleIds);
+	    const assetTags = collectAssetTags(manifest, pageModuleIds, scriptNonce);
 
     return __renderPagesPageResponse({
       assetTags,
@@ -755,9 +761,10 @@ async function _renderPage(request, url, manifest) {
         return renderToReadableStream(element);
       },
       resetSSRHead: typeof resetSSRHead === "function" ? resetSSRHead : undefined,
-	      routePattern,
+      routePattern,
       routeUrl,
       safeJsonStringify,
+      scriptNonce,
     });
     } catch (e) {
     console.error("[vinext] SSR error:", e);

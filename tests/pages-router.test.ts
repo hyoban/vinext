@@ -258,6 +258,18 @@ describe("Pages Router integration", () => {
     expect(html).toContain("This is the about page.");
   });
 
+  it("adds request-header CSP nonces to Pages Router scripts without caching", async () => {
+    const res = await fetch(`${baseUrl}/dynamic-page`, {
+      headers: {
+        "content-security-policy": "script-src 'nonce-pages-request' 'strict-dynamic';",
+      },
+    });
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain('<script nonce="pages-request">window.__NEXT_DATA__ = ');
+  });
+
   it("renders the SSR page with getServerSideProps data", async () => {
     const res = await fetch(`${baseUrl}/ssr`);
     expect(res.status).toBe(200);
@@ -2526,6 +2538,20 @@ describe("Production server middleware (Pages Router)", () => {
     const cookies = res.headers.getSetCookie();
     expect(cookies.some((c: string) => c.includes("mw-session=abc123"))).toBe(true);
     expect(cookies.some((c: string) => c.includes("mw-theme=dark"))).toBe(true);
+  });
+
+  it("adds request-header CSP nonces to production Pages Router scripts and preloads", async () => {
+    const res = await fetch(`${prodUrl}/dynamic-page`, {
+      headers: {
+        "content-security-policy": "script-src 'nonce-pages-prod' 'strict-dynamic';",
+      },
+    });
+    expect(res.status).toBe(200);
+
+    const html = await res.text();
+    expect(html).toContain('<script nonce="pages-prod">window.__NEXT_DATA__ = ');
+    expect(html).toMatch(/<script type="module" nonce="pages-prod" src="\/[^"]+"/);
+    expect(html).toMatch(/<link rel="modulepreload" nonce="pages-prod" href="\/[^"]+"/);
   });
 
   it("rewrites /rewritten to render /ssr content", async () => {

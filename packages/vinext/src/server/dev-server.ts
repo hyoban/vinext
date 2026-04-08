@@ -24,7 +24,8 @@ import { createRequestContext, runWithRequestContext } from "../shims/unified-re
 import "../shims/router-state.js";
 import { runWithHeadState } from "../shims/head-state.js";
 import { runWithServerInsertedHTMLState } from "../shims/navigation-state.js";
-import { safeJsonStringify } from "./html.js";
+import { createInlineScriptTag, createNonceAttribute, safeJsonStringify } from "./html.js";
+import { getScriptNonceFromHeaders } from "./csp.js";
 import { parseQueryString as parseQuery } from "../utils/query.js";
 import path from "node:path";
 import fs from "node:fs";
@@ -799,6 +800,17 @@ export function createSSRHandler(
         // Collect any <Head> tags that were rendered during data fetching
         // (shell head tags — Suspense children's head tags arrive late,
         // matching Next.js behavior)
+        const scriptNonce = getScriptNonceFromHeaders(
+          new Headers(
+            Object.entries(req.headers).flatMap(([key, value]) => {
+              if (Array.isArray(value)) {
+                return value.map((entry) => [key, entry] as const);
+              }
+              return value === undefined ? [] : ([[key, String(value)]] as const);
+            }),
+          ),
+        );
+        const nonceAttr = createNonceAttribute(scriptNonce);
 
         // Collect SSR font links (Google Fonts <link> tags) and font class styles
         let fontHeadHTML = "";
@@ -810,7 +822,7 @@ export function createSSRHandler(
             const fontUrls = fontGoogle.getSSRFontLinks();
             for (const fontUrl of fontUrls) {
               const safeFontUrl = fontUrl.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-              fontHeadHTML += `<link rel="stylesheet" href="${safeFontUrl}" />\n  `;
+              fontHeadHTML += `<link rel="stylesheet"${nonceAttr} href="${safeFontUrl}" />\n  `;
             }
           }
           if (typeof fontGoogle.getSSRFontStyles === "function") {
@@ -841,10 +853,10 @@ export function createSSRHandler(
           // Vite-resolved asset paths should never contain special chars).
           const safeHref = href.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
           const safeType = type.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-          fontHeadHTML += `<link rel="preload" href="${safeHref}" as="font" type="${safeType}" crossorigin />\n  `;
+          fontHeadHTML += `<link rel="preload"${nonceAttr} href="${safeHref}" as="font" type="${safeType}" crossorigin />\n  `;
         }
         if (allFontStyles.length > 0) {
-          fontHeadHTML += `<style data-vinext-fonts>${allFontStyles.join("\n")}</style>\n  `;
+          fontHeadHTML += `<style data-vinext-fonts${nonceAttr}>${allFontStyles.join("\n")}</style>\n  `;
         }
 
         // Convert absolute file paths to Vite-servable URLs (relative to root)
@@ -857,7 +869,7 @@ export function createSSRHandler(
         // Hydration entry: inline script that imports the page and hydrates.
         // Stores the React root and page loader for client-side navigation.
         const hydrationScript = `
-<script type="module">
+<script type="module"${nonceAttr}>
 import "vinext/instrumentation-client";
 import React from "react";
 import { hydrateRoot } from "react-dom/client";
@@ -890,22 +902,25 @@ async function hydrate() {
 hydrate();
 </script>`;
 
-        const nextDataScript = `<script>window.__NEXT_DATA__ = ${safeJsonStringify({
-          props: { pageProps },
-          page: patternToNextFormat(route.pattern),
-          query: params,
-          buildId: process.env.__VINEXT_BUILD_ID,
-          isFallback: false,
-          locale: locale ?? currentDefaultLocale,
-          locales: i18nConfig?.locales,
-          defaultLocale: currentDefaultLocale,
-          domainLocales,
-          // Include module URLs so client navigation can import pages directly
-          __vinext: {
-            pageModuleUrl,
-            appModuleUrl,
-          },
-        })}${i18nConfig ? `;window.__VINEXT_LOCALE__=${safeJsonStringify(locale ?? currentDefaultLocale)};window.__VINEXT_LOCALES__=${safeJsonStringify(i18nConfig.locales)};window.__VINEXT_DEFAULT_LOCALE__=${safeJsonStringify(currentDefaultLocale)}` : ""}</script>`;
+        const nextDataScript = createInlineScriptTag(
+          `window.__NEXT_DATA__ = ${safeJsonStringify({
+            props: { pageProps },
+            page: patternToNextFormat(route.pattern),
+            query: params,
+            buildId: process.env.__VINEXT_BUILD_ID,
+            isFallback: false,
+            locale: locale ?? currentDefaultLocale,
+            locales: i18nConfig?.locales,
+            defaultLocale: currentDefaultLocale,
+            domainLocales,
+            // Include module URLs so client navigation can import pages directly
+            __vinext: {
+              pageModuleUrl,
+              appModuleUrl,
+            },
+          })}${i18nConfig ? `;window.__VINEXT_LOCALE__=${safeJsonStringify(locale ?? currentDefaultLocale)};window.__VINEXT_LOCALES__=${safeJsonStringify(i18nConfig.locales)};window.__VINEXT_DEFAULT_LOCALE__=${safeJsonStringify(currentDefaultLocale)}` : ""}`,
+          scriptNonce,
+        );
 
         // Try to load custom _document.tsx
         const docPath = path.join(pagesDir, "_document");
@@ -928,9 +943,13 @@ hydrate();
           ...gsspExtraHeaders,
         };
         if (isrRevalidateSeconds) {
-          extraHeaders["Cache-Control"] =
-            `s-maxage=${isrRevalidateSeconds}, stale-while-revalidate`;
-          extraHeaders["X-Vinext-Cache"] = "MISS";
+          if (scriptNonce) {
+            extraHeaders["Cache-Control"] = "no-store, must-revalidate";
+          } else {
+            extraHeaders["Cache-Control"] =
+              `s-maxage=${isrRevalidateSeconds}, stale-while-revalidate`;
+            extraHeaders["X-Vinext-Cache"] = "MISS";
+          }
         }
 
         // Set HTTP Link header for font preloading.
@@ -968,7 +987,7 @@ hydrate();
         // If ISR is enabled, we need the full HTML for caching.
         // For ISR, re-render synchronously to get the complete HTML string.
         // This runs after the stream is already sent, so it doesn't affect TTFB.
-        if (isrRevalidateSeconds !== null && isrRevalidateSeconds > 0) {
+        if (!scriptNonce && isrRevalidateSeconds !== null && isrRevalidateSeconds > 0) {
           let isrElement = AppComponent
             ? createElement(AppComponent, {
                 Component: pageModule.default,

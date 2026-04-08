@@ -27,4 +27,23 @@ test.describe("Next.js compat: CSP nonce (browser)", () => {
 
     void consoleErrors;
   });
+
+  test("next/dynamic preloads carry the middleware nonce and hydrate cleanly", async ({
+    page,
+    consoleErrors,
+  }) => {
+    const response = await page.goto(`${BASE}/nextjs-compat/dynamic?csp-nonce=1`);
+
+    expect(response?.status()).toBe(200);
+    expect(response?.headers()["content-security-policy"]).toBe(
+      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
+    );
+
+    await waitForAppRouterHydration(page);
+    await expect(page.locator("#css-text-dynamic-client")).toContainText(
+      "next-dynamic dynamic on client",
+    );
+
+    void consoleErrors;
+  });
 });
