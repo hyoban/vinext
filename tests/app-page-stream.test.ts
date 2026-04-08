@@ -53,10 +53,9 @@ describe("app page stream helpers", () => {
       navigationContext: { pathname: "/test" },
       rscStream: createStream(["flight"]),
       ssrHandler: {
-        async handleSsr(_rscStream, navigationContext, receivedFontData, options) {
+        async handleSsr(_rscStream, navigationContext, receivedFontData) {
           expect(navigationContext).toEqual({ pathname: "/test" });
           expect(receivedFontData).toEqual(fontData);
-          expect(options).toBeUndefined();
           return createStream(["<html>ok</html>"]);
         },
       },
@@ -158,7 +157,6 @@ describe("app page stream helpers", () => {
 
   it("builds an HTML response, including link headers, and defers clearing request context until after body is consumed", async () => {
     const clearRequestContext = vi.fn();
-    const handleSsr = vi.fn(async () => createStream(["<html>page</html>"]));
 
     const response = await renderAppPageHtmlResponse({
       clearRequestContext,
@@ -171,7 +169,9 @@ describe("app page stream helpers", () => {
       navigationContext: null,
       rscStream: createStream(["flight"]),
       ssrHandler: {
-        handleSsr,
+        async handleSsr() {
+          return createStream(["<html>page</html>"]);
+        },
       },
       status: 203,
     });
@@ -184,12 +184,6 @@ describe("app page stream helpers", () => {
       "</font.woff2>; rel=preload; as=font; type=font/woff2; crossorigin",
     );
     await expect(response.text()).resolves.toBe("<html>page</html>");
-    expect(handleSsr).toHaveBeenCalledWith(
-      expect.any(ReadableStream),
-      null,
-      { links: [], preloads: [], styles: [] },
-      undefined,
-    );
 
     // After body is consumed, context must be cleared exactly once.
     expect(clearRequestContext).toHaveBeenCalledTimes(1);

@@ -26,7 +26,7 @@ import { runWithHeadState } from "../shims/head-state.js";
 import { runWithServerInsertedHTMLState } from "../shims/navigation-state.js";
 import { withScriptNonce } from "../shims/script-nonce-context.js";
 import { createInlineScriptTag, createNonceAttribute, safeJsonStringify } from "./html.js";
-import { getScriptNonceFromHeaders } from "./csp.js";
+import { getScriptNonceFromNodeHeaders } from "./csp.js";
 import { parseQueryString as parseQuery } from "../utils/query.js";
 import path from "node:path";
 import fs from "node:fs";
@@ -523,22 +523,7 @@ export function createSSRHandler(
         // Collect font preloads early so ISR cached responses can include
         // the Link header (font preloads are module-level state that persists
         // across requests after the font modules are first loaded).
-        const scriptNonce = getScriptNonceFromHeaders(
-          new Headers(
-            Object.entries(req.headers).reduce<[string, string][]>((entries, [key, value]) => {
-              if (Array.isArray(value)) {
-                for (const entry of value) {
-                  entries.push([key, entry]);
-                }
-                return entries;
-              }
-              if (value !== undefined) {
-                entries.push([key, String(value)]);
-              }
-              return entries;
-            }, []),
-          ),
-        );
+        const scriptNonce = getScriptNonceFromNodeHeaders(req.headers);
         let earlyFontLinkHeader = "";
         try {
           const earlyPreloads: Array<{ href: string; type: string }> = [];

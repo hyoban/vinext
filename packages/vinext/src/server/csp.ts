@@ -1,3 +1,5 @@
+import type { IncomingHttpHeaders } from "node:http";
+
 const ESCAPE_REGEX = /[&><\u2028\u2029]/;
 
 export function getScriptNonceFromHeader(cspHeaderValue: string): string | undefined {
@@ -40,6 +42,29 @@ export function getScriptNonceFromHeaders(headers: Headers | null | undefined): 
   }
 
   return getScriptNonceFromHeader(csp);
+}
+
+export function getScriptNonceFromNodeHeaders(
+  headers: IncomingHttpHeaders | null | undefined,
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const webHeaders = new Headers();
+  for (const [key, value] of Object.entries(headers)) {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        webHeaders.append(key, entry);
+      }
+      continue;
+    }
+    if (value !== undefined) {
+      webHeaders.set(key, String(value));
+    }
+  }
+
+  return getScriptNonceFromHeaders(webHeaders);
 }
 
 export function getScriptNonceFromHeaderSources(

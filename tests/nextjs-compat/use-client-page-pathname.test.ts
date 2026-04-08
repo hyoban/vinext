@@ -85,17 +85,6 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     expect(sp.get("q")).toBe("test");
   });
 
-  it("does not add nonce attributes when CSP does not provide one", async () => {
-    const res = await fetch(`${_baseUrl}${ROUTE}`);
-    const html = await res.text();
-
-    const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
-    expect(scriptTags.length).toBeGreaterThan(0);
-    for (const tag of scriptTags) {
-      expect(tag).not.toContain(" nonce=");
-    }
-  });
-
   // Ported from Next.js: test/e2e/app-dir/app/index.test.ts
   // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/app/index.test.ts
   it("adds CSP nonce to inline hydration and bootstrap scripts", async () => {

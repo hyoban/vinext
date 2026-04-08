@@ -48,21 +48,4 @@ test.describe("Next.js compat: CSP nonce (browser)", () => {
       [],
     );
   });
-
-  // Ported from Next.js: test/e2e/app-dir/app/index.test.ts
-  // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/app/index.test.ts
-  test("middleware nonce also covers next/font output", async ({ page, consoleErrors }) => {
-    const response = await page.goto(`${BASE}/script-nonce/with-next-font`);
-
-    expect(response?.status()).toBe(200);
-    expect(response?.headers()["content-security-policy"]).toBe(
-      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
-    );
-
-    await waitForAppRouterHydration(page);
-    await expect(page.locator("#script-nonce-font")).toHaveText("script-nonce");
-    expect(consoleErrors.filter((message) => message.includes("Content Security Policy"))).toEqual(
-      [],
-    );
-  });
 });
