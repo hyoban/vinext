@@ -162,6 +162,21 @@ export function middleware(request: NextRequest, event: NextFetchEvent) {
       "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
     );
   }
+  if (
+    pathname.startsWith("/use-client-page-pathname") &&
+    request.nextUrl.searchParams.has("csp-default-src")
+  ) {
+    r.headers.set("content-security-policy", "default-src 'nonce-vinext-test-nonce';");
+  }
+  if (
+    pathname.startsWith("/use-client-page-pathname") &&
+    request.nextUrl.searchParams.has("csp-report-only")
+  ) {
+    r.headers.set(
+      "content-security-policy-report-only",
+      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
+    );
+  }
   r.headers.set("x-mw-pathname", pathname);
   r.headers.set("x-mw-ran", "true");
   if (sessionToken) {

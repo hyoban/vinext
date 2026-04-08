@@ -14,7 +14,12 @@ import {
   useServerInsertedHTML,
 } from "../shims/navigation.js";
 import { runWithNavigationContext } from "../shims/navigation-state.js";
-import { createInlineScriptTag, escapeHtmlAttr, safeJsonStringify } from "./html.js";
+import {
+  createInlineScriptTag,
+  createNonceAttribute,
+  escapeHtmlAttr,
+  safeJsonStringify,
+} from "./html.js";
 import { createRscEmbedTransform, createTickBufferedTransform } from "./app-ssr-stream.js";
 
 export type FontPreload = {
@@ -90,17 +95,18 @@ function renderInsertedHtml(insertedElements: readonly unknown[]): string {
   return insertedHTML;
 }
 
-function renderFontHtml(fontData?: FontData): string {
+function renderFontHtml(fontData?: FontData, nonce?: string): string {
   if (!fontData) return "";
 
   let fontHTML = "";
+  const nonceAttr = createNonceAttribute(nonce);
 
   for (const url of fontData.links ?? []) {
-    fontHTML += `<link rel="stylesheet" href="${escapeHtmlAttr(url)}" />\n`;
+    fontHTML += `<link rel="stylesheet"${nonceAttr} href="${escapeHtmlAttr(url)}" />\n`;
   }
 
   for (const preload of fontData.preloads ?? []) {
-    fontHTML += `<link rel="preload" href="${escapeHtmlAttr(preload.href)}" as="font" type="${escapeHtmlAttr(preload.type)}" crossorigin />\n`;
+    fontHTML += `<link rel="preload"${nonceAttr} href="${escapeHtmlAttr(preload.href)}" as="font" type="${escapeHtmlAttr(preload.type)}" crossorigin />\n`;
   }
 
   if (fontData.styles && fontData.styles.length > 0) {
@@ -110,13 +116,13 @@ function renderFontHtml(fontData?: FontData): string {
   return fontHTML;
 }
 
-function extractModulePreloadHtml(bootstrapScriptContent?: string): string {
+function extractModulePreloadHtml(bootstrapScriptContent?: string, nonce?: string): string {
   if (!bootstrapScriptContent) return "";
 
   const match = bootstrapScriptContent.match(/import\("([^"]+)"\)/);
   if (!match?.[1]) return "";
 
-  return `<link rel="modulepreload" href="${escapeHtmlAttr(match[1])}" />\n`;
+  return `<link rel="modulepreload"${createNonceAttribute(nonce)} href="${escapeHtmlAttr(match[1])}" />\n`;
 }
 
 function buildHeadInjectionHtml(
@@ -142,7 +148,7 @@ function buildHeadInjectionHtml(
   return (
     paramsScript +
     navScript +
-    extractModulePreloadHtml(bootstrapScriptContent) +
+    extractModulePreloadHtml(bootstrapScriptContent, scriptNonce) +
     insertedHTML +
     fontHTML
   );
@@ -206,7 +212,7 @@ export async function handleSsr(
       });
 
       const insertedHTML = renderInsertedHtml(flushServerInsertedHTML());
-      const fontHTML = renderFontHtml(fontData);
+      const fontHTML = renderFontHtml(fontData, options?.scriptNonce);
       const injectHTML = buildHeadInjectionHtml(
         navContext,
         bootstrapScriptContent,

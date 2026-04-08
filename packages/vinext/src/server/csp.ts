@@ -23,7 +23,9 @@ export function getScriptNonceFromHeader(cspHeaderValue: string): string | undef
   }
 
   if (ESCAPE_REGEX.test(nonce)) {
-    throw new Error("Nonce value from Content-Security-Policy contained HTML escape characters.");
+    throw new Error(
+      "Nonce value from Content-Security-Policy contained HTML escape characters.\nLearn more: https://nextjs.org/docs/messages/nonce-contained-invalid-characters",
+    );
   }
 
   return nonce;

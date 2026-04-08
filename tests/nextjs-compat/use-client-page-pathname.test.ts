@@ -107,12 +107,46 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     expect(html).toContain(
       '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_DONE__=true</script>',
     );
+    expect(html).toMatch(/<link rel="modulepreload" nonce="vinext-test-nonce" href="[^"]+"/);
 
     const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
     expect(scriptTags.length).toBeGreaterThan(0);
     for (const tag of scriptTags) {
       expect(tag).toContain('nonce="vinext-test-nonce"');
     }
+
+    const preloadLikeTags = [
+      ...html.matchAll(/<link\b[^>]*rel="(?:preload|modulepreload)"[^>]*>/g),
+    ].map((match) => match[0]);
+    expect(preloadLikeTags.length).toBeGreaterThan(0);
+    for (const tag of preloadLikeTags) {
+      expect(tag).toContain('nonce="vinext-test-nonce"');
+    }
+  });
+
+  it("falls back to default-src when script-src is absent", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}?csp-default-src=1`);
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'nonce-vinext-test-nonce';",
+    );
+
+    const html = await res.text();
+    expect(html).toContain(
+      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
+    );
+  });
+
+  it("uses Content-Security-Policy-Report-Only when CSP is absent", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}?csp-report-only=1`);
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    expect(res.headers.get("content-security-policy-report-only")).toBe(
+      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
+    );
+
+    const html = await res.text();
+    expect(html).toContain(
+      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
+    );
   });
 });
 

@@ -31,10 +31,14 @@ export function escapeHtmlAttr(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
-export function createInlineScriptTag(content: string, nonce?: string): string {
+export function createNonceAttribute(nonce?: string): string {
   if (!nonce) {
-    return `<script>${content}</script>`;
+    return "";
   }
 
-  return `<script nonce="${escapeHtmlAttr(nonce)}">${content}</script>`;
+  return ` nonce="${escapeHtmlAttr(nonce)}"`;
+}
+
+export function createInlineScriptTag(content: string, nonce?: string): string {
+  return `<script${createNonceAttribute(nonce)}>${content}</script>`;
 }
