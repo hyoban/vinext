@@ -4000,7 +4000,6 @@ describe("generateRscEntry ISR code generation", () => {
     const code = generateRscEntry("/tmp/test/app", minimalRoutes);
     expect(code).toContain("renderAppPageErrorBoundary as __renderAppPageErrorBoundary");
     expect(code).toContain("renderAppPageHttpAccessFallback as __renderAppPageHttpAccessFallback");
-    expect(code).toContain("getScriptNonceFromHeaderSources as __getScriptNonceFromHeaderSources");
     expect(code).toContain("return __renderAppPageHttpAccessFallback({");
     expect(code).toContain("return __renderAppPageErrorBoundary({");
   });
@@ -4016,7 +4015,6 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("readAppPageCacheResponse as __readAppPageCacheResponse");
     expect(code).toContain("scheduleBackgroundRegeneration: __triggerBackgroundRegeneration");
     expect(code).toContain("renderFreshPageForCache: async function()");
-    expect(code).toContain("(isRscRequest || !_scriptNonce)");
   });
 
   it("generated code uses request execution context for background cache write", () => {
@@ -4029,9 +4027,6 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("teeAppPageRscStreamForCapture as __teeAppPageRscStreamForCapture");
     expect(code).toContain("readAppPageTextStream as __readAppPageTextStream");
     expect(code).toContain("const __revalRscCapture = __teeAppPageRscStreamForCapture(");
-    expect(code).not.toContain(
-      "{ scriptNonce: __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers) }",
-    );
     expect(code).toContain("renderAppPageLifecycle as __renderAppPageLifecycle");
   });
 

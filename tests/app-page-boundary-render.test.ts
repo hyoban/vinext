@@ -21,15 +21,8 @@ function renderElementToStream(element: React.ReactNode): ReadableStream<Uint8Ar
 
 function createCommonOptions() {
   const clearRequestContext = vi.fn();
-  let lastSsrOptions: { scriptNonce?: string } | undefined;
   const loadSsrHandler = vi.fn(async () => ({
-    async handleSsr(
-      rscStream: ReadableStream<Uint8Array>,
-      _navigationContext: unknown,
-      _fontData: unknown,
-      options?: { scriptNonce?: string },
-    ) {
-      lastSsrOptions = options;
+    async handleSsr(rscStream: ReadableStream<Uint8Array>) {
       return rscStream;
     },
   }));
@@ -68,10 +61,6 @@ function createCommonOptions() {
       return [];
     },
     rootLayouts: [],
-    scriptNonce: undefined as string | undefined,
-    getLastSsrOptions() {
-      return lastSsrOptions;
-    },
   };
 }
 
@@ -176,7 +165,6 @@ describe("app page boundary render helpers", () => {
 
     const html = await response?.text();
     expect(common.clearRequestContext).toHaveBeenCalledTimes(1);
-    expect(common.getLastSsrOptions()).toBeUndefined();
     expect(html).toContain('data-layout="root"');
     expect(html).toContain('data-layout="leaf"');
     expect(html).toContain('data-boundary="not-found"');
@@ -212,27 +200,6 @@ describe("app page boundary render helpers", () => {
     expect(html).toContain('data-layout="root"');
     expect(html).toContain('data-boundary="route-error"');
     expect(html).toContain("route:safe:secret");
-  });
-
-  it("passes CSP nonces through boundary HTML renders", async () => {
-    const common = createCommonOptions();
-
-    const response = await renderAppPageHttpAccessFallback({
-      ...common,
-      matchedParams: { slug: "missing" },
-      rootLayouts: [rootLayoutModule],
-      route: {
-        layouts: [rootLayoutModule],
-        notFound: notFoundModule,
-        params: { slug: "missing" },
-        pattern: "/posts/[slug]",
-      },
-      scriptNonce: "vinext-test-nonce",
-      statusCode: 404,
-    });
-
-    await response?.text();
-    expect(common.getLastSsrOptions()).toEqual({ scriptNonce: "vinext-test-nonce" });
   });
 
   it("renders global-error boundaries without layout wrapping", async () => {

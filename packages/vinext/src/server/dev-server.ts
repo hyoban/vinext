@@ -24,7 +24,7 @@ import { createRequestContext, runWithRequestContext } from "../shims/unified-re
 import "../shims/router-state.js";
 import { runWithHeadState } from "../shims/head-state.js";
 import { runWithServerInsertedHTMLState } from "../shims/navigation-state.js";
-import { ScriptNonceProvider } from "../shims/script-nonce-context.js";
+import { withScriptNonce } from "../shims/script-nonce-context.js";
 import { createInlineScriptTag, createNonceAttribute, safeJsonStringify } from "./html.js";
 import { getScriptNonceFromHeaders } from "./csp.js";
 import { parseQueryString as parseQuery } from "../utils/query.js";
@@ -67,17 +67,6 @@ async function renderIsrPassToStringAsync(element: React.ReactElement): Promise<
       ),
     ),
   );
-}
-
-function wrapWithScriptNonceProvider(
-  element: React.ReactElement,
-  scriptNonce?: string,
-): React.ReactElement {
-  if (!scriptNonce) {
-    return element;
-  }
-
-  return React.createElement(ScriptNonceProvider, { nonce: scriptNonce }, element);
 }
 
 /** Body placeholder used to split the document shell for streaming. */
@@ -670,7 +659,7 @@ export function createSSRHandler(
                       el = routerShim.wrapWithRouterContext(el);
                     }
                     const freshBody = await renderIsrPassToStringAsync(
-                      wrapWithScriptNonceProvider(el, scriptNonce),
+                      withScriptNonce(el, scriptNonce),
                     );
 
                     // Rebuild __NEXT_DATA__ with fresh props. The hydration
@@ -977,7 +966,7 @@ hydrate();
         // Stream the page using progressive SSR.
         // The shell (layouts, non-suspended content) arrives immediately.
         // Suspense content streams in as it resolves.
-        await streamPageToResponse(res, wrapWithScriptNonceProvider(element, scriptNonce), {
+        await streamPageToResponse(res, withScriptNonce(element, scriptNonce), {
           url,
           server,
           fontHeadHTML,
@@ -1012,7 +1001,7 @@ hydrate();
             isrElement = wrapWithRouterContext(isrElement);
           }
           const isrBodyHtml = await renderIsrPassToStringAsync(
-            wrapWithScriptNonceProvider(isrElement, scriptNonce),
+            withScriptNonce(isrElement, scriptNonce),
           );
           const isrHtml = `<!DOCTYPE html><html><head></head><body><div id="__next">${isrBodyHtml}</div>${allScripts}</body></html>`;
           const cacheKey = isrCacheKey(

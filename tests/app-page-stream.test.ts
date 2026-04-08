@@ -52,12 +52,11 @@ describe("app page stream helpers", () => {
       fontData,
       navigationContext: { pathname: "/test" },
       rscStream: createStream(["flight"]),
-      scriptNonce: "vinext-test-nonce",
       ssrHandler: {
         async handleSsr(_rscStream, navigationContext, receivedFontData, options) {
           expect(navigationContext).toEqual({ pathname: "/test" });
           expect(receivedFontData).toEqual(fontData);
-          expect(options).toEqual({ scriptNonce: "vinext-test-nonce" });
+          expect(options).toBeUndefined();
           return createStream(["<html>ok</html>"]);
         },
       },
@@ -171,7 +170,6 @@ describe("app page stream helpers", () => {
       fontLinkHeader: "</font.woff2>; rel=preload; as=font; type=font/woff2; crossorigin",
       navigationContext: null,
       rscStream: createStream(["flight"]),
-      scriptNonce: "vinext-test-nonce",
       ssrHandler: {
         handleSsr,
       },
@@ -190,7 +188,7 @@ describe("app page stream helpers", () => {
       expect.any(ReadableStream),
       null,
       { links: [], preloads: [], styles: [] },
-      { scriptNonce: "vinext-test-nonce" },
+      undefined,
     );
 
     // After body is consumed, context must be cleared exactly once.

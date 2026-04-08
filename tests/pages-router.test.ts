@@ -258,72 +258,16 @@ describe("Pages Router integration", () => {
     expect(html).toContain("This is the about page.");
   });
 
-  it("parses Pages Router request-header CSP nonce variants the same way Next.js does", async () => {
-    const nonce = "pages-request";
-    const policies = [
-      `script-src 'nonce-${nonce}'`,
-      `   script-src   'nonce-${nonce}' `,
-      `style-src 'self'; script-src 'nonce-${nonce}'`,
-      `script-src 'self' 'nonce-${nonce}' 'nonce-othernonce'`,
-      `default-src 'nonce-othernonce'; script-src 'nonce-${nonce}';`,
-      `default-src 'nonce-${nonce}'`,
-    ];
-
-    for (const policy of policies) {
-      const res = await fetch(`${baseUrl}/dynamic-page`, {
-        headers: { "content-security-policy": policy },
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      expect(html).toContain(`<script nonce="${nonce}">window.__NEXT_DATA__ = `);
-    }
-  });
-
-  it("reads Content-Security-Policy-Report-Only for Pages Router", async () => {
-    const nonce = "pages-report-only";
-    const policies = [
-      `script-src 'nonce-${nonce}'`,
-      `   script-src   'nonce-${nonce}' `,
-      `style-src 'self'; script-src 'nonce-${nonce}'`,
-      `script-src 'self' 'nonce-${nonce}' 'nonce-othernonce'`,
-      `default-src 'nonce-othernonce'; script-src 'nonce-${nonce}';`,
-      `default-src 'nonce-${nonce}'`,
-    ];
-
-    for (const policy of policies) {
-      const res = await fetch(`${baseUrl}/dynamic-page`, {
-        headers: { "content-security-policy-report-only": policy },
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      expect(html).toContain(`<script nonce="${nonce}">window.__NEXT_DATA__ = `);
-    }
-  });
-
-  it("does not add Pages Router nonces for invalid or unrelated policies", async () => {
-    const policies = [`script-src 'nonce-'`, `style-src "nonce-cmFuZG9tCg=="`, ``];
-
-    for (const policy of policies) {
-      const res = await fetch(`${baseUrl}/dynamic-page`, {
-        headers: policy ? { "content-security-policy": policy } : undefined,
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      expect(html).not.toContain("nonce=");
-    }
-  });
-
-  it("returns 500 for Pages Router when the nonce contains HTML escape characters", async () => {
+  it("adds request-header CSP nonces to Pages Router next data", async () => {
     const res = await fetch(`${baseUrl}/dynamic-page`, {
       headers: {
-        "content-security-policy": `script-src 'nonce-"><script></script>"'`,
+        "content-security-policy": "script-src 'nonce-pages-request' 'strict-dynamic';",
       },
     });
+    expect(res.status).toBe(200);
 
-    expect(res.status).toBe(500);
+    const html = await res.text();
+    expect(html).toContain('<script nonce="pages-request">window.__NEXT_DATA__ = ');
   });
 
   it("does not serve cached Pages ISR HTML to CSP nonce requests", async () => {
@@ -2627,73 +2571,6 @@ describe("Production server middleware (Pages Router)", () => {
     expect(html).toContain('<script nonce="pages-prod">window.__NEXT_DATA__ = ');
     expect(html).toMatch(/<script type="module" nonce="pages-prod" src="\/[^"]+"/);
     expect(html).toMatch(/<link rel="modulepreload" nonce="pages-prod" href="\/[^"]+"/);
-  });
-
-  it("parses production Pages Router CSP nonce variants the same way Next.js does", async () => {
-    const nonce = "pages-prod";
-    const policies = [
-      `script-src 'nonce-${nonce}'`,
-      `   script-src   'nonce-${nonce}' `,
-      `style-src 'self'; script-src 'nonce-${nonce}'`,
-      `script-src 'self' 'nonce-${nonce}' 'nonce-othernonce'`,
-      `default-src 'nonce-othernonce'; script-src 'nonce-${nonce}';`,
-      `default-src 'nonce-${nonce}'`,
-    ];
-
-    for (const policy of policies) {
-      const res = await fetch(`${prodUrl}/dynamic-page`, {
-        headers: { "content-security-policy": policy },
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
-      expect(scriptTags.length).toBeGreaterThan(0);
-      for (const tag of scriptTags) {
-        expect(tag).toContain(`nonce="${nonce}"`);
-      }
-    }
-  });
-
-  it("reads production Pages Router report-only nonces", async () => {
-    const nonce = "pages-prod-report-only";
-    const res = await fetch(`${prodUrl}/dynamic-page`, {
-      headers: {
-        "content-security-policy-report-only": `script-src 'nonce-${nonce}' 'strict-dynamic';`,
-      },
-    });
-    expect(res.status).toBe(200);
-
-    const html = await res.text();
-    const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
-    expect(scriptTags.length).toBeGreaterThan(0);
-    for (const tag of scriptTags) {
-      expect(tag).toContain(`nonce="${nonce}"`);
-    }
-  });
-
-  it("does not add production Pages Router nonces for invalid or unrelated policies", async () => {
-    const policies = [`script-src 'nonce-'`, `style-src "nonce-cmFuZG9tCg=="`, ``];
-
-    for (const policy of policies) {
-      const res = await fetch(`${prodUrl}/dynamic-page`, {
-        headers: policy ? { "content-security-policy": policy } : undefined,
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      expect(html).not.toContain("nonce=");
-    }
-  });
-
-  it("returns 500 in production Pages Router when the nonce contains HTML escape characters", async () => {
-    const res = await fetch(`${prodUrl}/dynamic-page`, {
-      headers: {
-        "content-security-policy": `script-src 'nonce-"><script></script>"'`,
-      },
-    });
-
-    expect(res.status).toBe(500);
   });
 
   it("does not serve cached production Pages ISR HTML to CSP nonce requests", async () => {

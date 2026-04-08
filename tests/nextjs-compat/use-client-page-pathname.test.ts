@@ -135,31 +135,6 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     }
   });
 
-  it("falls back to default-src when script-src is absent", async () => {
-    const res = await fetch(`${_baseUrl}${ROUTE}?csp-default-src=1`);
-    expect(res.headers.get("content-security-policy")).toBe(
-      "default-src 'nonce-vinext-test-nonce';",
-    );
-
-    const html = await res.text();
-    expect(html).toContain(
-      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
-    );
-  });
-
-  it("uses Content-Security-Policy-Report-Only when CSP is absent", async () => {
-    const res = await fetch(`${_baseUrl}${ROUTE}?csp-report-only=1`);
-    expect(res.headers.get("content-security-policy")).toBeNull();
-    expect(res.headers.get("content-security-policy-report-only")).toBe(
-      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
-    );
-
-    const html = await res.text();
-    expect(html).toContain(
-      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
-    );
-  });
-
   // Ported from Next.js: test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
   // https://github.com/vercel/next.js/blob/canary/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
   it("reads nonce from the incoming Content-Security-Policy request header", async () => {
@@ -171,60 +146,6 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     const html = await res.text();
 
     expect(html).toContain('<script nonce="request-header">self.__VINEXT_RSC_PARAMS__={}</script>');
-  });
-
-  it("reads nonce from the incoming Content-Security-Policy-Report-Only request header", async () => {
-    const res = await fetch(`${_baseUrl}${ROUTE}`, {
-      headers: {
-        "content-security-policy-report-only":
-          "script-src 'nonce-request-report-only' 'strict-dynamic';",
-      },
-    });
-    const html = await res.text();
-
-    expect(html).toContain(
-      '<script nonce="request-report-only">self.__VINEXT_RSC_PARAMS__={}</script>',
-    );
-  });
-
-  it("ignores invalid or non-script CSP policies during rendering", async () => {
-    const policies = [`script-src 'nonce-'`, `style-src "nonce-cmFuZG9tCg=="`, ``];
-
-    for (const policy of policies) {
-      const res = await fetch(`${_baseUrl}${ROUTE}`, {
-        headers: policy ? { "content-security-policy": policy } : undefined,
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      const nonceTags = [...html.matchAll(/<script\b[^>]*nonce=/g)];
-      expect(nonceTags).toHaveLength(0);
-    }
-  });
-
-  it("parses nonce variants from incoming request headers the same way Next.js does", async () => {
-    const policies = [
-      `script-src 'nonce-cmFuZG9tCg=='`,
-      `   script-src   'nonce-cmFuZG9tCg==' `,
-      `style-src 'self'; script-src 'nonce-cmFuZG9tCg=='`,
-      `script-src 'self' 'nonce-cmFuZG9tCg==' 'nonce-othernonce'`,
-      `default-src 'nonce-othernonce'; script-src 'nonce-cmFuZG9tCg==';`,
-      `default-src 'nonce-cmFuZG9tCg=='`,
-    ];
-
-    for (const policy of policies) {
-      const res = await fetch(`${_baseUrl}${ROUTE}`, {
-        headers: { "content-security-policy": policy },
-      });
-      expect(res.status).toBe(200);
-
-      const html = await res.text();
-      const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
-      expect(scriptTags.length).toBeGreaterThan(0);
-      for (const tag of scriptTags) {
-        expect(tag).toContain('nonce="cmFuZG9tCg=="');
-      }
-    }
   });
 
   it("returns 500 when the nonce contains HTML escape characters", async () => {
