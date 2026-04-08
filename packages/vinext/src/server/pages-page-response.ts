@@ -1,4 +1,5 @@
 import React, { type ComponentType, type ReactNode } from "react";
+import { ScriptNonceProvider } from "../shims/script-nonce-context.js";
 import { createInlineScriptTag, createNonceAttribute, escapeHtmlAttr } from "./html.js";
 
 export type PagesFontPreload = {
@@ -222,7 +223,13 @@ function applyGsspHeaders(headers: Headers, gsspRes: PagesGsspResponse | null): 
 export async function renderPagesPageResponse(
   options: RenderPagesPageResponseOptions,
 ): Promise<Response> {
-  const pageElement = options.createPageElement(options.pageProps);
+  const pageElement = options.scriptNonce
+    ? React.createElement(
+        ScriptNonceProvider,
+        { nonce: options.scriptNonce },
+        options.createPageElement(options.pageProps),
+      )
+    : options.createPageElement(options.pageProps);
 
   options.resetSSRHead?.();
   await options.flushPreloads?.();
@@ -263,7 +270,13 @@ export async function renderPagesPageResponse(
     options.isrRevalidateSeconds !== null &&
     options.isrRevalidateSeconds > 0
   ) {
-    const isrElement = options.createPageElement(options.pageProps);
+    const isrElement = options.scriptNonce
+      ? React.createElement(
+          ScriptNonceProvider,
+          { nonce: options.scriptNonce },
+          options.createPageElement(options.pageProps),
+        )
+      : options.createPageElement(options.pageProps);
     const isrHtml = await options.renderIsrPassToStringAsync(isrElement);
     const fullHtml = shellPrefix + isrHtml + shellSuffix;
     const isrPathname = options.routeUrl.split("?")[0];

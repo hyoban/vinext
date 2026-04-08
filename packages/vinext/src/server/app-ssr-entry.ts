@@ -14,6 +14,7 @@ import {
   useServerInsertedHTML,
 } from "../shims/navigation.js";
 import { runWithNavigationContext } from "../shims/navigation-state.js";
+import { ScriptNonceProvider } from "../shims/script-nonce-context.js";
 import {
   createInlineScriptTag,
   createNonceAttribute,
@@ -183,13 +184,16 @@ export async function handleSsr(
       }
 
       const root = createReactElement(VinextFlightRoot);
-      const ssrRoot = ServerInsertedHTMLContext
+      const ssrTree = ServerInsertedHTMLContext
         ? createReactElement(
             ServerInsertedHTMLContext.Provider,
             { value: useServerInsertedHTML },
             root,
           )
         : root;
+      const ssrRoot = options?.scriptNonce
+        ? createReactElement(ScriptNonceProvider, { nonce: options.scriptNonce }, ssrTree)
+        : ssrTree;
 
       const bootstrapScriptContent = await import.meta.viteRsc.loadBootstrapScriptContent("index");
 

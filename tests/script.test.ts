@@ -10,6 +10,7 @@ import { describe, it, expect } from "vite-plus/test";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import Script, { type ScriptProps } from "../packages/vinext/src/shims/script.js";
+import { ScriptNonceProvider } from "../packages/vinext/src/shims/script-nonce-context.js";
 
 // ─── SSR rendering ──────────────────────────────────────────────────────
 
@@ -108,5 +109,19 @@ describe("Script SSR rendering", () => {
     );
     expect(html).toContain("<script");
     expect(html).toContain('src="/secure.js"');
+  });
+
+  it("uses the request nonce for beforeInteractive scripts when none is passed explicitly", () => {
+    const html = ReactDOMServer.renderToString(
+      React.createElement(
+        ScriptNonceProvider,
+        { nonce: "test-nonce" },
+        React.createElement(Script, {
+          src: "/analytics.js",
+          strategy: "beforeInteractive",
+        } as ScriptProps),
+      ),
+    );
+    expect(html).toContain('nonce="test-nonce"');
   });
 });
