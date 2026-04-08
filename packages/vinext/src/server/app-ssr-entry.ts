@@ -14,7 +14,7 @@ import {
   useServerInsertedHTML,
 } from "../shims/navigation.js";
 import { runWithNavigationContext } from "../shims/navigation-state.js";
-import { safeJsonStringify } from "./html.js";
+import { createInlineScriptTag, escapeHtmlAttr, safeJsonStringify } from "./html.js";
 import { createRscEmbedTransform, createTickBufferedTransform } from "./app-ssr-stream.js";
 
 export type FontPreload = {
@@ -58,10 +58,6 @@ async function preloadClientReferences(): Promise<void> {
   );
 
   clientRefsPreloaded = true;
-}
-
-function escapeHtmlAttr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
 function ssrErrorDigest(input: string): string {
@@ -128,17 +124,20 @@ function buildHeadInjectionHtml(
   bootstrapScriptContent: string | undefined,
   insertedHTML: string,
   fontHTML: string,
+  scriptNonce?: string,
 ): string {
-  const paramsScript =
-    "<script>self.__VINEXT_RSC_PARAMS__=" +
-    safeJsonStringify(navContext?.params ?? {}) +
-    "</script>";
+  const paramsScript = createInlineScriptTag(
+    "self.__VINEXT_RSC_PARAMS__=" + safeJsonStringify(navContext?.params ?? {}),
+    scriptNonce,
+  );
   const navPayload = {
     pathname: navContext?.pathname ?? "/",
     searchParams: navContext?.searchParams ? [...navContext.searchParams.entries()] : [],
   };
-  const navScript =
-    "<script>self.__VINEXT_RSC_NAV__=" + safeJsonStringify(navPayload) + "</script>";
+  const navScript = createInlineScriptTag(
+    "self.__VINEXT_RSC_NAV__=" + safeJsonStringify(navPayload),
+    scriptNonce,
+  );
 
   return (
     paramsScript +
@@ -153,6 +152,7 @@ export async function handleSsr(
   rscStream: ReadableStream<Uint8Array>,
   navContext: NavigationContext | null,
   fontData?: FontData,
+  options?: { scriptNonce?: string },
 ): Promise<ReadableStream<Uint8Array>> {
   return runWithNavigationContext(async () => {
     await preloadClientReferences();
@@ -165,7 +165,7 @@ export async function handleSsr(
 
     try {
       const [ssrStream, embedStream] = rscStream.tee();
-      const rscEmbed = createRscEmbedTransform(embedStream);
+      const rscEmbed = createRscEmbedTransform(embedStream, options?.scriptNonce);
 
       let flightRoot: Promise<unknown> | null = null;
 
@@ -189,6 +189,7 @@ export async function handleSsr(
 
       const htmlStream = await renderToReadableStream(ssrRoot, {
         bootstrapScriptContent,
+        nonce: options?.scriptNonce,
         onError(error) {
           if (error && typeof error === "object" && "digest" in error) {
             return String(error.digest);
@@ -211,6 +212,7 @@ export async function handleSsr(
         bootstrapScriptContent,
         insertedHTML,
         fontHTML,
+        options?.scriptNonce,
       );
 
       return htmlStream.pipeThrough(createTickBufferedTransform(rscEmbed, injectHTML));

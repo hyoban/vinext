@@ -29,6 +29,7 @@ import {
   shouldRerenderAppPageWithGlobalError,
   type AppPageSsrHandler,
 } from "./app-page-stream.js";
+import { getScriptNonceFromHeaders } from "./csp.js";
 
 type AppPageBoundaryOnError = (
   error: unknown,
@@ -207,6 +208,7 @@ export async function renderAppPageLifecycle(
     getStyles: options.getFontStyles,
   });
   const fontLinkHeader = buildAppPageFontLinkHeader(fontData.preloads);
+  const scriptNonce = getScriptNonceFromHeaders(options.middlewareContext.headers);
   let renderEnd: number | undefined;
 
   const htmlRender = await renderAppPageHtmlStreamWithRecovery({
@@ -224,6 +226,7 @@ export async function renderAppPageLifecycle(
         fontData,
         navigationContext: options.getNavigationContext(),
         rscStream: rscForResponse,
+        scriptNonce,
         ssrHandler,
       });
     },

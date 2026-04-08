@@ -84,6 +84,36 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
 
     expect(sp.get("q")).toBe("test");
   });
+
+  // Ported from Next.js: test/e2e/app-dir/app/index.test.ts
+  // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/app/index.test.ts
+  it("adds CSP nonce to inline hydration and bootstrap scripts", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}?csp-nonce=1`);
+    expect(res.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
+    );
+
+    const html = await res.text();
+
+    expect(html).toContain(
+      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
+    );
+    expect(html).toContain(
+      `<script nonce="vinext-test-nonce">self.__VINEXT_RSC_NAV__={"pathname":"${ROUTE}","searchParams":[["csp-nonce","1"]]}</script>`,
+    );
+    expect(html).toContain(
+      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_CHUNKS__=self.__VINEXT_RSC_CHUNKS__||[];self.__VINEXT_RSC_CHUNKS__.push(',
+    );
+    expect(html).toContain(
+      '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_DONE__=true</script>',
+    );
+
+    const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
+    expect(scriptTags.length).toBeGreaterThan(0);
+    for (const tag of scriptTags) {
+      expect(tag).toContain('nonce="vinext-test-nonce"');
+    }
+  });
 });
 
 // ── Dynamic route: "use client" page with useParams() ─────────────────────

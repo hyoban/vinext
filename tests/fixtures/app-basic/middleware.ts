@@ -153,6 +153,15 @@ export function middleware(request: NextRequest, event: NextFetchEvent) {
   const r = NextResponse.next({
     request: { headers: requestHeaders },
   });
+  if (
+    pathname.startsWith("/use-client-page-pathname") &&
+    request.nextUrl.searchParams.has("csp-nonce")
+  ) {
+    r.headers.set(
+      "content-security-policy",
+      "script-src 'nonce-vinext-test-nonce' 'strict-dynamic';",
+    );
+  }
   r.headers.set("x-mw-pathname", pathname);
   r.headers.set("x-mw-ran", "true");
   if (sessionToken) {
@@ -175,6 +184,7 @@ export const config = {
     "/headers/override-from-middleware",
     "/header-override-delete",
     "/pages-header-override-delete",
+    "/use-client-page-pathname/:path*",
     "/",
     "/mw-gated-before",
     "/mw-gated-fallback",
