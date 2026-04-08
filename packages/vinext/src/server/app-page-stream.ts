@@ -69,11 +69,14 @@ export function createAppPageFontData(options: CreateAppPageFontDataOptions): Ap
 export async function renderAppPageHtmlStream(
   options: RenderAppPageHtmlStreamOptions,
 ): Promise<ReadableStream<Uint8Array>> {
+  const ssrOptions =
+    options.scriptNonce === undefined ? undefined : { scriptNonce: options.scriptNonce };
+
   return options.ssrHandler.handleSsr(
     options.rscStream,
     options.navigationContext,
     options.fontData,
-    { scriptNonce: options.scriptNonce },
+    ssrOptions,
   );
 }
 

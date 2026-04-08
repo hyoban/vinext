@@ -298,4 +298,23 @@ describe("app page render lifecycle", () => {
       ["_N_T_/posts/post"],
     );
   });
+
+  it("passes the resolved script nonce through to the SSR handler", async () => {
+    const common = createCommonOptions();
+    const handleSsr = vi.fn(async () => createStream(["<html>nonce</html>"]));
+
+    const response = await renderAppPageLifecycle({
+      ...common.options,
+      loadSsrHandler: vi.fn(async () => ({ handleSsr })),
+      scriptNonce: "vinext-test-nonce",
+    });
+
+    await expect(response.text()).resolves.toBe("<html>nonce</html>");
+    expect(handleSsr).toHaveBeenCalledWith(
+      expect.any(ReadableStream),
+      { pathname: "/posts/post" },
+      { links: [], preloads: [], styles: [] },
+      { scriptNonce: "vinext-test-nonce" },
+    );
+  });
 });

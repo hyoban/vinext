@@ -3979,8 +3979,12 @@ describe("generateRscEntry ISR code generation", () => {
     const code = generateRscEntry("/tmp/test/app", minimalRoutes);
     expect(code).toContain("renderAppPageErrorBoundary as __renderAppPageErrorBoundary");
     expect(code).toContain("renderAppPageHttpAccessFallback as __renderAppPageHttpAccessFallback");
+    expect(code).toContain("getScriptNonceFromHeaderSources as __getScriptNonceFromHeaderSources");
     expect(code).toContain("return __renderAppPageHttpAccessFallback({");
     expect(code).toContain("return __renderAppPageErrorBoundary({");
+    expect(code).toContain(
+      "scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers)",
+    );
   });
 
   it("generated code delegates page cache HIT handling to a typed helper", () => {
@@ -4006,6 +4010,9 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("teeAppPageRscStreamForCapture as __teeAppPageRscStreamForCapture");
     expect(code).toContain("readAppPageTextStream as __readAppPageTextStream");
     expect(code).toContain("const __revalRscCapture = __teeAppPageRscStreamForCapture(");
+    expect(code).toContain(
+      "{ scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers) }",
+    );
     expect(code).toContain("renderAppPageLifecycle as __renderAppPageLifecycle");
   });
 

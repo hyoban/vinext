@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   getScriptNonceFromHeader,
+  getScriptNonceFromHeaderSources,
   getScriptNonceFromHeaders,
 } from "../packages/vinext/src/server/csp.js";
 
@@ -29,6 +30,32 @@ describe("CSP nonce helpers", () => {
     });
 
     expect(getScriptNonceFromHeaders(headers)).toBe("test-nonce");
+  });
+
+  it("prefers earlier header sources so response CSP wins over request CSP", () => {
+    const middlewareHeaders = new Headers({
+      "content-security-policy": "script-src 'nonce-response-nonce' 'strict-dynamic';",
+    });
+    const requestHeaders = new Headers({
+      "content-security-policy": "script-src 'nonce-request-nonce' 'strict-dynamic';",
+    });
+
+    expect(getScriptNonceFromHeaderSources(middlewareHeaders, requestHeaders)).toBe(
+      "response-nonce",
+    );
+  });
+
+  it("falls back to later header sources when earlier ones do not contain a nonce", () => {
+    const middlewareHeaders = new Headers({
+      "content-security-policy": "script-src 'self' 'strict-dynamic';",
+    });
+    const requestHeaders = new Headers({
+      "content-security-policy-report-only": "script-src 'nonce-request-nonce' 'strict-dynamic';",
+    });
+
+    expect(getScriptNonceFromHeaderSources(middlewareHeaders, requestHeaders)).toBe(
+      "request-nonce",
+    );
   });
 
   it("throws on HTML-escape characters using Next.js-compatible messaging", () => {

@@ -29,7 +29,6 @@ import {
   shouldRerenderAppPageWithGlobalError,
   type AppPageSsrHandler,
 } from "./app-page-stream.js";
-import { getScriptNonceFromHeaders } from "./csp.js";
 
 type AppPageBoundaryOnError = (
   error: unknown,
@@ -91,6 +90,7 @@ export type RenderAppPageLifecycleOptions = {
   routeHasLocalBoundary: boolean;
   routePattern: string;
   runWithSuppressedHookWarning<T>(probe: () => Promise<T>): Promise<T>;
+  scriptNonce?: string;
   waitUntil?: (promise: Promise<void>) => void;
   element: ReactNode;
 };
@@ -208,7 +208,6 @@ export async function renderAppPageLifecycle(
     getStyles: options.getFontStyles,
   });
   const fontLinkHeader = buildAppPageFontLinkHeader(fontData.preloads);
-  const scriptNonce = getScriptNonceFromHeaders(options.middlewareContext.headers);
   let renderEnd: number | undefined;
 
   const htmlRender = await renderAppPageHtmlStreamWithRecovery({
@@ -226,7 +225,7 @@ export async function renderAppPageLifecycle(
         fontData,
         navigationContext: options.getNavigationContext(),
         rscStream: rscForResponse,
-        scriptNonce,
+        scriptNonce: options.scriptNonce,
         ssrHandler,
       });
     },

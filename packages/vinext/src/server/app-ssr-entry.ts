@@ -110,7 +110,7 @@ function renderFontHtml(fontData?: FontData, nonce?: string): string {
   }
 
   if (fontData.styles && fontData.styles.length > 0) {
-    fontHTML += `<style data-vinext-fonts>${fontData.styles.join("\n")}</style>\n`;
+    fontHTML += `<style data-vinext-fonts${nonceAttr}>${fontData.styles.join("\n")}</style>\n`;
   }
 
   return fontHTML;

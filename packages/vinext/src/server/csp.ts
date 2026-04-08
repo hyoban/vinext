@@ -41,3 +41,16 @@ export function getScriptNonceFromHeaders(headers: Headers | null | undefined): 
 
   return getScriptNonceFromHeader(csp);
 }
+
+export function getScriptNonceFromHeaderSources(
+  ...headersList: readonly (Headers | null | undefined)[]
+): string | undefined {
+  for (const headers of headersList) {
+    const nonce = getScriptNonceFromHeaders(headers);
+    if (nonce) {
+      return nonce;
+    }
+  }
+
+  return undefined;
+}

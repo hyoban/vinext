@@ -72,6 +72,7 @@ type AppPageBoundaryRenderCommonOptions<TModule extends AppPageModule = AppPageM
     params: AppPageParams,
   ) => string[];
   rootLayouts: readonly (TModule | null | undefined)[];
+  scriptNonce?: string;
 };
 
 export type RenderAppPageHttpAccessFallbackOptions<TModule extends AppPageModule = AppPageModule> =
@@ -223,6 +224,7 @@ async function renderAppPageBoundaryElementResponse<TModule extends AppPageModul
         fontLinkHeader: options.buildFontLinkHeader(fontData.preloads),
         navigationContext: options.getNavigationContext(),
         rscStream,
+        scriptNonce: options.scriptNonce,
         ssrHandler,
         status: responseStatus,
       });

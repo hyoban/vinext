@@ -85,6 +85,17 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     expect(sp.get("q")).toBe("test");
   });
 
+  it("does not add nonce attributes when CSP does not provide one", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}`);
+    const html = await res.text();
+
+    const scriptTags = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
+    expect(scriptTags.length).toBeGreaterThan(0);
+    for (const tag of scriptTags) {
+      expect(tag).not.toContain(" nonce=");
+    }
+  });
+
   // Ported from Next.js: test/e2e/app-dir/app/index.test.ts
   // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/app/index.test.ts
   it("adds CSP nonce to inline hydration and bootstrap scripts", async () => {
@@ -146,6 +157,33 @@ describe('"use client" page component: usePathname() SSR (issue #688)', () => {
     const html = await res.text();
     expect(html).toContain(
       '<script nonce="vinext-test-nonce">self.__VINEXT_RSC_PARAMS__={}</script>',
+    );
+  });
+
+  // Ported from Next.js: test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
+  // https://github.com/vercel/next.js/blob/canary/test/production/app-dir/subresource-integrity/subresource-integrity.test.ts
+  it("reads nonce from the incoming Content-Security-Policy request header", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}`, {
+      headers: {
+        "content-security-policy": "script-src 'nonce-request-header' 'strict-dynamic';",
+      },
+    });
+    const html = await res.text();
+
+    expect(html).toContain('<script nonce="request-header">self.__VINEXT_RSC_PARAMS__={}</script>');
+  });
+
+  it("reads nonce from the incoming Content-Security-Policy-Report-Only request header", async () => {
+    const res = await fetch(`${_baseUrl}${ROUTE}`, {
+      headers: {
+        "content-security-policy-report-only":
+          "script-src 'nonce-request-report-only' 'strict-dynamic';",
+      },
+    });
+    const html = await res.text();
+
+    expect(html).toContain(
+      '<script nonce="request-report-only">self.__VINEXT_RSC_PARAMS__={}</script>',
     );
   });
 });
