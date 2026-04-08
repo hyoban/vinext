@@ -525,12 +525,18 @@ export function createSSRHandler(
         // across requests after the font modules are first loaded).
         const scriptNonce = getScriptNonceFromHeaders(
           new Headers(
-            Object.entries(req.headers).flatMap(([key, value]) => {
+            Object.entries(req.headers).reduce<[string, string][]>((entries, [key, value]) => {
               if (Array.isArray(value)) {
-                return value.map((entry) => [key, entry] as const);
+                for (const entry of value) {
+                  entries.push([key, entry]);
+                }
+                return entries;
               }
-              return value === undefined ? [] : ([[key, String(value)]] as const);
-            }),
+              if (value !== undefined) {
+                entries.push([key, String(value)]);
+              }
+              return entries;
+            }, []),
           ),
         );
         let earlyFontLinkHeader = "";

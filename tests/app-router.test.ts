@@ -4000,6 +4000,9 @@ describe("generateRscEntry ISR code generation", () => {
     const code = generateRscEntry("/tmp/test/app", minimalRoutes);
     expect(code).toContain("renderAppPageErrorBoundary as __renderAppPageErrorBoundary");
     expect(code).toContain("renderAppPageHttpAccessFallback as __renderAppPageHttpAccessFallback");
+    expect(code).toContain(
+      "const _scriptNonce = __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers);",
+    );
     expect(code).toContain("return __renderAppPageHttpAccessFallback({");
     expect(code).toContain("return __renderAppPageErrorBoundary({");
   });

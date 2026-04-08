@@ -1503,10 +1503,11 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     applyMiddlewareRequestHeaders(_mwCtx.headers);
     processMiddlewareHeaders(_mwCtx.headers);
   }
-  const _scriptNonce = __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers);
   `
       : ""
   }
+
+  const _scriptNonce = __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers);
 
   // Build post-middleware request context for afterFiles/fallback rewrites.
   // These run after middleware in the App Router execution order and should
