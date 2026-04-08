@@ -522,6 +522,16 @@ export function createSSRHandler(
         // Collect font preloads early so ISR cached responses can include
         // the Link header (font preloads are module-level state that persists
         // across requests after the font modules are first loaded).
+        const scriptNonce = getScriptNonceFromHeaders(
+          new Headers(
+            Object.entries(req.headers).flatMap(([key, value]) => {
+              if (Array.isArray(value)) {
+                return value.map((entry) => [key, entry] as const);
+              }
+              return value === undefined ? [] : ([[key, String(value)]] as const);
+            }),
+          ),
+        );
         let earlyFontLinkHeader = "";
         try {
           const earlyPreloads: Array<{ href: string; type: string }> = [];
@@ -553,7 +563,7 @@ export function createSSRHandler(
           );
           const cached = await isrGet(cacheKey);
 
-          if (cached && !cached.isStale && cached.value.value?.kind === "PAGES") {
+          if (cached && !cached.isStale && cached.value.value?.kind === "PAGES" && !scriptNonce) {
             // Fresh cache hit — serve directly
             const cachedPage = cached.value.value as CachedPagesValue;
             const cachedHtml = cachedPage.html;
@@ -570,7 +580,7 @@ export function createSSRHandler(
             return;
           }
 
-          if (cached && cached.isStale && cached.value.value?.kind === "PAGES") {
+          if (cached && cached.isStale && cached.value.value?.kind === "PAGES" && !scriptNonce) {
             // Stale hit — serve stale immediately, trigger background regen
             const cachedPage = cached.value.value as CachedPagesValue;
             const cachedHtml = cachedPage.html;
@@ -800,16 +810,6 @@ export function createSSRHandler(
         // Collect any <Head> tags that were rendered during data fetching
         // (shell head tags — Suspense children's head tags arrive late,
         // matching Next.js behavior)
-        const scriptNonce = getScriptNonceFromHeaders(
-          new Headers(
-            Object.entries(req.headers).flatMap(([key, value]) => {
-              if (Array.isArray(value)) {
-                return value.map((entry) => [key, entry] as const);
-              }
-              return value === undefined ? [] : ([[key, String(value)]] as const);
-            }),
-          ),
-        );
         const nonceAttr = createNonceAttribute(scriptNonce);
 
         // Collect SSR font links (Google Fonts <link> tags) and font class styles

@@ -692,6 +692,7 @@ async function _renderPage(request, url, manifest) {
 	      },
 	      safeJsonStringify,
 	      sanitizeDestination: sanitizeDestinationLocal,
+	      scriptNonce,
 	      triggerBackgroundRegeneration,
 	    });
 	    if (pageDataResult.kind === "response") {

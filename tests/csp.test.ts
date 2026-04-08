@@ -46,30 +46,28 @@ describe("CSP nonce helpers", () => {
     expect(getScriptNonceFromHeaders(headers)).toBe("test-nonce");
   });
 
-  it("prefers earlier header sources so response CSP wins over request CSP", () => {
-    const middlewareHeaders = new Headers({
-      "content-security-policy": "script-src 'nonce-response-nonce' 'strict-dynamic';",
-    });
+  it("prefers request CSP over fallback header sources", () => {
     const requestHeaders = new Headers({
       "content-security-policy": "script-src 'nonce-request-nonce' 'strict-dynamic';",
     });
+    const middlewareHeaders = new Headers({
+      "content-security-policy": "script-src 'nonce-response-nonce' 'strict-dynamic';",
+    });
 
-    expect(getScriptNonceFromHeaderSources(middlewareHeaders, requestHeaders)).toBe(
-      "response-nonce",
+    expect(getScriptNonceFromHeaderSources(requestHeaders, middlewareHeaders)).toBe(
+      "request-nonce",
     );
   });
 
-  it("falls back to later header sources when earlier ones do not contain a nonce", () => {
-    const middlewareHeaders = new Headers({
+  it("falls back to later header sources when request headers do not contain a nonce", () => {
+    const requestHeaders = new Headers({
       "content-security-policy": "script-src 'self' 'strict-dynamic';",
     });
-    const requestHeaders = new Headers({
+    const fallbackHeaders = new Headers({
       "content-security-policy-report-only": "script-src 'nonce-request-nonce' 'strict-dynamic';",
     });
 
-    expect(getScriptNonceFromHeaderSources(middlewareHeaders, requestHeaders)).toBe(
-      "request-nonce",
-    );
+    expect(getScriptNonceFromHeaderSources(requestHeaders, fallbackHeaders)).toBe("request-nonce");
   });
 
   it("throws on HTML-escape characters using Next.js-compatible messaging", () => {

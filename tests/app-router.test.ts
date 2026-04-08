@@ -4003,9 +4003,6 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("getScriptNonceFromHeaderSources as __getScriptNonceFromHeaderSources");
     expect(code).toContain("return __renderAppPageHttpAccessFallback({");
     expect(code).toContain("return __renderAppPageErrorBoundary({");
-    expect(code).toContain(
-      "scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers)",
-    );
   });
 
   it("generated code delegates page cache HIT handling to a typed helper", () => {
@@ -4033,7 +4030,7 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("readAppPageTextStream as __readAppPageTextStream");
     expect(code).toContain("const __revalRscCapture = __teeAppPageRscStreamForCapture(");
     expect(code).not.toContain(
-      "{ scriptNonce: __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers) }",
+      "{ scriptNonce: __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers) }",
     );
     expect(code).toContain("renderAppPageLifecycle as __renderAppPageLifecycle");
   });

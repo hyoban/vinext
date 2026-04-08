@@ -270,6 +270,49 @@ describe("Pages Router integration", () => {
     expect(html).toContain('<script nonce="pages-request">window.__NEXT_DATA__ = ');
   });
 
+  it("parses request-header CSP nonce variants for Pages Router", async () => {
+    const policies = [
+      `script-src 'nonce-pages-request' 'strict-dynamic';`,
+      `default-src 'nonce-pages-request'`,
+      `script-src 'self' 'strict-dynamic';`,
+    ];
+
+    const expectations = [true, true, false];
+
+    for (const [index, policy] of policies.entries()) {
+      const res = await fetch(`${baseUrl}/dynamic-page`, {
+        headers: { "content-security-policy": policy },
+      });
+      expect(res.status).toBe(200);
+
+      const html = await res.text();
+      if (expectations[index]) {
+        expect(html).toContain('<script nonce="pages-request">window.__NEXT_DATA__ = ');
+      } else {
+        expect(html).not.toContain("nonce=");
+      }
+    }
+  });
+
+  it("does not serve cached Pages ISR HTML to CSP nonce requests", async () => {
+    const first = await fetch(`${baseUrl}/isr-test`);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-vinext-cache")).toBe("MISS");
+    const firstHtml = await first.text();
+    expect(firstHtml).not.toContain("nonce=");
+
+    const second = await fetch(`${baseUrl}/isr-test`, {
+      headers: {
+        "content-security-policy": "script-src 'nonce-pages-isr' 'strict-dynamic';",
+      },
+    });
+    expect(second.status).toBe(200);
+    expect(second.headers.get("cache-control")).toBe("no-store, must-revalidate");
+    expect(second.headers.get("x-vinext-cache")).toBeNull();
+    const secondHtml = await second.text();
+    expect(secondHtml).toContain('<script nonce="pages-isr">window.__NEXT_DATA__ = ');
+  });
+
   it("renders the SSR page with getServerSideProps data", async () => {
     const res = await fetch(`${baseUrl}/ssr`);
     expect(res.status).toBe(200);
@@ -2552,6 +2595,25 @@ describe("Production server middleware (Pages Router)", () => {
     expect(html).toContain('<script nonce="pages-prod">window.__NEXT_DATA__ = ');
     expect(html).toMatch(/<script type="module" nonce="pages-prod" src="\/[^"]+"/);
     expect(html).toMatch(/<link rel="modulepreload" nonce="pages-prod" href="\/[^"]+"/);
+  });
+
+  it("does not serve cached production Pages ISR HTML to CSP nonce requests", async () => {
+    const first = await fetch(`${prodUrl}/isr-test`);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-vinext-cache")).toBe("MISS");
+    const firstHtml = await first.text();
+    expect(firstHtml).not.toContain("nonce=");
+
+    const second = await fetch(`${prodUrl}/isr-test`, {
+      headers: {
+        "content-security-policy": "script-src 'nonce-pages-prod-isr' 'strict-dynamic';",
+      },
+    });
+    expect(second.status).toBe(200);
+    expect(second.headers.get("cache-control")).toBe("no-store, must-revalidate");
+    expect(second.headers.get("x-vinext-cache")).toBeNull();
+    const secondHtml = await second.text();
+    expect(secondHtml).toContain('<script nonce="pages-prod-isr">window.__NEXT_DATA__ = ');
   });
 
   it("rewrites /rewritten to render /ssr content", async () => {

@@ -100,6 +100,7 @@ export type ResolvePagesPageDataOptions = {
   runInFreshUnifiedContext: <T>(callback: () => Promise<T>) => Promise<T>;
   safeJsonStringify: (value: unknown) => string;
   sanitizeDestination: (destination: string) => string;
+  scriptNonce?: string;
   triggerBackgroundRegeneration: (key: string, renderFn: () => Promise<void>) => void;
   renderIsrPassToStringAsync: (element: ReactNode) => Promise<string>;
 };
@@ -299,7 +300,7 @@ export async function resolvePagesPageData(
     const cached = await options.isrGet(cacheKey);
     const cachedValue = cached?.value.value;
 
-    if (cachedValue?.kind === "PAGES" && cached && !cached.isStale) {
+    if (cachedValue?.kind === "PAGES" && cached && !cached.isStale && !options.scriptNonce) {
       return {
         kind: "response",
         response: buildPagesCacheResponse(
@@ -311,7 +312,7 @@ export async function resolvePagesPageData(
       };
     }
 
-    if (cachedValue?.kind === "PAGES" && cached && cached.isStale) {
+    if (cachedValue?.kind === "PAGES" && cached && cached.isStale && !options.scriptNonce) {
       options.triggerBackgroundRegeneration(cacheKey, async function () {
         return options.runInFreshUnifiedContext(async () => {
           const freshResult = await options.pageModule.getStaticProps?.({

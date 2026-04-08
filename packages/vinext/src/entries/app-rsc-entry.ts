@@ -1503,7 +1503,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     applyMiddlewareRequestHeaders(_mwCtx.headers);
     processMiddlewareHeaders(_mwCtx.headers);
   }
-  const _scriptNonce = __getScriptNonceFromHeaderSources(_mwCtx.headers, request.headers);
+  const _scriptNonce = __getScriptNonceFromHeaderSources(request.headers, _mwCtx.headers);
   `
       : ""
   }
