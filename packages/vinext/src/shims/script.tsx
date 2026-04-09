@@ -60,7 +60,7 @@ function getClientAutoNonce(): string | undefined {
     return undefined;
   }
 
-  return existingNonceElement.getAttribute("nonce") ?? existingNonceElement.nonce ?? undefined;
+  return existingNonceElement.nonce || existingNonceElement.getAttribute("nonce") || undefined;
 }
 
 function resolveScriptNonce(explicitNonce: unknown, contextualNonce?: string): string | undefined {

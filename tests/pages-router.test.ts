@@ -258,16 +258,15 @@ describe("Pages Router integration", () => {
     expect(html).toContain("This is the about page.");
   });
 
-  it("adds request-header CSP nonces to Pages Router next data", async () => {
-    const res = await fetch(`${baseUrl}/dynamic-page`, {
-      headers: {
-        "content-security-policy": "script-src 'nonce-pages-request' 'strict-dynamic';",
-      },
-    });
+  it("adds middleware CSP nonces to Pages Router next data", async () => {
+    const res = await fetch(`${baseUrl}/dynamic-page?mw-csp-nonce=pages-response`);
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-pages-response' 'strict-dynamic';",
+    );
 
     const html = await res.text();
-    expect(html).toContain('<script nonce="pages-request">window.__NEXT_DATA__ = ');
+    expect(html).toContain('<script nonce="pages-response">window.__NEXT_DATA__ = ');
   });
 
   it("does not serve cached Pages ISR HTML to CSP nonce requests", async () => {
@@ -277,12 +276,11 @@ describe("Pages Router integration", () => {
     const firstHtml = await first.text();
     expect(firstHtml).not.toContain("nonce=");
 
-    const second = await fetch(`${baseUrl}/isr-test`, {
-      headers: {
-        "content-security-policy": "script-src 'nonce-pages-isr' 'strict-dynamic';",
-      },
-    });
+    const second = await fetch(`${baseUrl}/isr-test?mw-csp-nonce=pages-isr`);
     expect(second.status).toBe(200);
+    expect(second.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-pages-isr' 'strict-dynamic';",
+    );
     expect(second.headers.get("cache-control")).toBe("no-store, must-revalidate");
     expect(second.headers.get("x-vinext-cache")).toBeNull();
     const secondHtml = await second.text();
@@ -2559,13 +2557,12 @@ describe("Production server middleware (Pages Router)", () => {
     expect(cookies.some((c: string) => c.includes("mw-theme=dark"))).toBe(true);
   });
 
-  it("adds request-header CSP nonces to production Pages Router scripts and preloads", async () => {
-    const res = await fetch(`${prodUrl}/dynamic-page`, {
-      headers: {
-        "content-security-policy": "script-src 'nonce-pages-prod' 'strict-dynamic';",
-      },
-    });
+  it("adds middleware CSP nonces to production Pages Router scripts and preloads", async () => {
+    const res = await fetch(`${prodUrl}/dynamic-page?mw-csp-nonce=pages-prod`);
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-pages-prod' 'strict-dynamic';",
+    );
 
     const html = await res.text();
     expect(html).toContain('<script nonce="pages-prod">window.__NEXT_DATA__ = ');
@@ -2580,12 +2577,11 @@ describe("Production server middleware (Pages Router)", () => {
     const firstHtml = await first.text();
     expect(firstHtml).not.toContain("nonce=");
 
-    const second = await fetch(`${prodUrl}/isr-test`, {
-      headers: {
-        "content-security-policy": "script-src 'nonce-pages-prod-isr' 'strict-dynamic';",
-      },
-    });
+    const second = await fetch(`${prodUrl}/isr-test?mw-csp-nonce=pages-prod-isr`);
     expect(second.status).toBe(200);
+    expect(second.headers.get("content-security-policy")).toBe(
+      "script-src 'nonce-pages-prod-isr' 'strict-dynamic';",
+    );
     expect(second.headers.get("cache-control")).toBe("no-store, must-revalidate");
     expect(second.headers.get("x-vinext-cache")).toBeNull();
     const secondHtml = await second.text();

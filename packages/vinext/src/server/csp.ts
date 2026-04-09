@@ -1,6 +1,21 @@
-import type { IncomingHttpHeaders } from "node:http";
+import type { IncomingHttpHeaders, OutgoingHttpHeaders } from "node:http";
 
 const ESCAPE_REGEX = /[&><\u2028\u2029]/;
+type NodeHeaders = IncomingHttpHeaders | OutgoingHttpHeaders;
+
+function getNodeHeaderValue(
+  headers: NodeHeaders | null | undefined,
+  key: "content-security-policy" | "content-security-policy-report-only",
+): string | undefined {
+  const value = headers?.[key];
+  if (Array.isArray(value)) {
+    return value.join(", ");
+  }
+  if (value == null) {
+    return undefined;
+  }
+  return String(value);
+}
 
 export function getScriptNonceFromHeader(cspHeaderValue: string): string | undefined {
   const directives = cspHeaderValue.split(";").map((directive) => directive.trim());
@@ -45,26 +60,30 @@ export function getScriptNonceFromHeaders(headers: Headers | null | undefined): 
 }
 
 export function getScriptNonceFromNodeHeaders(
-  headers: IncomingHttpHeaders | null | undefined,
+  headers: NodeHeaders | null | undefined,
 ): string | undefined {
-  if (!headers) {
+  const csp =
+    getNodeHeaderValue(headers, "content-security-policy") ??
+    getNodeHeaderValue(headers, "content-security-policy-report-only");
+
+  if (!csp) {
     return undefined;
   }
 
-  const webHeaders = new Headers();
-  for (const [key, value] of Object.entries(headers)) {
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        webHeaders.append(key, entry);
-      }
-      continue;
-    }
-    if (value !== undefined) {
-      webHeaders.set(key, String(value));
+  return getScriptNonceFromHeader(csp);
+}
+
+export function getScriptNonceFromNodeHeaderSources(
+  ...headersList: readonly (NodeHeaders | null | undefined)[]
+): string | undefined {
+  for (const headers of headersList) {
+    const nonce = getScriptNonceFromNodeHeaders(headers);
+    if (nonce) {
+      return nonce;
     }
   }
 
-  return getScriptNonceFromHeaders(webHeaders);
+  return undefined;
 }
 
 export function getScriptNonceFromHeaderSources(

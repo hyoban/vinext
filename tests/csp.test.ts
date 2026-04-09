@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   getScriptNonceFromHeader,
   getScriptNonceFromHeaderSources,
+  getScriptNonceFromNodeHeaderSources,
   getScriptNonceFromHeaders,
 } from "../packages/vinext/src/server/csp.js";
 
@@ -68,6 +69,19 @@ describe("CSP nonce helpers", () => {
     });
 
     expect(getScriptNonceFromHeaderSources(requestHeaders, fallbackHeaders)).toBe("request-nonce");
+  });
+
+  it("reads the first nonce across Node request/response header sources without allocating Headers", () => {
+    const requestHeaders = {
+      "content-security-policy": "script-src 'self' 'strict-dynamic';",
+    };
+    const responseHeaders = {
+      "content-security-policy-report-only": "script-src 'nonce-response-nonce' 'strict-dynamic';",
+    };
+
+    expect(getScriptNonceFromNodeHeaderSources(requestHeaders, responseHeaders)).toBe(
+      "response-nonce",
+    );
   });
 
   it("throws on HTML-escape characters using Next.js-compatible messaging", () => {

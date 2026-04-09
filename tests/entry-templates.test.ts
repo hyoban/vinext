@@ -314,7 +314,9 @@ describe("Pages Router entry templates", () => {
 
   it("server entry seeds the main Pages Router unified context with executionContext", async () => {
     const code = await getVirtualModuleCode("virtual:vinext-server-entry");
-    const renderPageIndex = code.indexOf("async function _renderPage(request, url, manifest) {");
+    const renderPageIndex = code.indexOf(
+      "async function _renderPage(request, url, manifest, middlewareHeaders) {",
+    );
     const unifiedCtxIndex = code.indexOf("const __uCtx = _createUnifiedCtx({", renderPageIndex);
 
     expect(renderPageIndex).toBeGreaterThan(-1);
