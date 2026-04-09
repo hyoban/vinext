@@ -3,6 +3,10 @@ import type { IncomingHttpHeaders, OutgoingHttpHeaders } from "node:http";
 const ESCAPE_REGEX = /[&><\u2028\u2029]/;
 type NodeHeaders = IncomingHttpHeaders | OutgoingHttpHeaders;
 
+function matchesDirectiveName(directive: string, name: string): boolean {
+  return directive === name || directive.startsWith(`${name} `);
+}
+
 function getNodeHeaderValue(
   headers: NodeHeaders | null | undefined,
   key: "content-security-policy" | "content-security-policy-report-only",
@@ -21,8 +25,8 @@ export function getScriptNonceFromHeader(cspHeaderValue: string): string | undef
   const directives = cspHeaderValue.split(";").map((directive) => directive.trim());
 
   const directive =
-    directives.find((value) => value.startsWith("script-src")) ??
-    directives.find((value) => value.startsWith("default-src"));
+    directives.find((value) => matchesDirectiveName(value, "script-src")) ??
+    directives.find((value) => matchesDirectiveName(value, "default-src"));
 
   if (!directive) {
     return undefined;

@@ -25,6 +25,22 @@ describe("CSP nonce helpers", () => {
     ).toBe("script");
   });
 
+  it("does not match script-src-* directives when resolving the script nonce", () => {
+    expect(
+      getScriptNonceFromHeader(
+        "script-src-elem 'nonce-element'; script-src-attr 'nonce-attr'; script-src 'nonce-script'",
+      ),
+    ).toBe("script");
+  });
+
+  it("does not match default-src-* directives when falling back to default-src", () => {
+    expect(
+      getScriptNonceFromHeader(
+        "default-src-elem 'nonce-element'; default-src-attr 'nonce-attr'; default-src 'nonce-default'",
+      ),
+    ).toBe("default");
+  });
+
   it("parses the first matching nonce across extra whitespace and additional nonces", () => {
     expect(
       getScriptNonceFromHeader(
