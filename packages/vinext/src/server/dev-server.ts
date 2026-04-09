@@ -523,7 +523,8 @@ export function createSSRHandler(
         // Collect font preloads early so ISR cached responses can include
         // the Link header (font preloads are module-level state that persists
         // across requests after the font modules are first loaded).
-        const scriptNonce = getScriptNonceFromNodeHeaderSources(req.headers, res.getHeaders());
+        const responseHeaders = typeof res.getHeaders === "function" ? res.getHeaders() : undefined;
+        const scriptNonce = getScriptNonceFromNodeHeaderSources(req.headers, responseHeaders);
         let earlyFontLinkHeader = "";
         try {
           const earlyPreloads: Array<{ href: string; type: string }> = [];
