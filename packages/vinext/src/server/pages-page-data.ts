@@ -182,6 +182,9 @@ function rewritePagesCachedHtml(
   const bodyMarker = '<div id="__next">';
   const bodyStart = cachedHtml.indexOf(bodyMarker);
   const contentStart = bodyStart >= 0 ? bodyStart + bodyMarker.length : -1;
+  // This intentionally looks for the bare inline __NEXT_DATA__ marker.
+  // Pages responses with scriptNonce are excluded from ISR writes, so cached
+  // HTML should never contain nonce-prefixed __NEXT_DATA__ scripts here.
   const nextDataMarker = "<script>window.__NEXT_DATA__";
   const nextDataStart = cachedHtml.indexOf(nextDataMarker);
 

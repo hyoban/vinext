@@ -263,6 +263,8 @@ export async function renderPagesPageResponse(
   const compositeStream = await buildPagesCompositeStream(bodyStream, shellPrefix, shellSuffix);
 
   if (
+    // Keep nonce-bearing pages out of ISR writes: rewritePagesCachedHtml()
+    // later matches the cached __NEXT_DATA__ block via a bare <script> marker.
     !options.scriptNonce &&
     options.isrRevalidateSeconds !== null &&
     options.isrRevalidateSeconds > 0
