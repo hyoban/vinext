@@ -16,7 +16,7 @@ import {
   createTemporaryReferenceSet,
   encodeReply,
   setServerCallback,
-} from "@vitejs/plugin-rsc/browser";
+} from "@vitejs/plugin-rsc/react/browser";
 import { hydrateRoot } from "react-dom/client";
 import "../client/instrumentation-client.js";
 import { notifyAppRouterTransitionStart } from "../client/instrumentation-client-state.js";
@@ -46,6 +46,10 @@ import {
   createProgressiveRscStream,
   getVinextBrowserGlobal,
 } from "./app-browser-stream.js";
+import {
+  installVinextBrowserClientLoader,
+  prewarmClientReferencesFromSnapshot,
+} from "./app-browser-client-loader.js";
 
 type SearchParamInput = ConstructorParameters<typeof URLSearchParams>[0];
 
@@ -488,11 +492,15 @@ async function readInitialRscStream(): Promise<ReadableStream<Uint8Array>> {
 
   restoreHydrationNavigationContext(window.location.pathname, window.location.search, params);
 
-  if (!rscResponse.body) {
+  const responseSnapshot = await snapshotRscResponse(rscResponse);
+  await prewarmClientReferencesFromSnapshot(responseSnapshot);
+
+  const restoredResponse = restoreRscResponse(responseSnapshot, false);
+  if (!restoredResponse.body) {
     throw new Error("[vinext] Initial RSC response had no body");
   }
 
-  return rscResponse.body;
+  return restoredResponse.body;
 }
 
 function registerServerActionCallback(): void {
@@ -534,8 +542,10 @@ function registerServerActionCallback(): void {
 
     clearClientNavigationCaches();
 
+    const responseSnapshot = await snapshotRscResponse(fetchResponse);
+    await prewarmClientReferencesFromSnapshot(responseSnapshot);
     const result = await createFromFetch<ServerActionResult | ReactNode>(
-      Promise.resolve(fetchResponse),
+      Promise.resolve(restoreRscResponse(responseSnapshot)),
       { temporaryReferences },
     );
 
@@ -573,6 +583,7 @@ function registerServerActionCallback(): void {
 }
 
 async function main(): Promise<void> {
+  installVinextBrowserClientLoader();
   registerServerActionCallback();
 
   const rscStream = await readInitialRscStream();
@@ -642,6 +653,7 @@ async function main(): Promise<void> {
         // wrapping only) — no stale-navigation recheck needed between here and the
         // next await.
         const cachedNavigationSnapshot = createClientNavigationRenderSnapshot(href, cachedParams);
+        await prewarmClientReferencesFromSnapshot(cachedRoute.response);
         const cachedPayload = await createFromFetch<ReactNode>(
           Promise.resolve(restoreRscResponse(cachedRoute.response)),
         );
@@ -726,6 +738,10 @@ async function main(): Promise<void> {
 
       if (navId !== activeNavigationId) return;
 
+      await prewarmClientReferencesFromSnapshot(responseSnapshot);
+
+      if (navId !== activeNavigationId) return;
+
       const rscPayload = await createFromFetch<ReactNode>(
         Promise.resolve(restoreRscResponse(responseSnapshot)),
       );
@@ -801,8 +817,12 @@ async function main(): Promise<void> {
     import.meta.hot.on("rsc:update", async () => {
       try {
         clearClientNavigationCaches();
+        const responseSnapshot = await snapshotRscResponse(
+          await fetch(toRscUrl(window.location.pathname + window.location.search)),
+        );
+        await prewarmClientReferencesFromSnapshot(responseSnapshot);
         const rscPayload = await createFromFetch<ReactNode>(
-          fetch(toRscUrl(window.location.pathname + window.location.search)),
+          Promise.resolve(restoreRscResponse(responseSnapshot)),
         );
         // HMR updates skip renderNavigationPayload — no snapshot activated.
         updateBrowserTree(
