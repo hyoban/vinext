@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   load-repos:
+    if: github.event.repository.fork == false
     runs-on: ubuntu-latest
     outputs:
       repos: ${{ steps.read.outputs.repos }}
@@ -23,12 +24,13 @@ jobs:
         run: echo "repos=$(jq -c . .github/repos.json)" >> "$GITHUB_OUTPUT"
 
   test:
+    if: github.event.repository.fork == false
     name: "${{ matrix.repo.name }}"
     needs: load-repos
     strategy:
       fail-fast: false
       matrix:
-        repo: ${{ fromJson(needs.load-repos.outputs.repos) }}
+        repo: ${{ fromJson(needs.load-repos.outputs.repos || '[]') }}
     uses: ./.github/workflows/ecosystem-run.yml
     with:
       repo_url: ${{ matrix.repo.url }}
