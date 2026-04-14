@@ -36,6 +36,8 @@ export type InterceptingRoute = {
 };
 
 export type ParallelSlot = {
+  /** Stable slot identity (name + owning directory), used for route serialization keys. */
+  key: string;
   /** Slot name (e.g. "team" from @team) */
   name: string;
   /** Absolute path to the @slot directory that owns this slot. Internal routing metadata. */
@@ -77,8 +79,8 @@ export type AppRoute = {
   routePath: string | null;
   /** Ordered list of layout files from root to leaf */
   layouts: string[];
-  /** Template files aligned with layouts array (null where no template exists at that level) */
-  templates: (string | null)[];
+  /** Ordered list of all discovered template files from root to leaf (not necessarily aligned 1:1 with layouts) */
+  templates: string[];
   /** Parallel route slots (from @slot directories at the route's directory level) */
   parallelSlots: ParallelSlot[];
   /** Loading component path */
@@ -112,6 +114,8 @@ export type AppRoute = {
    * Used at render time to compute the child segments for useSelectedLayoutSegments().
    */
   routeSegments: string[];
+  /** Tree position (directory depth from app/ root) for each template. */
+  templateTreePositions?: number[];
   /**
    * Tree position (directory depth from app/ root) for each layout.
    * Used to slice routeSegments and determine which segments are below each layout.
@@ -181,9 +185,6 @@ export async function appRouter(
   routes.push(...slotSubRoutes);
 
   validateRoutePatterns(routes.map((route) => route.pattern));
-  // Deduplicate intercept target patterns: child routes inherit parent slots
-  // (including their intercepting routes), so the same target pattern can appear
-  // on both the parent and child route. Collect unique patterns only.
   const interceptTargetPatterns = [
     ...new Set(
       routes.flatMap((route) =>
@@ -226,15 +227,13 @@ function discoverSlotSubRoutes(
   // Updated as new synthetic routes are pushed so that later parents can see earlier synthetic entries.
   const routesByPattern = new Map<string, AppRoute>(routes.map((r) => [r.pattern, r]));
 
-  const slotKey = (slotName: string, ownerDir: string): string => `${slotName}\u0000${ownerDir}`;
-
   const applySlotSubPages = (
     route: AppRoute,
     slotPages: Map<string, string>,
     rawSegments: string[],
   ): void => {
     route.parallelSlots = route.parallelSlots.map((slot) => {
-      const subPage = slotPages.get(slotKey(slot.name, slot.ownerDir));
+      const subPage = slotPages.get(slot.key);
       if (subPage !== undefined) {
         return { ...slot, pagePath: subPage, routeSegments: rawSegments };
       }
@@ -258,17 +257,18 @@ function discoverSlotSubRoutes(
         // that useSelectedLayoutSegments() sees the correct segment list at runtime.
         rawSegments: string[];
         // Pre-computed URL parts, params, isDynamic from convertSegmentsToRouteParts.
-        converted: {
-          urlSegments: string[];
-          params: string[];
-          isDynamic: boolean;
-        };
+        converted: { urlSegments: string[]; params: string[]; isDynamic: boolean };
         slotPages: Map<string, string>;
       }
     >();
 
     for (const slot of parentRoute.parallelSlots) {
-      const slotDir = path.join(parentPageDir, `@${slot.name}`);
+      // Only scan sub-pages from slots owned by this route directory.
+      // Inherited slots with the same name live in different owner dirs.
+      if (path.dirname(slot.ownerDir) !== parentPageDir) {
+        continue;
+      }
+      const slotDir = slot.ownerDir;
       if (!fs.existsSync(slotDir)) continue;
 
       const subPages = findSlotSubPages(slotDir, matcher);
@@ -290,8 +290,7 @@ function discoverSlotSubRoutes(
           subPathMap.set(normalizedSubPath, subPathEntry);
         }
 
-        const slotId = slotKey(slot.name, slot.ownerDir);
-        const existingSlotPage = subPathEntry.slotPages.get(slotId);
+        const existingSlotPage = subPathEntry.slotPages.get(slot.key);
         if (existingSlotPage) {
           const pattern = joinRoutePattern(parentRoute.pattern, normalizedSubPath);
           throw new Error(
@@ -299,7 +298,7 @@ function discoverSlotSubRoutes(
           );
         }
 
-        subPathEntry.slotPages.set(slotId, pagePath);
+        subPathEntry.slotPages.set(slot.key, pagePath);
       }
     }
 
@@ -333,7 +332,7 @@ function discoverSlotSubRoutes(
       // Build parallel slots for this sub-route: matching slots get the sub-page,
       // non-matching slots get null pagePath (rendering falls back to defaultPath)
       const subSlots: ParallelSlot[] = parentRoute.parallelSlots.map((slot) => {
-        const subPage = slotPages.get(slotKey(slot.name, slot.ownerDir));
+        const subPage = slotPages.get(slot.key);
         return {
           ...slot,
           pagePath: subPage || null,
@@ -356,6 +355,7 @@ function discoverSlotSubRoutes(
         forbiddenPath: parentRoute.forbiddenPath,
         unauthorizedPath: parentRoute.unauthorizedPath,
         routeSegments: [...parentRoute.routeSegments, ...rawSegments],
+        templateTreePositions: parentRoute.templateTreePositions,
         layoutTreePositions: parentRoute.layoutTreePositions,
         isDynamic: parentRoute.isDynamic || subIsDynamic,
         params: [...parentRoute.params, ...subParams],
@@ -431,9 +431,10 @@ function fileToAppRoute(
 
   const pattern = "/" + urlSegments.join("/");
 
-  // Discover layouts and layout-aligned templates from root to leaf
+  // Discover layouts and templates from root to leaf
   const layouts = discoverLayouts(segments, appDir, matcher);
-  const templates = discoverLayoutAlignedTemplates(segments, appDir, matcher);
+  const templates = discoverTemplates(segments, appDir, matcher);
+  const templateTreePositions = computeLayoutTreePositions(appDir, templates);
 
   // Compute the tree position (directory depth) for each layout.
   const layoutTreePositions = computeLayoutTreePositions(appDir, layouts);
@@ -478,6 +479,7 @@ function fileToAppRoute(
     forbiddenPath,
     unauthorizedPath,
     routeSegments: segments,
+    templateTreePositions,
     layoutTreePositions,
     isDynamic,
     params,
@@ -522,37 +524,27 @@ function discoverLayouts(segments: string[], appDir: string, matcher: ValidFileM
 }
 
 /**
- * Discover template files aligned with the layouts array.
- * Walks the same directory levels as discoverLayouts and, for each level
- * that contributes a layout entry, checks whether template.tsx also exists.
- * Returns an array of the same length as discoverLayouts() would return,
- * with the template path (or null) at each corresponding layout level.
- *
- * This enables interleaving templates with their corresponding layouts,
- * matching Next.js behavior where each segment's hierarchy is
- * Layout > Template > ErrorBoundary > children.
+ * Discover all template files from root to the given directory.
+ * Each level of the directory tree may have a template.tsx.
+ * Templates are like layouts but re-mount on navigation.
  */
-function discoverLayoutAlignedTemplates(
+function discoverTemplates(
   segments: string[],
   appDir: string,
   matcher: ValidFileMatcher,
-): (string | null)[] {
-  const templates: (string | null)[] = [];
+): string[] {
+  const templates: string[] = [];
 
-  // Root level (only if root has a layout — matching discoverLayouts logic)
-  const rootLayout = findFile(appDir, "layout", matcher);
-  if (rootLayout) {
-    templates.push(findFile(appDir, "template", matcher));
-  }
+  // Check root template
+  const rootTemplate = findFile(appDir, "template", matcher);
+  if (rootTemplate) templates.push(rootTemplate);
 
   // Check each directory level
   let currentDir = appDir;
   for (const segment of segments) {
     currentDir = path.join(currentDir, segment);
-    const layout = findFile(currentDir, "layout", matcher);
-    if (layout) {
-      templates.push(findFile(currentDir, "template", matcher));
-    }
+    const template = findFile(currentDir, "template", matcher);
+    if (template) templates.push(template);
   }
 
   return templates;
@@ -687,7 +679,7 @@ function discoverInheritedParallelSlots(
       if (isOwnDir) {
         // At the route's own directory: use page.tsx (normal behavior)
         slot.layoutIndex = lvlLayoutIdx;
-        slotMap.set(slot.name, slot);
+        slotMap.set(slot.key, slot);
       } else {
         // At an ancestor directory: use default.tsx as the page, not page.tsx
         // (the slot's page.tsx is for the parent route, not this child route)
@@ -695,12 +687,10 @@ function discoverInheritedParallelSlots(
           ...slot,
           pagePath: null, // Don't use ancestor's page.tsx
           layoutIndex: lvlLayoutIdx,
-          routeSegments: null, // Inherited slot shows default.tsx, not an active page
+          routeSegments: null,
           // defaultPath, loadingPath, errorPath, interceptingRoutes remain
         };
-        // Iteration goes root-to-leaf, so later (closer) ancestors overwrite
-        // earlier (farther) ones — the closest ancestor's slot wins.
-        slotMap.set(slot.name, inheritedSlot);
+        slotMap.set(slot.key, inheritedSlot);
       }
     }
   }
@@ -736,6 +726,7 @@ function discoverParallelSlots(
     if (!pagePath && !defaultPath && interceptingRoutes.length === 0) continue;
 
     slots.push({
+      key: `${slotName}@${path.relative(appDir, slotDir).replace(/\\/g, "/")}`,
       name: slotName,
       ownerDir: slotDir,
       pagePath,
@@ -745,7 +736,7 @@ function discoverParallelSlots(
       errorPath: findFile(slotDir, "error", matcher),
       interceptingRoutes,
       layoutIndex: -1, // Will be set by discoverInheritedParallelSlots
-      routeSegments: pagePath ? [] : null, // Root page = [], no page = null (default fallback)
+      routeSegments: pagePath ? [] : null,
     });
   }
 

@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 0 # Need full history for commit info
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: ./.github/actions/setup
 
       - name: Build vinext plugin
         run: vp run build

@@ -32,8 +32,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+      - uses: ./.github/actions/setup
 
       - name: Fetch recent Next.js canary commits
         id: commits

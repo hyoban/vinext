@@ -46,7 +46,7 @@ jobs:
             wrangler_config: dist/server/wrangler.json
     steps:
       - uses: actions/checkout@v6
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: ./.github/actions/setup
 
       - name: Build vinext plugin
         run: vp run build

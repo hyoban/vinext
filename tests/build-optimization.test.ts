@@ -9,15 +9,20 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
+import { augmentSsrManifestFromBundle as _augmentSsrManifestFromBundle } from "../packages/vinext/src/build/ssr-manifest.js";
+import { stripServerExports as _stripServerExports } from "../packages/vinext/src/plugins/strip-server-exports.js";
 import {
-  clientManualChunks,
+  createClientManualChunks,
   clientTreeshakeConfig,
   getClientTreeshakeConfigForVite,
-  computeLazyChunks,
-  _augmentSsrManifestFromBundle,
-  _stripServerExports,
-  _asyncHooksStubPlugin,
-} from "../packages/vinext/src/index.js";
+} from "../packages/vinext/src/build/client-build-config.js";
+import { computeLazyChunks } from "../packages/vinext/src/utils/lazy-chunks.js";
+import { asyncHooksStubPlugin as _asyncHooksStubPlugin } from "../packages/vinext/src/plugins/async-hooks-stub.js";
+
+// Create a clientManualChunks instance with a test shims directory.
+// The exact path doesn't matter for the node_modules-focused tests;
+// shims-chunk tests would need a real path.
+const clientManualChunks = createClientManualChunks("/vinext/shims/");
 
 // The vinext config hook mutates process.env.NODE_ENV as a side effect (matching
 // Next.js behavior). Save/restore globally so tests that call config() don't

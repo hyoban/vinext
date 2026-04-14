@@ -24,6 +24,14 @@ import {
   renderAppPageHtmlResponse,
   type AppPageSsrHandler,
 } from "./app-page-stream.js";
+import {
+  APP_INTERCEPTION_CONTEXT_KEY,
+  APP_ROOT_LAYOUT_KEY,
+  APP_ROUTE_KEY,
+  createAppPayloadRouteId,
+  type AppElements,
+} from "./app-elements.js";
+import { createAppPageLayoutEntries } from "./app-page-route-wiring.js";
 
 // oxlint-disable-next-line @typescript-eslint/no-explicit-any
 type AppPageComponent = ComponentType<any>;
@@ -35,6 +43,12 @@ type AppPageBoundaryOnError = (
   requestInfo: unknown,
   errorContext: unknown,
 ) => unknown;
+
+type AppPageBoundaryRscPayloadOptions<TModule extends AppPageModule = AppPageModule> = {
+  element: ReactNode;
+  pathname: string;
+  route?: AppPageBoundaryRoute<TModule> | null;
+};
 
 export type AppPageBoundaryRoute<TModule extends AppPageModule = AppPageModule> = {
   error?: TModule | null;
@@ -62,7 +76,7 @@ type AppPageBoundaryRenderCommonOptions<TModule extends AppPageModule = AppPageM
   loadSsrHandler: () => Promise<AppPageSsrHandler>;
   makeThenableParams: (params: AppPageParams) => unknown;
   renderToReadableStream: (
-    element: ReactNode,
+    element: ReactNode | AppElements,
     options: { onError: AppPageBoundaryOnError },
   ) => ReadableStream<Uint8Array>;
   requestUrl: string;
@@ -201,14 +215,56 @@ function wrapRenderedBoundaryElement<TModule extends AppPageModule>(
   });
 }
 
+function resolveAppPageBoundaryRootLayoutTreePath<TModule extends AppPageModule>(
+  route: AppPageBoundaryRoute<TModule> | null | undefined,
+): string | null {
+  if (route?.layouts) {
+    const rootLayoutEntry = createAppPageLayoutEntries({
+      errors: route.errors,
+      layoutTreePositions: route.layoutTreePositions,
+      layouts: route.layouts,
+      notFounds: null,
+      routeSegments: route.routeSegments,
+    })[0];
+
+    if (rootLayoutEntry) {
+      return rootLayoutEntry.treePath;
+    }
+  }
+
+  // Without route tree metadata we cannot derive a canonical root layout tree path.
+  // Returning null keeps boundary payloads soft-navigation compatible.
+  return null;
+}
+
+function createAppPageBoundaryRscPayload<TModule extends AppPageModule>(
+  options: AppPageBoundaryRscPayloadOptions<TModule>,
+): AppElements {
+  const routeId = createAppPayloadRouteId(options.pathname, null);
+
+  return {
+    [APP_INTERCEPTION_CONTEXT_KEY]: null,
+    [APP_ROUTE_KEY]: routeId,
+    [APP_ROOT_LAYOUT_KEY]: resolveAppPageBoundaryRootLayoutTreePath(options.route),
+    [routeId]: options.element,
+  };
+}
+
 async function renderAppPageBoundaryElementResponse<TModule extends AppPageModule>(
   options: AppPageBoundaryRenderCommonOptions<TModule> & {
     element: ReactNode;
+    layoutModules: readonly (TModule | null | undefined)[];
+    route?: AppPageBoundaryRoute<TModule> | null;
     routePattern?: string;
     status: number;
   },
 ): Promise<Response> {
   const pathname = new URL(options.requestUrl).pathname;
+  const payload = createAppPageBoundaryRscPayload({
+    element: options.element,
+    pathname,
+    route: options.route,
+  });
 
   return renderAppPageBoundaryResponse({
     async createHtmlResponse(rscStream, responseStatus) {
@@ -232,7 +288,7 @@ async function renderAppPageBoundaryElementResponse<TModule extends AppPageModul
     createRscOnErrorHandler() {
       return options.createRscOnErrorHandler(pathname, options.routePattern ?? pathname);
     },
-    element: options.element,
+    element: payload,
     isRscRequest: options.isRscRequest,
     renderToReadableStream: options.renderToReadableStream,
     status: options.status,
@@ -289,6 +345,8 @@ export async function renderAppPageHttpAccessFallback<TModule extends AppPageMod
   return renderAppPageBoundaryElementResponse({
     ...options,
     element,
+    layoutModules,
+    route: options.route,
     routePattern: options.route?.pattern,
     status: options.statusCode,
   });
@@ -332,6 +390,8 @@ export async function renderAppPageErrorBoundary<TModule extends AppPageModule>(
   return renderAppPageBoundaryElementResponse({
     ...options,
     element,
+    layoutModules,
+    route: options.route,
     routePattern: options.route?.pattern,
     status: 200,
   });

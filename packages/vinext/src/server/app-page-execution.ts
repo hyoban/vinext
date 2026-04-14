@@ -1,3 +1,7 @@
+import type { LayoutFlags } from "./app-elements.js";
+
+export type { LayoutFlags };
+
 export type AppPageSpecialError =
   | { kind: "redirect"; location: string; statusCode: number }
   | { kind: "http-access-fallback"; statusCode: number };
@@ -19,11 +23,27 @@ export type BuildAppPageSpecialErrorResponseOptions = {
   specialError: AppPageSpecialError;
 };
 
+export type ProbeAppPageLayoutsResult = {
+  response: Response | null;
+  layoutFlags: LayoutFlags;
+};
+
+export type LayoutClassificationOptions = {
+  /** Build-time classifications from segment config or module graph, keyed by layout index. */
+  buildTimeClassifications?: ReadonlyMap<number, "static" | "dynamic"> | null;
+  /** Maps layout index to its layout ID (e.g. "layout:/blog"). */
+  getLayoutId: (layoutIndex: number) => string;
+  /** Runs a function with isolated dynamic usage tracking per layout. */
+  runWithIsolatedDynamicScope: <T>(fn: () => T) => Promise<{ result: T; dynamicDetected: boolean }>;
+};
+
 export type ProbeAppPageLayoutsOptions = {
   layoutCount: number;
   onLayoutError: (error: unknown, layoutIndex: number) => Promise<Response | null>;
   probeLayoutAt: (layoutIndex: number) => unknown;
   runWithSuppressedHookWarning<T>(probe: () => Promise<T>): Promise<T>;
+  /** When provided, enables per-layout static/dynamic classification. */
+  classification?: LayoutClassificationOptions | null;
 };
 
 export type ProbeAppPageComponentOptions = {
@@ -98,24 +118,64 @@ export async function buildAppPageSpecialErrorResponse(
 
 export async function probeAppPageLayouts(
   options: ProbeAppPageLayoutsOptions,
-): Promise<Response | null> {
-  return options.runWithSuppressedHookWarning(async () => {
+): Promise<ProbeAppPageLayoutsResult> {
+  const layoutFlags: Record<string, "s" | "d"> = {};
+  const cls = options.classification ?? null;
+
+  const response = await options.runWithSuppressedHookWarning(async () => {
     for (let layoutIndex = options.layoutCount - 1; layoutIndex >= 0; layoutIndex--) {
-      try {
-        const layoutResult = options.probeLayoutAt(layoutIndex);
-        if (isPromiseLike(layoutResult)) {
-          await layoutResult;
-        }
-      } catch (error) {
-        const response = await options.onLayoutError(error, layoutIndex);
-        if (response) {
-          return response;
-        }
+      const buildTimeResult = cls?.buildTimeClassifications?.get(layoutIndex);
+
+      if (cls && buildTimeResult) {
+        // Build-time classified (Layer 1 or Layer 2): skip dynamic isolation,
+        // but still probe for special errors (redirects, not-found).
+        layoutFlags[cls.getLayoutId(layoutIndex)] = buildTimeResult === "static" ? "s" : "d";
+        const errorResponse = await probeLayoutForErrors(options, layoutIndex);
+        if (errorResponse) return errorResponse;
+        continue;
       }
+
+      if (cls) {
+        // Layer 3: probe with isolated dynamic scope to detect per-layout
+        // dynamic API usage (headers(), cookies(), connection(), etc.)
+        try {
+          const { dynamicDetected } = await cls.runWithIsolatedDynamicScope(() =>
+            options.probeLayoutAt(layoutIndex),
+          );
+          layoutFlags[cls.getLayoutId(layoutIndex)] = dynamicDetected ? "d" : "s";
+        } catch (error) {
+          // Probe failed — conservatively treat as dynamic.
+          layoutFlags[cls.getLayoutId(layoutIndex)] = "d";
+          const errorResponse = await options.onLayoutError(error, layoutIndex);
+          if (errorResponse) return errorResponse;
+        }
+        continue;
+      }
+
+      // No classification options — original behavior
+      const errorResponse = await probeLayoutForErrors(options, layoutIndex);
+      if (errorResponse) return errorResponse;
     }
 
     return null;
   });
+
+  return { response, layoutFlags };
+}
+
+async function probeLayoutForErrors(
+  options: ProbeAppPageLayoutsOptions,
+  layoutIndex: number,
+): Promise<Response | null> {
+  try {
+    const layoutResult = options.probeLayoutAt(layoutIndex);
+    if (isPromiseLike(layoutResult)) {
+      await layoutResult;
+    }
+  } catch (error) {
+    return options.onLayoutError(error, layoutIndex);
+  }
+  return null;
 }
 
 export async function probeAppPageComponent(

@@ -5031,6 +5031,66 @@ describe("middleware request header overrides", () => {
       expect(liveCookies.getAll()).toEqual([]);
     });
   });
+
+  it("next/headers applyMiddlewareRequestHeaders invalidates headers() snapshot taken before the override", async () => {
+    // Regression: a middleware that reads `headers()` (or `cookies()`) before
+    // applying a request-header override would prime a sealed read-only
+    // snapshot built from the *pre*-override request. Discovered with
+    // @clerk/nextjs whose `clerkClient()` reads `headers()` via
+    // `buildRequestLike()` during middleware execution; before the fix, the
+    // Server Component subsequently received the stale snapshot and saw the
+    // pre-override credentials and missing middleware-injected headers.
+    const {
+      applyMiddlewareRequestHeaders,
+      cookies,
+      headers,
+      headersContextFromRequest,
+      runWithHeadersContext,
+    } = await import("../packages/vinext/src/shims/headers.js");
+
+    const request = new Request("http://localhost/test", {
+      headers: {
+        authorization: "Bearer secret",
+        cookie: "a=1; b=2",
+        "x-keep": "original",
+      },
+    });
+
+    await runWithHeadersContext(headersContextFromRequest(request), async () => {
+      // 1. Prime the sealed snapshot — this is exactly what
+      //    `clerkMiddleware()` does internally via `buildRequestLike()`.
+      const preHeaders = await headers();
+      const preCookies = await cookies();
+      expect(preHeaders.get("authorization")).toBe("Bearer secret");
+      expect(preHeaders.get("x-keep")).toBe("original");
+      expect(preCookies.getAll()).toEqual([
+        { name: "a", value: "1" },
+        { name: "b", value: "2" },
+      ]);
+
+      // 2. Apply the override — drops `authorization`/`cookie`, adds `x-added`,
+      //    and updates `x-keep`.
+      applyMiddlewareRequestHeaders(
+        new Headers({
+          "x-middleware-override-headers": "x-keep,x-added",
+          "x-middleware-request-x-keep": "updated",
+          "x-middleware-request-x-added": "1",
+        }),
+      );
+
+      // 3. A subsequent `headers()` call — for example from the Server
+      //    Component's render — must observe the override, not the snapshot
+      //    captured in step 1.
+      const postHeaders = await headers();
+      const postCookies = await cookies();
+
+      expect(postHeaders.get("authorization")).toBeNull();
+      expect(postHeaders.get("cookie")).toBeNull();
+      expect(postHeaders.get("x-keep")).toBe("updated");
+      expect(postHeaders.get("x-added")).toBe("1");
+      expect(postCookies.getAll()).toEqual([]);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -5100,32 +5160,32 @@ describe("NextResponse.redirect() status codes", () => {
 
 describe("matchConfigPattern", () => {
   it("matches exact paths", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     expect(matchConfigPattern("/about", "/about")).toEqual({});
     expect(matchConfigPattern("/", "/")).toEqual({});
     expect(matchConfigPattern("/about", "/other")).toBeNull();
   });
 
   it("matches single :param segments", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     const result = matchConfigPattern("/blog/hello-world", "/blog/:slug");
     expect(result).toEqual({ slug: "hello-world" });
   });
 
   it("matches multiple :param segments", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     const result = matchConfigPattern("/blog/2024/my-post", "/blog/:year/:slug");
     expect(result).toEqual({ year: "2024", slug: "my-post" });
   });
 
   it("rejects when segment count differs for non-wildcard patterns", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     expect(matchConfigPattern("/blog/a/b", "/blog/:slug")).toBeNull();
     expect(matchConfigPattern("/blog", "/blog/:slug")).toBeNull();
   });
 
   it("matches :path* catch-all (zero or more segments)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Zero segments
     expect(matchConfigPattern("/docs", "/docs/:path*")).toEqual({ path: "" });
     // One segment
@@ -5137,7 +5197,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("matches :path+ catch-all (one or more segments)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // One segment
     expect(matchConfigPattern("/api/users", "/api/:path+")).toEqual({ path: "users" });
     // Multiple segments
@@ -5147,7 +5207,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("matches regex group patterns", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Common Next.js pattern: /:path(\\d+) for numeric paths
     const result = matchConfigPattern("/123", "/:id(\\d+)");
     if (result) {
@@ -5158,14 +5218,14 @@ describe("matchConfigPattern", () => {
   });
 
   it("handles dots in patterns", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     expect(matchConfigPattern("/feed.xml", "/feed.xml")).toEqual({});
     // Dot should not match any character
     expect(matchConfigPattern("/feedXxml", "/feed.xml")).toBeNull();
   });
 
   it("matches :path* with literal suffix (e.g. /:path*.md)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Should match URLs ending in .md
     expect(matchConfigPattern("/article.md", "/:path*.md")).toEqual({ path: "article" });
     expect(matchConfigPattern("/news/my-article.md", "/:path*.md")).toEqual({
@@ -5182,7 +5242,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("matches :path+ with literal suffix (e.g. /:path+.json)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Should match URLs ending in .json with at least one path segment
     expect(matchConfigPattern("/data.json", "/:path+.json")).toEqual({ path: "data" });
     expect(matchConfigPattern("/api/users.json", "/:path+.json")).toEqual({ path: "api/users" });
@@ -5194,7 +5254,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("matches :path* with prefix and suffix (e.g. /docs/:path*.md)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     expect(matchConfigPattern("/docs/intro.md", "/docs/:path*.md")).toEqual({ path: "intro" });
     expect(matchConfigPattern("/docs/guide/getting-started.md", "/docs/:path*.md")).toEqual({
       path: "guide/getting-started",
@@ -5206,7 +5266,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("matches :param with literal suffix (e.g. /:slug.md)", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Should match URLs with the .md suffix and extract the param
     expect(matchConfigPattern("/hello-world.md", "/:slug.md")).toEqual({ slug: "hello-world" });
     expect(matchConfigPattern("/my-post.md", "/:slug.md")).toEqual({ slug: "my-post" });
@@ -5226,7 +5286,7 @@ describe("matchConfigPattern", () => {
   });
 
   it("still matches plain :path* catch-all (no suffix) correctly", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Ensure the fix doesn't regress existing catch-all behavior
     expect(matchConfigPattern("/docs", "/docs/:path*")).toEqual({ path: "" });
     expect(matchConfigPattern("/docs/intro", "/docs/:path*")).toEqual({ path: "intro" });
@@ -5240,7 +5300,7 @@ describe("matchConfigPattern", () => {
   // passed without checking for a segment boundary after the prefix.
   // https://github.com/cloudflare/vinext/pull/368
   it("regression: does not overmatch catch-all when pathname shares a prefix but not a segment boundary", async () => {
-    const { matchConfigPattern } = await import("../packages/vinext/src/index.js");
+    const { matchConfigPattern } = await import("../packages/vinext/src/config/config-matchers.js");
     // Core regression case: /foobar must NOT match /foo/:path*
     expect(matchConfigPattern("/foobar", "/foo/:path*")).toBeNull();
     // Similarly for :path+
@@ -6387,6 +6447,7 @@ describe("proxyExternalRequest", () => {
         "proxy-authorization": "Basic cHJveHk=",
         "x-middleware-rewrite": "/internal",
         "x-middleware-next": "1",
+        "x-vinext-prerender-secret": "build-secret-123",
         "x-custom-header": "keep-me",
         "user-agent": "vinext-test",
       },
@@ -6410,6 +6471,7 @@ describe("proxyExternalRequest", () => {
       // Internal middleware headers must be stripped
       expect(capturedHeaders!.get("x-middleware-rewrite")).toBeNull();
       expect(capturedHeaders!.get("x-middleware-next")).toBeNull();
+      expect(capturedHeaders!.get("x-vinext-prerender-secret")).toBeNull();
       // Non-sensitive headers must be preserved
       expect(capturedHeaders!.get("x-custom-header")).toBe("keep-me");
       expect(capturedHeaders!.get("user-agent")).toBe("vinext-test");
@@ -12148,5 +12210,81 @@ describe("checkHasConditions value anchoring", () => {
       ctx,
     );
     expect(result).toBe(true);
+  });
+});
+
+// ── CSRF origin wildcard matching ─────────────────────────────────────────
+// Ported from Next.js: packages/next/src/server/app-render/csrf-protection.test.ts
+// https://github.com/vercel/next.js/blob/canary/packages/next/src/server/app-render/csrf-protection.test.ts
+
+describe("isOriginAllowed", () => {
+  let isOriginAllowed: (origin: string, allowed: string[]) => boolean;
+
+  beforeEach(async () => {
+    const mod = await import("../packages/vinext/src/server/request-pipeline.js");
+    isOriginAllowed = mod.isOriginAllowed;
+  });
+
+  it("exact match", () => {
+    expect(isOriginAllowed("vercel.com", ["vercel.com"])).toBe(true);
+    expect(isOriginAllowed("www.vercel.com", ["www.vercel.com"])).toBe(true);
+  });
+
+  it("single-level wildcard matches one subdomain", () => {
+    expect(isOriginAllowed("asdf.vercel.com", ["*.vercel.com"])).toBe(true);
+  });
+
+  it("single-level wildcard does NOT match multiple subdomains", () => {
+    expect(isOriginAllowed("asdf.jkl.vercel.com", ["*.vercel.com"])).toBe(false);
+  });
+
+  it("double wildcard matches one or more subdomains", () => {
+    expect(isOriginAllowed("asdf.vercel.com", ["**.vercel.com"])).toBe(true);
+    expect(isOriginAllowed("asdf.jkl.vercel.com", ["**.vercel.com"])).toBe(true);
+  });
+
+  it("does not match different TLD", () => {
+    expect(isOriginAllowed("asdf.vercel.com", ["*.vercel.app"])).toBe(false);
+    expect(isOriginAllowed("asdf.jkl.vercel.app", ["**.vercel.com"])).toBe(false);
+  });
+
+  it("does not match unrelated domain", () => {
+    expect(isOriginAllowed("vercel.com", ["nextjs.org"])).toBe(false);
+  });
+
+  it("returns false for undefined/empty allowed list", () => {
+    expect(isOriginAllowed("vercel.com", [])).toBe(false);
+  });
+
+  it("returns false for empty string pattern", () => {
+    expect(isOriginAllowed("vercel.com", [""])).toBe(false);
+  });
+
+  it("wildcards only match below the domain level", () => {
+    expect(isOriginAllowed("vercel.com", ["*"])).toBe(false);
+    expect(isOriginAllowed("vercel.com", ["**"])).toBe(false);
+  });
+
+  it("matches case-insensitively (RFC 1035)", () => {
+    expect(isOriginAllowed("sub.VERCEL.com", ["*.vercel.com"])).toBe(true);
+    expect(isOriginAllowed("SUB.vercel.COM", ["*.vercel.com"])).toBe(true);
+    expect(isOriginAllowed("VERCEL.COM", ["vercel.com"])).toBe(true);
+    expect(isOriginAllowed("vercel.com", ["VERCEL.COM"])).toBe(true);
+  });
+
+  it("localhost patterns", () => {
+    expect(isOriginAllowed("subdomain.localhost", ["*.localhost"])).toBe(true);
+    expect(isOriginAllowed("localhost", ["*.localhost"])).toBe(false);
+    expect(isOriginAllowed("subdomain.localhost", ["**.localhost"])).toBe(true);
+    expect(isOriginAllowed("a.b.localhost", ["**.localhost"])).toBe(true);
+    expect(isOriginAllowed("localhost", ["**.localhost"])).toBe(false);
+    expect(isOriginAllowed("localhost", ["localhost"])).toBe(true);
+  });
+
+  it("does NOT match attacker-controlled suffix domains", () => {
+    // This was the original vulnerability: endsWith(".example.com") matching
+    // evil.example.com.attacker.com
+    expect(isOriginAllowed("evil.example.com.attacker.com", ["*.example.com"])).toBe(false);
+    expect(isOriginAllowed("evil.example.com.attacker.com", ["**.example.com"])).toBe(false);
   });
 });

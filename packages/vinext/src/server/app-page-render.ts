@@ -68,7 +68,7 @@ export type RenderAppPageLifecycleOptions = {
   isRscRequest: boolean;
   isrDebug?: AppPageDebugLogger;
   isrHtmlKey: (pathname: string) => string;
-  isrRscKey: (pathname: string) => string;
+  isrRscKey: (pathname: string, mountedSlotsHeader?: string | null) => string;
   isrSet: AppPageCacheSetter;
   layoutCount: number;
   loadSsrHandler: () => Promise<AppPageSsrHandler>;
@@ -84,15 +84,16 @@ export type RenderAppPageLifecycleOptions = {
   ) => Promise<Response>;
   renderPageSpecialError: (specialError: AppPageSpecialError) => Promise<Response>;
   renderToReadableStream: (
-    element: ReactNode,
+    element: ReactNode | Record<string, ReactNode>,
     options: { onError: AppPageBoundaryOnError },
   ) => ReadableStream<Uint8Array>;
   routeHasLocalBoundary: boolean;
   routePattern: string;
   runWithSuppressedHookWarning<T>(probe: () => Promise<T>): Promise<T>;
   scriptNonce?: string;
+  mountedSlotsHeader?: string | null;
   waitUntil?: (promise: Promise<void>) => void;
-  element: ReactNode;
+  element: ReactNode | Record<string, ReactNode>;
 };
 
 function buildResponseTiming(
@@ -117,7 +118,7 @@ function buildResponseTiming(
 export async function renderAppPageLifecycle(
   options: RenderAppPageLifecycleOptions,
 ): Promise<Response> {
-  const preRenderResponse = await probeAppPageBeforeRender({
+  const preRenderResult = await probeAppPageBeforeRender({
     hasLoadingBoundary: options.hasLoadingBoundary,
     layoutCount: options.layoutCount,
     probeLayoutAt(layoutIndex) {
@@ -137,8 +138,8 @@ export async function renderAppPageLifecycle(
       return options.runWithSuppressedHookWarning(probe);
     },
   });
-  if (preRenderResponse) {
-    return preRenderResponse;
+  if (preRenderResult.response) {
+    return preRenderResult.response;
   }
 
   const compileEnd = options.isProduction ? undefined : performance.now();
@@ -172,6 +173,7 @@ export async function renderAppPageLifecycle(
     });
     const rscResponse = buildAppPageRscResponse(rscForResponse, {
       middlewareContext: options.middlewareContext,
+      mountedSlotsHeader: options.mountedSlotsHeader,
       params: options.params,
       policy: rscResponsePolicy,
       timing: buildResponseTiming({
@@ -193,6 +195,7 @@ export async function renderAppPageLifecycle(
       isrDebug: options.isrDebug,
       isrRscKey: options.isrRscKey,
       isrSet: options.isrSet,
+      mountedSlotsHeader: options.mountedSlotsHeader,
       revalidateSeconds: revalidateSeconds ?? 0,
       waitUntil(promise) {
         options.waitUntil?.(promise);

@@ -31,6 +31,10 @@ import { isProxyFile } from "../server/middleware.js";
 // resolve these at code-generation time and embed them as absolute paths.
 const configMatchersPath = resolveEntryPath("../config/config-matchers.js", import.meta.url);
 const requestPipelinePath = resolveEntryPath("../server/request-pipeline.js", import.meta.url);
+const middlewareRequestHeadersPath = resolveEntryPath(
+  "../server/middleware-request-headers.js",
+  import.meta.url,
+);
 const requestContextShimPath = resolveEntryPath("../shims/request-context.js", import.meta.url);
 const normalizePathModulePath = resolveEntryPath("../server/normalize-path.js", import.meta.url);
 const appRouteHandlerRuntimePath = resolveEntryPath(
@@ -55,6 +59,7 @@ const appPageBoundaryRenderPath = resolveEntryPath(
   "../server/app-page-boundary-render.js",
   import.meta.url,
 );
+const appElementsPath = resolveEntryPath("../server/app-elements.js", import.meta.url);
 const appPageRouteWiringPath = resolveEntryPath(
   "../server/app-page-route-wiring.js",
   import.meta.url,
@@ -150,9 +155,7 @@ export function generateRscEntry(
     if (route.pagePath) getImportVar(route.pagePath);
     if (route.routePath) getImportVar(route.routePath);
     for (const layout of route.layouts) getImportVar(layout);
-    for (const tmpl of route.templates) {
-      if (tmpl) getImportVar(tmpl);
-    }
+    for (const tmpl of route.templates) getImportVar(tmpl);
     if (route.loadingPath) getImportVar(route.loadingPath);
     if (route.errorPath) getImportVar(route.errorPath);
     if (route.layoutErrorPaths)
@@ -182,7 +185,7 @@ export function generateRscEntry(
   // Build route table as serialized JS
   const routeEntries = routes.map((route) => {
     const layoutVars = route.layouts.map((l) => getImportVar(l));
-    const templateVars = route.templates.map((t) => (t ? getImportVar(t) : "null"));
+    const templateVars = route.templates.map((t) => getImportVar(t));
     const notFoundVars = (route.notFoundPaths || []).map((nf) => (nf ? getImportVar(nf) : "null"));
     const slotEntries = route.parallelSlots.map((slot) => {
       const interceptEntries = slot.interceptingRoutes.map(
@@ -193,7 +196,8 @@ export function generateRscEntry(
           params: ${JSON.stringify(ir.params)},
         }`,
       );
-      return `      ${JSON.stringify(slot.name)}: {
+      return `      ${JSON.stringify(slot.key)}: {
+        name: ${JSON.stringify(slot.name)},
         page: ${slot.pagePath ? getImportVar(slot.pagePath) : "null"},
         default: ${slot.defaultPath ? getImportVar(slot.defaultPath) : "null"},
         layout: ${slot.layoutPath ? getImportVar(slot.layoutPath) : "null"},
@@ -218,6 +222,7 @@ ${interceptEntries.join(",\n")}
     routeHandler: ${route.routePath ? getImportVar(route.routePath) : "null"},
     layouts: [${layoutVars.join(", ")}],
     routeSegments: ${JSON.stringify(route.routeSegments)},
+    templateTreePositions: ${JSON.stringify(route.templateTreePositions)},
     layoutTreePositions: ${JSON.stringify(route.layoutTreePositions)},
     templates: [${templateVars.join(", ")}],
     errors: [${layoutErrorVars.join(", ")}],
@@ -359,6 +364,7 @@ ${instrumentationPath ? `import * as _instrumentation from ${JSON.stringify(inst
 ${effectiveMetaRoutes.length > 0 ? `import { sitemapToXml, robotsToText, manifestToJson } from ${JSON.stringify(metadataRoutesPath)};` : ""}
 import { requestContextFromRequest, normalizeHost, matchRedirect, matchRewrite, matchHeaders, isExternalUrl, proxyExternalRequest, sanitizeDestination } from ${JSON.stringify(configMatchersPath)};
 import { decodePathParams as __decodePathParams } from ${JSON.stringify(normalizePathModulePath)};
+import { buildRequestHeadersFromMiddlewareResponse as __buildRequestHeadersFromMiddlewareResponse } from ${JSON.stringify(middlewareRequestHeadersPath)};
 import { validateCsrfOrigin, validateServerActionPayload, validateImageUrl, guardProtocolRelativeUrl, hasBasePath, stripBasePath, normalizeTrailingSlash, processMiddlewareHeaders } from ${JSON.stringify(requestPipelinePath)};
 import {
   isKnownDynamicAppRoute as __isKnownDynamicAppRoute,
@@ -386,7 +392,12 @@ import {
   renderAppPageHttpAccessFallback as __renderAppPageHttpAccessFallback,
 } from ${JSON.stringify(appPageBoundaryRenderPath)};
 import {
-  buildAppPageRouteElement as __buildAppPageRouteElement,
+  APP_INTERCEPTION_CONTEXT_KEY as __APP_INTERCEPTION_CONTEXT_KEY,
+  createAppPayloadRouteId as __createAppPayloadRouteId,
+} from ${JSON.stringify(appElementsPath)};
+import {
+  buildAppPageElements as __buildAppPageElements,
+  createAppPageTreePath as __createAppPageTreePath,
   resolveAppPageChildSegments as __resolveAppPageChildSegments,
 } from ${JSON.stringify(appPageRouteWiringPath)};
 import {
@@ -537,7 +548,21 @@ function __isrCacheKey(pathname, suffix) {
   return prefix + ":__hash:" + __isrFnv1a64(normalized) + ":" + suffix;
 }
 function __isrHtmlKey(pathname) { return __isrCacheKey(pathname, "html"); }
-function __isrRscKey(pathname) { return __isrCacheKey(pathname, "rsc"); }
+function __isrRscKey(pathname, mountedSlotsHeader) {
+  if (!mountedSlotsHeader) return __isrCacheKey(pathname, "rsc");
+  return __isrCacheKey(pathname, "rsc:" + __isrFnv1a64(mountedSlotsHeader));
+}
+function __normalizeMountedSlotsHeader(raw) {
+  if (!raw) return null;
+  const normalized = Array.from(
+    new Set(
+      raw
+        .split(/\\s+/)
+        .filter(Boolean),
+    ),
+  ).sort().join(" ");
+  return normalized || null;
+}
 function __isrRouteKey(pathname) { return __isrCacheKey(pathname, "route"); }
 // Verbose cache logging — opt in with NEXT_PRIVATE_DEBUG_CACHE=1.
 // Matches the env var Next.js uses for its own cache debug output so operators
@@ -875,17 +900,17 @@ function matchPattern(urlParts, patternParts) {
 }
 
 // Build a global intercepting route lookup for RSC navigation.
-// Maps target URL patterns to { sourceRouteIndex, slotName, interceptPage, params }.
+// Maps target URL patterns to { sourceRouteIndex, slotKey, interceptPage, params }.
 const interceptLookup = [];
 for (let ri = 0; ri < routes.length; ri++) {
   const r = routes[ri];
   if (!r.slots) continue;
-  for (const [slotName, slotMod] of Object.entries(r.slots)) {
+  for (const [slotKey, slotMod] of Object.entries(r.slots)) {
     if (!slotMod.intercepts) continue;
     for (const intercept of slotMod.intercepts) {
       interceptLookup.push({
         sourceRouteIndex: ri,
-        slotName,
+        slotKey,
         targetPattern: intercept.targetPattern,
         targetPatternParts: intercept.targetPattern.split("/").filter(Boolean),
         page: intercept.page,
@@ -910,10 +935,24 @@ function findIntercept(pathname) {
   return null;
 }
 
-async function buildPageElement(route, params, opts, searchParams) {
+async function buildPageElements(route, params, routePath, opts, searchParams, isRscRequest, request) {
   const PageComponent = route.page?.default;
   if (!PageComponent) {
-    return createElement("div", null, "Page has no default export");
+    const _interceptionContext = opts?.interceptionContext ?? null;
+    const _noExportRouteId = __createAppPayloadRouteId(routePath, _interceptionContext);
+    let _noExportRootLayout = null;
+    if (route.layouts?.length > 0) {
+      // Compute the root layout tree path for this error payload using the
+      // canonical helper so it stays aligned with buildAppPageElements().
+      const _tp = route.layoutTreePositions?.[0] ?? 0;
+      _noExportRootLayout = __createAppPageTreePath(route.routeSegments, _tp);
+    }
+    return {
+      [__APP_INTERCEPTION_CONTEXT_KEY]: _interceptionContext,
+      __route: _noExportRouteId,
+      __rootLayout: _noExportRootLayout,
+      [_noExportRouteId]: createElement("div", null, "Page has no default export"),
+    };
   }
 
   // Resolve metadata and viewport from layouts and page.
@@ -942,6 +981,24 @@ async function buildPageElement(route, params, opts, searchParams) {
   // route it to the nearest error.tsx boundary (or global-error.tsx).
   const layoutMods = route.layouts.filter(Boolean);
 
+  // Convert URLSearchParams → plain object for page generateMetadata() and
+  // pageProps.searchParams. Built before the layout loop so the page metadata
+  // call (below) and pageProps can reference the same object.
+  // NOTE: Layouts do NOT receive searchParams in generateMetadata() — only
+  // pages do. This matches Next.js behavior (resolve-metadata.ts:777).
+  const spObj = Object.create(null);
+  let hasSearchParams = false;
+  if (searchParams && searchParams.forEach) {
+    searchParams.forEach(function(v, k) {
+      hasSearchParams = true;
+      if (k in spObj) {
+        spObj[k] = Array.isArray(spObj[k]) ? spObj[k].concat(v) : [spObj[k], v];
+      } else {
+        spObj[k] = v;
+      }
+    });
+  }
+
   // Build the parent promise chain and kick off metadata resolution in one pass.
   // Each layout module is called exactly once. layoutMetaPromises[i] is the
   // promise for layout[i]'s own metadata result.
@@ -963,22 +1020,6 @@ async function buildPageElement(route, params, opts, searchParams) {
   }
   // Page's parent is the fully-accumulated layout metadata.
   const pageParentPromise = accumulatedMetaPromise;
-
-  // Convert URLSearchParams → plain object so we can pass it to
-  // resolveModuleMetadata (which expects Record<string, string | string[]>).
-  // This same object is reused for pageProps.searchParams below.
-  const spObj = {};
-  let hasSearchParams = false;
-  if (searchParams && searchParams.forEach) {
-    searchParams.forEach(function(v, k) {
-      hasSearchParams = true;
-      if (k in spObj) {
-        spObj[k] = Array.isArray(spObj[k]) ? spObj[k].concat(v) : [spObj[k], v];
-      } else {
-        spObj[k] = v;
-      }
-    });
-  }
 
   const [layoutMetaResults, layoutVpResults, pageMeta, pageVp] = await Promise.all([
     Promise.all(layoutMetaPromises),
@@ -1011,19 +1052,30 @@ async function buildPageElement(route, params, opts, searchParams) {
     // dynamic, and this avoids false positives from React internals.
     if (hasSearchParams) markDynamicUsage();
   }
-  return __buildAppPageRouteElement({
+  const __mountedSlotsHeader = __normalizeMountedSlotsHeader(
+    request?.headers?.get("x-vinext-mounted-slots"),
+  );
+  const mountedSlotIds = __mountedSlotsHeader
+    ? new Set(__mountedSlotsHeader.split(" "))
+    : null;
+
+  return __buildAppPageElements({
     element: createElement(PageComponent, pageProps),
     globalErrorModule: ${globalErrorVar ? globalErrorVar : "null"},
+    isRscRequest,
+    mountedSlotIds,
     makeThenableParams,
     matchedParams: params,
     resolvedMetadata,
     resolvedViewport,
+    interceptionContext: opts?.interceptionContext ?? null,
+    routePath,
     rootNotFoundModule: ${rootNotFoundVar ? rootNotFoundVar : "null"},
     route,
     slotOverrides:
-      opts && opts.interceptSlot && opts.interceptPage
+      opts && opts.interceptSlotKey && opts.interceptPage
         ? {
-            [opts.interceptSlot]: {
+            [opts.interceptSlotKey]: {
               pageModule: opts.interceptPage,
               params: opts.interceptParams || params,
             },
@@ -1188,7 +1240,7 @@ export default async function handler(request, ctx) {
     // Per-request container for middleware state. Passed into
     // _handleRequest which fills in .headers and .status;
     // avoids module-level variables that race on Workers.
-    const _mwCtx = { headers: null, status: null };
+    const _mwCtx = { headers: null, requestHeaders: null, status: null };
     const response = await _handleRequest(request, __reqCtx, _mwCtx);
     // Apply custom headers from next.config.js to non-redirect responses.
     // Skip redirects (3xx) because Response.redirect() creates immutable headers,
@@ -1360,6 +1412,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   const isRscRequest = pathname.endsWith(".rsc") || request.headers.get("accept")?.includes("text/x-component");
+  const interceptionContextHeader = request.headers.get("X-Vinext-Interception-Context")?.replaceAll("\0", "") || null;
   let cleanPathname = pathname.replace(/\\.rsc$/, "");
 
   // Middleware response headers and custom rewrite status are stored in
@@ -1500,6 +1553,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   // be merged into the outgoing HTTP response — this prefix is reserved for
   // internal routing signals and must never reach clients.
   if (_mwCtx.headers) {
+    // Preserve the pre-strip header set so route handlers can reconstruct
+    // a request object with middleware header overrides applied.
+    _mwCtx.requestHeaders = new Headers(_mwCtx.headers);
     applyMiddlewareRequestHeaders(_mwCtx.headers);
     processMiddlewareHeaders(_mwCtx.headers);
   }
@@ -1686,10 +1742,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           returnValue = { ok: true, data };
         } catch (e) {
           // Detect redirect() / permanentRedirect() called inside the action.
-          // These throw errors with digest "NEXT_REDIRECT;<type>;<url>[;<status>]".
-          // The type field is empty when redirect() was called without an explicit
-          // type argument. In Server Action context, Next.js defaults to "push" so
-          // the Back button works after form submissions.
+          // These throw errors with digest "NEXT_REDIRECT;replace;url[;status]".
           // The URL is encodeURIComponent-encoded to prevent semicolons in the URL
           // from corrupting the delimiter-based digest format.
           if (e && typeof e === "object" && "digest" in e) {
@@ -1698,7 +1751,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
               const parts = digest.split(";");
               actionRedirect = {
                 url: decodeURIComponent(parts[2]),
-                type: parts[1] || "push",          // Server Action → default "push"
+                type: parts[1] || "push",          // "push" or "replace"
                 status: parts[3] ? parseInt(parts[3], 10) : 307,
               };
               returnValue = { ok: true, data: undefined };
@@ -1735,9 +1788,6 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           "Content-Type": "text/x-component; charset=utf-8",
           "Vary": "RSC, Accept",
         });
-        // Merge middleware headers first so the framework's own redirect control
-        // headers below are always authoritative and cannot be clobbered by
-        // middleware that happens to set x-action-redirect* keys.
         __mergeMiddlewareResponseHeaders(redirectHeaders, _mwCtx.headers);
         redirectHeaders.set("x-action-redirect", actionRedirect.url);
         redirectHeaders.set("x-action-redirect-type", actionRedirect.type);
@@ -1761,9 +1811,23 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           searchParams: url.searchParams,
           params: actionParams,
         });
-        element = await buildPageElement(actionRoute, actionParams, undefined, url.searchParams);
+        element = buildPageElements(
+          actionRoute,
+          actionParams,
+          cleanPathname,
+          undefined,
+          url.searchParams,
+          isRscRequest,
+          request,
+        );
       } else {
-        element = createElement("div", null, "Page not found");
+        const _actionRouteId = __createAppPayloadRouteId(cleanPathname, null);
+        element = {
+          [__APP_INTERCEPTION_CONTEXT_KEY]: null,
+          __route: _actionRouteId,
+          __rootLayout: null,
+          [_actionRouteId]: createElement("div", null, "Page not found"),
+        };
       }
 
       const onRenderError = createRscOnErrorHandler(
@@ -1784,15 +1848,22 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       const actionPendingCookies = getAndClearPendingCookies();
       const actionDraftCookie = getDraftModeCookieHeader();
 
-      const actionHeaders = new Headers({ "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" });
+      const actionHeaders = new Headers({
+        "Content-Type": "text/x-component; charset=utf-8",
+        "Vary": "RSC, Accept",
+      });
       __mergeMiddlewareResponseHeaders(actionHeaders, _mwCtx.headers);
+      const actionResponse = new Response(rscStream, {
+        status: _mwCtx.status ?? 200,
+        headers: actionHeaders,
+      });
       if (actionPendingCookies.length > 0 || actionDraftCookie) {
         for (const cookie of actionPendingCookies) {
-          actionHeaders.append("Set-Cookie", cookie);
+          actionResponse.headers.append("Set-Cookie", cookie);
         }
-        if (actionDraftCookie) actionHeaders.append("Set-Cookie", actionDraftCookie);
+        if (actionDraftCookie) actionResponse.headers.append("Set-Cookie", actionDraftCookie);
       }
-      return new Response(rscStream, { status: _mwCtx.status ?? 200, headers: actionHeaders });
+      return actionResponse;
     } catch (err) {
       getAndClearPendingCookies(); // Clear pending cookies on error
       console.error("[vinext] Server action error:", err);
@@ -1854,12 +1925,24 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     if (!isRscRequest) {
       const __pagesEntry = await import.meta.viteRsc.loadModule("ssr", "index");
       if (typeof __pagesEntry.renderPage === "function") {
+        const __pagesRequestHeaders = _mwCtx.requestHeaders
+          ? __buildRequestHeadersFromMiddlewareResponse(request.headers, _mwCtx.requestHeaders)
+          : null;
+        const __pagesRequest = __pagesRequestHeaders
+          ? new Request(request.url, { method: request.method, headers: __pagesRequestHeaders })
+          : request;
         // Use segment-wise decoding to preserve encoded path delimiters (%2F).
         // decodeURIComponent would turn /admin%2Fpanel into /admin/panel,
         // changing the path structure and bypassing middleware matchers.
         // Ported from Next.js: packages/next/src/server/lib/router-utils/decode-path-params.ts
         // https://github.com/vercel/next.js/blob/canary/packages/next/src/server/lib/router-utils/decode-path-params.ts
-        const __pagesRes = await __pagesEntry.renderPage(request, __decodePathParams(url.pathname) + (url.search || ""), {});
+        const __pagesRes = await __pagesEntry.renderPage(
+          __pagesRequest,
+          __decodePathParams(url.pathname) + (url.search || ""),
+          {},
+          undefined,
+          _mwCtx.requestHeaders,
+        );
         // Only return the Pages Router response if it matched a route
         // (non-404). A 404 means the path isn't a Pages route either,
         // so fall through to the App Router not-found page below.
@@ -2004,6 +2087,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         markDynamicUsage,
         method,
         middlewareContext: _mwCtx,
+        middlewareRequestHeaders: _mwCtx.requestHeaders,
         params: makeThenableParams(params),
         reportRequestError: _reportRequestError,
         request,
@@ -2069,6 +2153,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
   // force-dynamic: set no-store Cache-Control
   const isForceDynamic = dynamicConfig === "force-dynamic";
+  const __mountedSlotsHeader = __normalizeMountedSlotsHeader(
+    request.headers.get("x-vinext-mounted-slots"),
+  );
 
   // ── ISR cache read (production only) ─────────────────────────────────────
   // Read from cache BEFORE generateStaticParams and all rendering work.
@@ -2102,6 +2189,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       isrHtmlKey: __isrHtmlKey,
       isrRscKey: __isrRscKey,
       isrSet: __isrSet,
+      mountedSlotsHeader: __mountedSlotsHeader,
       revalidateSeconds,
       renderFreshPageForCache: async function() {
         // Re-render the page to produce fresh HTML + RSC data for the cache
@@ -2116,7 +2204,18 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         return _runWithUnifiedCtx(__revalUCtx, async () => {
           _ensureFetchPatch();
           setNavigationContext({ pathname: cleanPathname, searchParams: new URLSearchParams(), params });
-          const __revalElement = await buildPageElement(route, params, undefined, new URLSearchParams());
+          // Slot context (X-Vinext-Mounted-Slots) is inherited from the
+          // triggering request so the regen result is cached under the
+          // correct slot-variant key.
+          const __revalElement = await buildPageElements(
+            route,
+            params,
+            cleanPathname,
+            undefined,
+            new URLSearchParams(),
+            isRscRequest,
+            request,
+          );
           const __revalOnError = createRscOnErrorHandler(request, cleanPathname, route.pattern);
           const __revalRscStream = renderToReadableStream(__revalElement, { onError: __revalOnError });
           const __revalRscCapture = __teeAppPageRscStreamForCapture(__revalRscStream, true);
@@ -2165,44 +2264,27 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   // If the target URL matches an intercepting route in a parallel slot,
   // render the source route with the intercepting page in the slot.
   const __interceptResult = await __resolveAppPageIntercept({
-    buildPageElement,
+    buildPageElement(interceptRoute, interceptParams, interceptOpts, interceptSearchParams) {
+      return buildPageElements(
+        interceptRoute,
+        interceptParams,
+        cleanPathname,
+        interceptOpts,
+        interceptSearchParams,
+        isRscRequest,
+        request,
+      );
+    },
     cleanPathname,
     currentRoute: route,
     findIntercept,
-    getRoutePattern(sourceRoute) {
-      return sourceRoute.pattern;
+    getRouteParamNames(sourceRoute) {
+      return sourceRoute.params;
     },
     getSourceRoute(sourceRouteIndex) {
       return routes[sourceRouteIndex];
     },
     isRscRequest,
-    matchSourceRouteParams(pattern) {
-      // Extract actual URL param values by prefix-matching the request pathname
-      // against the source route's pattern. This handles all interception conventions:
-      // (.) same-level, (..) one-level-up, and (...) root — the source pattern's
-      // dynamic segments that align with the URL get their real values extracted.
-      // We must NOT use matchRoute(pattern) here: the trie would match the literal
-      // ":param" strings as dynamic segment values, returning e.g. {id: ":id"}.
-      const patternParts = pattern.split("/").filter(Boolean);
-      const urlParts = cleanPathname.split("/").filter(Boolean);
-      const params = Object.create(null);
-      for (let i = 0; i < patternParts.length; i++) {
-        const pp = patternParts[i];
-        if (pp.endsWith("+") || pp.endsWith("*")) {
-          // urlParts.slice(i) safely returns [] when i >= urlParts.length,
-          // which is the correct value for optional catch-all with zero segments.
-          params[pp.slice(1, -1)] = urlParts.slice(i);
-          break;
-        }
-        if (i >= urlParts.length) break;
-        if (pp.startsWith(":")) {
-          params[pp.slice(1)] = urlParts[i];
-        } else if (pp !== urlParts[i]) {
-          break;
-        }
-      }
-      return params;
-    },
     renderInterceptResponse(sourceRoute, interceptElement) {
       const interceptOnError = createRscOnErrorHandler(
         request,
@@ -2216,7 +2298,10 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       // by the client, and async server components that run during consumption need the
       // context to still be live. The AsyncLocalStorage scope from runWithRequestContext
       // handles cleanup naturally when all async continuations complete.
-      const interceptHeaders = new Headers({ "Content-Type": "text/x-component; charset=utf-8", "Vary": "RSC, Accept" });
+      const interceptHeaders = new Headers({
+        "Content-Type": "text/x-component; charset=utf-8",
+        "Vary": "RSC, Accept",
+      });
       __mergeMiddlewareResponseHeaders(interceptHeaders, _mwCtx.headers);
       return new Response(interceptStream, {
         status: _mwCtx.status ?? 200,
@@ -2227,7 +2312,8 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     setNavigationContext,
     toInterceptOpts(intercept) {
       return {
-        interceptSlot: intercept.slotName,
+        interceptionContext: interceptionContextHeader,
+        interceptSlotKey: intercept.slotKey,
         interceptPage: intercept.page,
         interceptParams: intercept.matchedParams,
       };
@@ -2240,7 +2326,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
   const __pageBuildResult = await __buildAppPageElement({
     buildPageElement() {
-      return buildPageElement(route, params, interceptOpts, url.searchParams);
+      return buildPageElements(route, params, cleanPathname, interceptOpts, url.searchParams, isRscRequest, request);
     },
     renderErrorBoundaryPage(buildErr) {
       return renderErrorBoundaryPage(route, buildErr, isRscRequest, request, params, _scriptNonce);
@@ -2278,19 +2364,6 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   // rscCssTransform — no manual loadCss() call needed.
   const _hasLoadingBoundary = !!(route.loading && route.loading.default);
   const _asyncLayoutParams = makeThenableParams(params);
-  // Convert URLSearchParams to a plain object then wrap in makeThenableParams()
-  // so probePage() passes the same shape that buildPageElement() gives to the
-  // real render. Without this, pages that destructure await-ed searchParams
-  // throw TypeError during probe.
-  const _probeSearchObj = {};
-  url.searchParams.forEach(function(v, k) {
-    if (k in _probeSearchObj) {
-      _probeSearchObj[k] = Array.isArray(_probeSearchObj[k]) ? _probeSearchObj[k].concat(v) : [_probeSearchObj[k], v];
-    } else {
-      _probeSearchObj[k] = v;
-    }
-  });
-  const _asyncSearchParams = makeThenableParams(_probeSearchObj);
   return __renderAppPageLifecycle({
     cleanPathname,
     clearRequestContext() {
@@ -2336,9 +2409,21 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       return LayoutComp({ params: _asyncLayoutParams, children: null });
     },
     probePage() {
+      const _probeSearchObj = {};
+      url.searchParams.forEach(function(v, k) {
+        if (k in _probeSearchObj) {
+          _probeSearchObj[k] = Array.isArray(_probeSearchObj[k])
+            ? _probeSearchObj[k].concat(v)
+            : [_probeSearchObj[k], v];
+        } else {
+          _probeSearchObj[k] = v;
+        }
+      });
+      const _asyncSearchParams = makeThenableParams(_probeSearchObj);
       return PageComponent({ params: _asyncLayoutParams, searchParams: _asyncSearchParams });
     },
     revalidateSeconds,
+    mountedSlotsHeader: __mountedSlotsHeader,
     renderErrorBoundaryResponse(renderErr) {
       return renderErrorBoundaryPage(route, renderErr, isRscRequest, request, params, _scriptNonce);
     },

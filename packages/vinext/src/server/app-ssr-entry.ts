@@ -1,7 +1,7 @@
 /// <reference types="@vitejs/plugin-rsc/types" />
 
 import type { ReactNode } from "react";
-import { Fragment, createElement as createReactElement } from "react";
+import { Fragment, createElement as createReactElement, use } from "react";
 import { createFromReadableStream } from "@vitejs/plugin-rsc/ssr";
 import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server.edge";
 import * as clientReferences from "virtual:vite-rsc/client-references";
@@ -22,6 +22,12 @@ import {
   safeJsonStringify,
 } from "./html.js";
 import { createRscEmbedTransform, createTickBufferedTransform } from "./app-ssr-stream.js";
+import {
+  normalizeAppElements,
+  readAppElementsMetadata,
+  type AppWireElements,
+} from "./app-elements.js";
+import { ElementsContext, Slot } from "../shims/slot.js";
 
 export type FontPreload = {
   href: string;
@@ -174,13 +180,20 @@ export async function handleSsr(
       const [ssrStream, embedStream] = rscStream.tee();
       const rscEmbed = createRscEmbedTransform(embedStream, options?.scriptNonce);
 
-      let flightRoot: Promise<unknown> | null = null;
+      let flightRoot: PromiseLike<AppWireElements> | null = null;
 
       function VinextFlightRoot(): ReactNode {
         if (!flightRoot) {
-          flightRoot = createFromReadableStream(ssrStream);
+          flightRoot = createFromReadableStream<AppWireElements>(ssrStream);
         }
-        return flightRoot as unknown as ReactNode;
+        const wireElements = use(flightRoot);
+        const elements = normalizeAppElements(wireElements);
+        const metadata = readAppElementsMetadata(elements);
+        return createReactElement(
+          ElementsContext.Provider,
+          { value: elements },
+          createReactElement(Slot, { id: metadata.routeId }),
+        );
       }
 
       const root = createReactElement(VinextFlightRoot);

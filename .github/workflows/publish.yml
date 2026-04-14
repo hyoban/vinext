@@ -36,7 +36,7 @@ jobs:
         with:
           fetch-depth: 0 # full history for changelog generation
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: ./.github/actions/setup
 
       - name: Build
         run: vp run build
