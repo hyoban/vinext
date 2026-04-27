@@ -136,6 +136,49 @@ describe("next/font/google shim", () => {
     expect(url).toMatch(/Roboto[+%].*Mono/);
   });
 
+  it("buildGoogleFontsUrl emits no axis segment for empty options (regression for #885)", async () => {
+    // Issue #885: `Sen({ subsets: ['latin'] })` used to emit
+    // `:wght@100..900` and Google returned HTTP 400 because Sen's wght
+    // axis is 400..800. The shim's dev fallback now emits no axis
+    // segment, so Google returns the default static face (200) regardless
+    // of the font's actual axis. The build plugin always pre-resolves the
+    // real axis range from metadata before this path is reached in
+    // production.
+    //
+    // URLSearchParams encodes `:` and `@`, so check the decoded URL.
+    const { buildGoogleFontsUrl } = await import("../packages/vinext/src/shims/font-google.js");
+    const url = buildGoogleFontsUrl("Sen", { subsets: ["latin"] });
+    const decoded = decodeURIComponent(url);
+    expect(decoded).not.toContain("wght@100..900");
+    expect(decoded).not.toContain("wght@");
+    expect(decoded).toContain("family=Sen");
+    expect(decoded).toContain("display=swap");
+  });
+
+  it("buildGoogleFontsUrl preserves italic-only style requests", async () => {
+    // Pre-port shim: outer guard on `weights.length > 0 || styles.length > 0`
+    // entered the block, but the inner branch only handled `weights.length > 0`.
+    // The result was `family=Inter&display=swap` with no ital axis, so Google
+    // served the regular (non-italic) face and the user's italic was silently
+    // dropped. Italic-only must now leave a visible ital axis in the URL.
+    const { buildGoogleFontsUrl } = await import("../packages/vinext/src/shims/font-google.js");
+    const url = buildGoogleFontsUrl("Inter", { style: ["italic"] });
+    const decoded = decodeURIComponent(url);
+    expect(decoded).toContain(":ital,wght@1,400");
+    expect(decoded).not.toContain("ital,wght@0,");
+  });
+
+  it("buildGoogleFontsUrl drops the unresolved variable sentinel in the dev fallback", async () => {
+    // The shim has no metadata, so it cannot resolve "variable" to the
+    // font's real min..max range. Production resolves this in the plugin;
+    // dev fallback should avoid emitting Google's invalid `wght@variable`.
+    const { buildGoogleFontsUrl } = await import("../packages/vinext/src/shims/font-google.js");
+    const url = buildGoogleFontsUrl("Inter", { weight: "variable" });
+    const decoded = decodeURIComponent(url);
+    expect(decoded).not.toContain("wght@variable");
+    expect(decoded).not.toContain("wght@");
+  });
+
   it("getSSRFontLinks returns collected URLs without clearing", async () => {
     const mod = await import("../packages/vinext/src/shims/font-google.js");
     // Force a CDN-mode font load (SSR context: document is undefined)
@@ -422,7 +465,7 @@ describe("vinext:google-fonts plugin", () => {
       const transform = unwrapHook(plugin.transform);
       const code = [
         `import { Inter } from 'next/font/google';`,
-        `const inter = Inter({ weight: '400' });`,
+        `const inter = Inter({ weight: '400', subsets: ['latin'] });`,
       ].join("\n");
 
       // First call: fetches and caches
@@ -467,8 +510,8 @@ describe("vinext:google-fonts plugin", () => {
       const transform = unwrapHook(plugin.transform);
       const code = [
         `import { Inter, Roboto } from 'next/font/google';`,
-        `const inter = Inter({ weight: '400' });`,
-        `const roboto = Roboto({ weight: '400' });`,
+        `const inter = Inter({ weight: '400', subsets: ['latin'] });`,
+        `const roboto = Roboto({ weight: '400', subsets: ['latin'] });`,
       ].join("\n");
 
       const result = await transform.call(plugin, code, "/app/layout.tsx");
@@ -500,7 +543,7 @@ describe("vinext:google-fonts plugin", () => {
       const transform = unwrapHook(plugin.transform);
       const code = [
         `import { Inter } from 'next/font/google';`,
-        `const inter = Inter({ weight: '400' });`,
+        `const inter = Inter({ weight: '400', subsets: ['latin'] });`,
         `const Roboto = (opts) => opts; // Not from import`,
         `const roboto = Roboto({ weight: '400' });`,
       ].join("\n");
@@ -575,7 +618,7 @@ describe("vinext:google-fonts plugin", () => {
       // Named-import form with a nested axes object
       const code = [
         `import { Inter } from 'next/font/google';`,
-        `const inter = Inter({ subsets: ["latin"], axes: { wght: 400 } });`,
+        `const inter = Inter({ subsets: ["latin"], _placeholder: { wght: 400 } });`,
       ].join("\n");
 
       const result = await transform.call(plugin, code, "/app/layout.tsx");
@@ -610,7 +653,7 @@ describe("vinext:google-fonts plugin", () => {
 
       const code = [
         `import fonts from 'next/font/google';`,
-        `const inter = fonts.Inter({ subsets: ["latin"], axes: { wght: 400 } });`,
+        `const inter = fonts.Inter({ subsets: ["latin"], _placeholder: { wght: 400 } });`,
       ].join("\n");
 
       const result = await transform.call(plugin, code, "/app/layout.tsx");
@@ -642,7 +685,7 @@ describe("vinext:google-fonts plugin", () => {
       // String value contains '}' — old \{[^}]*\} regex would have stopped here.
       const code = [
         `import { Inter } from 'next/font/google';`,
-        `const inter = Inter({ display: "swap", label: "font {bold}" });`,
+        `const inter = Inter({ subsets: ["latin"], display: "swap", _label: "font {bold}" });`,
       ].join("\n");
 
       const result = await transform.call(plugin, code, "/app/layout.tsx");
@@ -671,12 +714,188 @@ describe("vinext:google-fonts plugin", () => {
       const transform = unwrapHook(plugin.transform);
       const code = [
         `import { Inter as inter } from 'next/font/google';`,
-        `const body = inter({ weight: '400' });`,
+        `const body = inter({ weight: '400', subsets: ['latin'] });`,
       ].join("\n");
       const result = await transform.call(plugin, code, "/app/layout.tsx");
       expect(result).not.toBeNull();
       expect(result.code).toContain("virtual:vinext-google-fonts?");
       expect(result.code).toContain("_selfHostedCSS");
+    } finally {
+      globalThis.fetch = originalFetch;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves narrow-axis variable fonts to their real wght range (regression for #885)", async () => {
+    // Sen's wght axis is 400..800. Pre-port vinext built
+    // `:wght@100..900` and Google returned HTTP 400. The metadata-driven
+    // pipeline must now request the real axis range from Google.
+    const plugin = getGoogleFontsPlugin();
+    const root = path.join(import.meta.dirname, ".test-font-root-sen");
+    initPlugin(plugin, { command: "build", root });
+
+    const originalFetch = globalThis.fetch;
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = async (input: any) => {
+      fetchedUrls.push(String(input));
+      return new Response("@font-face { font-family: 'Sen'; src: url(/sen.woff2); }", {
+        status: 200,
+        headers: { "content-type": "text/css" },
+      });
+    };
+
+    try {
+      const transform = unwrapHook(plugin.transform);
+      const code = [
+        `import { Sen } from 'next/font/google';`,
+        `const sen = Sen({ subsets: ['latin'] });`,
+      ].join("\n");
+
+      const result = await transform.call(plugin, code, "/app/layout.tsx");
+      expect(result).not.toBeNull();
+      expect(result.code).toContain("_selfHostedCSS");
+
+      const cssFetch = fetchedUrls.find((u) => u.includes("fonts.googleapis.com/css2"));
+      expect(cssFetch).toBeDefined();
+      const decoded = decodeURIComponent(cssFetch!);
+      expect(decoded).toContain("Sen:wght@400..800");
+      expect(decoded).not.toContain("wght@100..900");
+    } finally {
+      globalThis.fetch = originalFetch;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("self-hosts variable font axes through the plugin pipeline", async () => {
+    // Covers the documented `axes` option end-to-end: static parsing,
+    // validation, metadata axis resolution, and URL assembly.
+    const plugin = getGoogleFontsPlugin();
+    const root = path.join(import.meta.dirname, ".test-font-root-axes");
+    initPlugin(plugin, { command: "build", root });
+
+    const originalFetch = globalThis.fetch;
+    const fetchedUrls: string[] = [];
+    globalThis.fetch = async (input: any) => {
+      fetchedUrls.push(String(input));
+      return new Response("@font-face { font-family: 'Roboto Flex'; src: url(/flex.woff2); }", {
+        status: 200,
+        headers: { "content-type": "text/css" },
+      });
+    };
+
+    try {
+      const transform = unwrapHook(plugin.transform);
+      const code = [
+        `import { Roboto_Flex } from 'next/font/google';`,
+        `const flex = Roboto_Flex({ weight: 'variable', axes: ['opsz'], subsets: ['latin'] });`,
+      ].join("\n");
+
+      const result = await transform.call(plugin, code, "/app/layout.tsx");
+      expect(result).not.toBeNull();
+      expect(result.code).toContain("_selfHostedCSS");
+
+      const cssFetch = fetchedUrls.find((u) => u.includes("fonts.googleapis.com/css2"));
+      expect(cssFetch).toBeDefined();
+      const decoded = decodeURIComponent(cssFetch!);
+      expect(decoded).toContain("Roboto+Flex:opsz,wght@8..144,100..1000");
+    } finally {
+      globalThis.fetch = originalFetch;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("throws a build error on unknown font families (regression for #885)", async () => {
+    // Pre-port vinext built a URL for any property name on the proxy and
+    // only discovered the family was unknown when Google returned 400.
+    // The validator now surfaces this at transform time with a message
+    // pointing at the file path.
+    const plugin = getGoogleFontsPlugin();
+    initPlugin(plugin, { command: "build", root: import.meta.dirname });
+    const transform = unwrapHook(plugin.transform);
+    const code = [
+      `import { NotARealFont } from 'next/font/google';`,
+      `const f = NotARealFont({ weight: '400', subsets: ['latin'] });`,
+    ].join("\n");
+    await expect(transform.call(plugin, code, "/app/layout.tsx")).rejects.toThrow(
+      /Unknown font `NotARealFont`/,
+    );
+  });
+
+  it("throws a build error when a static font is called without an explicit weight (regression for #885)", async () => {
+    // Anton has only weight '400' and no variable face, so calling it
+    // without weight should error at build time. Pre-port vinext silently
+    // emitted `:wght@100..900` which Google rejected with HTTP 400.
+    const plugin = getGoogleFontsPlugin();
+    initPlugin(plugin, { command: "build", root: import.meta.dirname });
+    const transform = unwrapHook(plugin.transform);
+    const code = [
+      `import { Anton } from 'next/font/google';`,
+      `const f = Anton({ subsets: ['latin'] });`,
+    ].join("\n");
+    await expect(transform.call(plugin, code, "/app/layout.tsx")).rejects.toThrow(
+      /Missing weight for font `Anton`/,
+    );
+  });
+
+  it("surfaces HTTP errors from Google Fonts as build errors with a bounded response body", async () => {
+    // If Google returns 4xx/5xx the plugin must not silently fall through
+    // to the runtime CDN path; the same broken URL would just 400 in the
+    // browser. Throw a build error containing the URL and Google's body
+    // so the user can see what went wrong.
+    const plugin = getGoogleFontsPlugin();
+    const root = path.join(import.meta.dirname, ".test-font-root-http-error");
+    initPlugin(plugin, { command: "build", root });
+    const longBody = `/* axis range out of bounds */${"x".repeat(600)}`;
+    const truncatedLength = longBody.length - 500;
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(longBody, {
+        status: 400,
+        headers: { "content-type": "text/html" },
+      });
+
+    try {
+      const transform = unwrapHook(plugin.transform);
+      const code = [
+        `import { Inter } from 'next/font/google';`,
+        `const inter = Inter({ weight: '400', subsets: ['latin'] });`,
+      ].join("\n");
+      await expect(transform.call(plugin, code, "/app/layout.tsx")).rejects.toThrowError(
+        new RegExp(
+          `Google Fonts returned HTTP 400[\\s\\S]*truncated ${truncatedLength} characters`,
+        ),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("falls through silently when fetch fails with a network error (offline dev)", async () => {
+    // A raw fetch rejection (DNS, ECONNREFUSED, AbortError) is treated as
+    // recoverable: the plugin skips self-hosting and the runtime CDN path
+    // takes over. Distinct from an HTTP non-2xx response, which is a hard
+    // build error.
+    const plugin = getGoogleFontsPlugin();
+    const root = path.join(import.meta.dirname, ".test-font-root-network-error");
+    initPlugin(plugin, { command: "build", root });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => {
+      throw new TypeError("fetch failed");
+    };
+
+    try {
+      const transform = unwrapHook(plugin.transform);
+      const code = [
+        `import { Inter } from 'next/font/google';`,
+        `const inter = Inter({ weight: '400', subsets: ['latin'] });`,
+      ].join("\n");
+      const result = await transform.call(plugin, code, "/app/layout.tsx");
+      // Transform still returns; it just does not inject _selfHostedCSS.
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain("_selfHostedCSS");
     } finally {
       globalThis.fetch = originalFetch;
       fs.rmSync(root, { recursive: true, force: true });
@@ -699,7 +918,7 @@ describe("vinext:google-fonts plugin", () => {
       const transform = unwrapHook(plugin.transform);
       const code = [
         `import fonts from 'next/font/google';`,
-        `const mono = fonts.Roboto_Mono({ weight: '400' });`,
+        `const mono = fonts.Roboto_Mono({ weight: '400', subsets: ['latin'] });`,
       ].join("\n");
       const result = await transform.call(plugin, code, "/app/layout.tsx");
       expect(result).not.toBeNull();

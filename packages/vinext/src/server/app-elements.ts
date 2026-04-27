@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 
 const APP_INTERCEPTION_SEPARATOR = "\0";
 
@@ -11,22 +11,38 @@ export const APP_UNMATCHED_SLOT_WIRE_VALUE = "__VINEXT_UNMATCHED_SLOT__";
 export const UNMATCHED_SLOT = Symbol.for("vinext.unmatchedSlot");
 
 export type AppElementValue = ReactNode | typeof UNMATCHED_SLOT | string | null;
-export type AppWireElementValue = ReactNode | string | null;
+type AppWireElementValue = ReactNode | string | null;
 
 export type AppElements = Readonly<Record<string, AppElementValue>>;
 export type AppWireElements = Readonly<Record<string, AppWireElementValue>>;
 
-/** Per-layout static/dynamic flags propagated in the RSC payload. `"s"` = static, `"d"` = dynamic. */
+/**
+ * Per-layout static/dynamic flags. `"s"` = static (skippable on next nav);
+ * `"d"` = dynamic (must always render).
+ *
+ * Lifecycle (partial — later PRs extend this):
+ *
+ *   1. PROBE   — probeAppPageLayouts (server/app-page-execution.ts) returns
+ *                LayoutFlags for every layout in the route at render time.
+ *
+ *   2. ATTACH  — withLayoutFlags (this file) writes `__layoutFlags` into the
+ *                outgoing App Router payload record.
+ *
+ *   3. WIRE    — renderToReadableStream serializes the record as RSC row 0.
+ *
+ *   4. PARSE   — readAppElementsMetadata (this file) extracts layoutFlags from
+ *                the wire payload on the client side.
+ */
 export type LayoutFlags = Readonly<Record<string, "s" | "d">>;
 
-export type AppElementsMetadata = {
+type AppElementsMetadata = {
   interceptionContext: string | null;
   layoutFlags: LayoutFlags;
   routeId: string;
   rootLayoutTreePath: string | null;
 };
 
-export function normalizeMountedSlotsHeader(header: string | null | undefined): string | null {
+function normalizeMountedSlotsHeader(header: string | null | undefined): string | null {
   if (!header) {
     return null;
   }
@@ -121,9 +137,64 @@ function parseLayoutFlags(value: unknown): LayoutFlags {
 }
 
 /**
+ * Type predicate for a plain (non-null, non-array) record of app payload values.
+ * Used to distinguish the App Router payload object from bare React elements at
+ * the render boundary. Narrows to `Readonly<Record<string, unknown>>` because
+ * the outgoing payload carries heterogeneous values (ReactNodes for the rendered
+ * tree, plus metadata like `__layoutFlags` which is a plain object). Delegates
+ * to React's canonical `isValidElement` so we don't depend on React's internal
+ * `$$typeof` marker scheme.
+ */
+export function isAppElementsRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null) return false;
+  if (Array.isArray(value)) return false;
+  if (isValidElement(value)) return false;
+  return true;
+}
+
+/**
+ * Pure: returns a new record with `__layoutFlags` attached. Owns the write
+ * boundary for the layout flags key so the write side sits next to
+ * `readAppElementsMetadata`.
+ *
+ * See `LayoutFlags` type docblock in this file for lifecycle.
+ */
+export function withLayoutFlags<T extends Record<string, unknown>>(
+  elements: T,
+  layoutFlags: LayoutFlags,
+): T & { [APP_LAYOUT_FLAGS_KEY]: LayoutFlags } {
+  return { ...elements, [APP_LAYOUT_FLAGS_KEY]: layoutFlags };
+}
+
+/**
+ * The outgoing wire payload shape. Includes ReactNode values for the
+ * rendered tree plus metadata values like LayoutFlags attached under
+ * known keys (e.g. __layoutFlags). Distinct from AppElements / AppWireElements
+ * which only carry render-time values.
+ */
+export type AppOutgoingElements = Readonly<Record<string, ReactNode | LayoutFlags>>;
+
+/**
+ * Pure: builds the outgoing payload for the wire. Non-record inputs (e.g. a
+ * bare React element) are returned unchanged. Record inputs get a fresh copy
+ * with `__layoutFlags` attached. Never mutates `input.element`.
+ */
+export function buildOutgoingAppPayload(input: {
+  element: ReactNode | Readonly<Record<string, ReactNode>>;
+  layoutFlags: LayoutFlags;
+}): ReactNode | AppOutgoingElements {
+  if (!isAppElementsRecord(input.element)) {
+    return input.element;
+  }
+  return withLayoutFlags(input.element, input.layoutFlags);
+}
+
+/**
  * Parses metadata from the wire payload. Accepts `Record<string, unknown>`
  * because the RSC payload carries heterogeneous values (React elements,
  * strings, and plain objects like layout flags) under the same record type.
+ *
+ * See `LayoutFlags` type docblock in this file for lifecycle.
  */
 export function readAppElementsMetadata(
   elements: Readonly<Record<string, unknown>>,

@@ -1,8 +1,8 @@
 import type { AppPageSpecialError } from "./app-page-execution.js";
 
-export type AppPageParams = Record<string, string | string[]>;
+type AppPageParams = Record<string, string | string[]>;
 
-export type ValidateAppPageDynamicParamsOptions = {
+type ValidateAppPageDynamicParamsOptions = {
   clearRequestContext: () => void;
   enforceStaticParamsOnly: boolean;
   generateStaticParams?: ((args: { params: AppPageParams }) => unknown) | null;
@@ -11,26 +11,66 @@ export type ValidateAppPageDynamicParamsOptions = {
   params: AppPageParams;
 };
 
-export type BuildAppPageElementOptions<TElement> = {
+type BuildAppPageElementOptions<TElement> = {
   buildPageElement: () => Promise<TElement>;
   renderErrorBoundaryPage: (error: unknown) => Promise<Response | null>;
   renderSpecialError: (specialError: AppPageSpecialError) => Promise<Response>;
   resolveSpecialError: (error: unknown) => AppPageSpecialError | null;
 };
 
-export type BuildAppPageElementResult<TElement> = {
+type BuildAppPageElementResult<TElement> = {
   element: TElement | null;
   response: Response | null;
 };
 
-export type AppPageInterceptMatch<TPage = unknown> = {
+type AppPageInterceptMatch<TPage = unknown> = {
   matchedParams: AppPageParams;
   page: TPage;
   slotKey: string;
   sourceRouteIndex: number;
 };
 
-export type ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts> = {
+type ResolveAppPageInterceptMatchOptions<TRoute, TPage, TInterceptOpts> = {
+  cleanPathname: string;
+  currentRoute: TRoute;
+  findIntercept: (pathname: string) => AppPageInterceptMatch<TPage> | null;
+  getRouteParamNames: (route: TRoute) => readonly string[];
+  getSourceRoute: (sourceRouteIndex: number) => TRoute | undefined;
+  isRscRequest: boolean;
+  toInterceptOpts: (intercept: AppPageInterceptMatch<TPage>) => TInterceptOpts;
+};
+
+type ResolveAppPageInterceptMatchResult<TRoute, TInterceptOpts> = {
+  interceptOpts: TInterceptOpts;
+  matchedParams: AppPageParams;
+  sourceParams: AppPageParams;
+  sourceRoute: TRoute;
+};
+
+type AppPageInterceptState<TRoute, TPage> =
+  | { kind: "none" }
+  | { kind: "current-route"; intercept: AppPageInterceptMatch<TPage> }
+  | { kind: "source-route"; intercept: AppPageInterceptMatch<TPage>; sourceRoute: TRoute };
+
+type ResolveAppPageActionRerenderTargetOptions<TRoute, TPage, TInterceptOpts> = {
+  cleanPathname: string;
+  currentParams: AppPageParams;
+  currentRoute: TRoute;
+  findIntercept: (pathname: string) => AppPageInterceptMatch<TPage> | null;
+  getRouteParamNames: (route: TRoute) => readonly string[];
+  getSourceRoute: (sourceRouteIndex: number) => TRoute | undefined;
+  isRscRequest: boolean;
+  toInterceptOpts: (intercept: AppPageInterceptMatch<TPage>) => TInterceptOpts;
+};
+
+type ResolveAppPageActionRerenderTargetResult<TRoute, TInterceptOpts> = {
+  interceptOpts: TInterceptOpts | undefined;
+  navigationParams: AppPageParams;
+  params: AppPageParams;
+  route: TRoute;
+};
+
+type ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts> = {
   buildPageElement: (
     route: TRoute,
     params: AppPageParams,
@@ -53,7 +93,7 @@ export type ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts> = {
   toInterceptOpts: (intercept: AppPageInterceptMatch<TPage>) => TInterceptOpts;
 };
 
-export type ResolveAppPageInterceptResult<TInterceptOpts> = {
+type ResolveAppPageInterceptResult<TInterceptOpts> = {
   interceptOpts: TInterceptOpts | undefined;
   response: Response | null;
 };
@@ -132,46 +172,143 @@ export async function validateAppPageDynamicParams(
   return null;
 }
 
-export async function resolveAppPageIntercept<TRoute, TPage, TInterceptOpts>(
-  options: ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts>,
-): Promise<ResolveAppPageInterceptResult<TInterceptOpts>> {
+/**
+ * Pure: decides whether the incoming request should re-render an intercepted
+ * source-route tree, and if so returns the source route, the source-route's
+ * param slice, the full matched param set (the URL params the client sees),
+ * and an opaque `interceptOpts` bag for the caller's render pipeline.
+ *
+ * Returns `null` in three decision-fallthrough cases:
+ *   - non-RSC requests (server rendering the direct page for a full HTML load)
+ *   - no intercepting route matches the path
+ *   - the match's source route IS the current route (the same branch today
+ *     returns `interceptOpts` for the direct render)
+ *
+ * Shared by both the GET path (resolveAppPageIntercept, which layers on
+ * `setNavigationContext` + element build + Response wrap) and the server-action
+ * POST path (entries/app-rsc-entry.ts), which runs its own response pipeline.
+ */
+export function resolveAppPageInterceptMatch<TRoute, TPage, TInterceptOpts>(
+  options: ResolveAppPageInterceptMatchOptions<TRoute, TPage, TInterceptOpts>,
+): ResolveAppPageInterceptMatchResult<TRoute, TInterceptOpts> | null {
+  const interceptState = resolveAppPageInterceptState(options);
+  if (interceptState.kind !== "source-route") {
+    return null;
+  }
+
+  return {
+    interceptOpts: options.toInterceptOpts(interceptState.intercept),
+    matchedParams: interceptState.intercept.matchedParams,
+    sourceParams: pickRouteParams(
+      interceptState.intercept.matchedParams,
+      options.getRouteParamNames(interceptState.sourceRoute),
+    ),
+    sourceRoute: interceptState.sourceRoute,
+  };
+}
+
+function resolveAppPageInterceptState<TRoute, TPage, TInterceptOpts>(
+  options: ResolveAppPageInterceptMatchOptions<TRoute, TPage, TInterceptOpts>,
+): AppPageInterceptState<TRoute, TPage> {
   if (!options.isRscRequest) {
-    return { interceptOpts: undefined, response: null };
+    return { kind: "none" };
   }
 
   const intercept = options.findIntercept(options.cleanPathname);
   if (!intercept) {
-    return { interceptOpts: undefined, response: null };
+    return { kind: "none" };
   }
 
   const sourceRoute = options.getSourceRoute(intercept.sourceRouteIndex);
-  const interceptOpts = options.toInterceptOpts(intercept);
+  if (!sourceRoute) {
+    return { kind: "none" };
+  }
 
-  if (sourceRoute && sourceRoute !== options.currentRoute) {
-    const sourceParams = pickRouteParams(
-      intercept.matchedParams,
-      options.getRouteParamNames(sourceRoute),
-    );
+  if (sourceRoute === options.currentRoute) {
+    return { kind: "current-route", intercept };
+  }
+
+  return { kind: "source-route", intercept, sourceRoute };
+}
+
+export function resolveAppPageActionRerenderTarget<TRoute, TPage, TInterceptOpts>(
+  options: ResolveAppPageActionRerenderTargetOptions<TRoute, TPage, TInterceptOpts>,
+): ResolveAppPageActionRerenderTargetResult<TRoute, TInterceptOpts> {
+  const interceptState = resolveAppPageInterceptState({
+    cleanPathname: options.cleanPathname,
+    currentRoute: options.currentRoute,
+    findIntercept: options.findIntercept,
+    getRouteParamNames: options.getRouteParamNames,
+    getSourceRoute: options.getSourceRoute,
+    isRscRequest: options.isRscRequest,
+    toInterceptOpts: options.toInterceptOpts,
+  });
+
+  if (interceptState.kind === "source-route") {
+    return {
+      interceptOpts: options.toInterceptOpts(interceptState.intercept),
+      navigationParams: interceptState.intercept.matchedParams,
+      params: pickRouteParams(
+        interceptState.intercept.matchedParams,
+        options.getRouteParamNames(interceptState.sourceRoute),
+      ),
+      route: interceptState.sourceRoute,
+    };
+  }
+
+  return {
+    interceptOpts:
+      interceptState.kind === "current-route"
+        ? options.toInterceptOpts(interceptState.intercept)
+        : undefined,
+    navigationParams: options.currentParams,
+    params: options.currentParams,
+    route: options.currentRoute,
+  };
+}
+
+export async function resolveAppPageIntercept<TRoute, TPage, TInterceptOpts>(
+  options: ResolveAppPageInterceptOptions<TRoute, TPage, TInterceptOpts>,
+): Promise<ResolveAppPageInterceptResult<TInterceptOpts>> {
+  const interceptState = resolveAppPageInterceptState({
+    cleanPathname: options.cleanPathname,
+    currentRoute: options.currentRoute,
+    findIntercept: options.findIntercept,
+    getRouteParamNames: options.getRouteParamNames,
+    getSourceRoute: options.getSourceRoute,
+    isRscRequest: options.isRscRequest,
+    toInterceptOpts: options.toInterceptOpts,
+  });
+
+  if (interceptState.kind === "source-route") {
     options.setNavigationContext({
-      params: intercept.matchedParams,
+      params: interceptState.intercept.matchedParams,
       pathname: options.cleanPathname,
       searchParams: options.searchParams,
     });
     const interceptElement = await options.buildPageElement(
-      sourceRoute,
-      sourceParams,
-      interceptOpts,
+      interceptState.sourceRoute,
+      pickRouteParams(
+        interceptState.intercept.matchedParams,
+        options.getRouteParamNames(interceptState.sourceRoute),
+      ),
+      options.toInterceptOpts(interceptState.intercept),
       options.searchParams,
     );
 
     return {
       interceptOpts: undefined,
-      response: await options.renderInterceptResponse(sourceRoute, interceptElement),
+      response: await options.renderInterceptResponse(interceptState.sourceRoute, interceptElement),
     };
   }
 
+  // Reproduce the current-route-is-source branch where we still need the opts
+  // bag even though we did not render a separate intercepted response.
   return {
-    interceptOpts,
+    interceptOpts:
+      interceptState.kind === "current-route"
+        ? options.toInterceptOpts(interceptState.intercept)
+        : undefined,
     response: null,
   };
 }

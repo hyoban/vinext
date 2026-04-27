@@ -72,12 +72,28 @@ function createCommonOptions() {
     makeThenableParams<T>(params: T) {
       return params;
     },
+    middlewareContext: {
+      headers: null,
+      status: null,
+    },
     renderToReadableStream: renderElementToStream,
     requestUrl: "https://example.com/posts/missing",
     resolveChildSegments() {
       return [];
     },
     rootLayouts: EMPTY_ROOT_LAYOUTS,
+  };
+}
+
+function createMiddlewareContext() {
+  const headers = new Headers();
+  headers.set("x-middleware-security", "present");
+  headers.append("set-cookie", "session=rotated; Path=/; HttpOnly");
+  headers.set("vary", "x-auth-state");
+
+  return {
+    headers,
+    status: 299,
   };
 }
 
@@ -201,6 +217,28 @@ describe("app page boundary render helpers", () => {
     expect(html).toContain('content="noindex"');
   });
 
+  it("preserves middleware headers on HTTP access fallback HTML responses", async () => {
+    const common = createCommonOptions();
+
+    const response = await renderAppPageHttpAccessFallback({
+      ...common,
+      matchedParams: { slug: "missing" },
+      middlewareContext: createMiddlewareContext(),
+      route: {
+        layouts: [rootLayoutModule],
+        notFound: notFoundModule,
+        params: { slug: "missing" },
+        pattern: "/posts/[slug]",
+      },
+      statusCode: 404,
+    });
+
+    expect(response?.status).toBe(404);
+    expect(response?.headers.get("x-middleware-security")).toBe("present");
+    expect(response?.headers.get("vary")).toBe("RSC, Accept, x-auth-state");
+    expect(response?.headers.getSetCookie()).toContain("session=rotated; Path=/; HttpOnly");
+  });
+
   it("renders HTTP access fallback RSC responses as flat payloads", async () => {
     const common = createCommonOptions();
 
@@ -228,6 +266,29 @@ describe("app page boundary render helpers", () => {
     expect(payload.__route).toBe("route:/posts/missing");
     expect(payload.__rootLayout).toBe("/");
     expect(payload["route:/posts/missing"]).toBeTruthy();
+  });
+
+  it("preserves middleware headers on HTTP access fallback RSC responses", async () => {
+    const common = createCommonOptions();
+
+    const response = await renderAppPageHttpAccessFallback({
+      ...common,
+      isRscRequest: true,
+      matchedParams: { slug: "missing" },
+      middlewareContext: createMiddlewareContext(),
+      renderToReadableStream: renderWirePayloadToStream,
+      route: {
+        notFound: notFoundModule,
+        params: { slug: "missing" },
+        pattern: "/posts/[slug]",
+      },
+      statusCode: 404,
+    });
+
+    expect(response?.status).toBe(404);
+    expect(response?.headers.get("x-middleware-security")).toBe("present");
+    expect(response?.headers.get("vary")).toBe("RSC, Accept, x-auth-state");
+    expect(response?.headers.getSetCookie()).toContain("session=rotated; Path=/; HttpOnly");
   });
 
   it("uses null root layout metadata when a boundary payload has no route context", async () => {
@@ -277,6 +338,30 @@ describe("app page boundary render helpers", () => {
     expect(html).toContain('data-layout="root"');
     expect(html).toContain('data-boundary="route-error"');
     expect(html).toContain("route:safe:secret");
+  });
+
+  it("preserves middleware headers on error boundary responses", async () => {
+    const common = createCommonOptions();
+
+    const response = await renderAppPageErrorBoundary({
+      ...common,
+      error: new Error("secret"),
+      matchedParams: { slug: "post" },
+      middlewareContext: createMiddlewareContext(),
+      route: {
+        error: routeErrorModule,
+        params: { slug: "post" },
+        pattern: "/posts/[slug]",
+      },
+      sanitizeErrorForClient(error: Error) {
+        return error;
+      },
+    });
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-middleware-security")).toBe("present");
+    expect(response?.headers.get("vary")).toBe("RSC, Accept, x-auth-state");
+    expect(response?.headers.getSetCookie()).toContain("session=rotated; Path=/; HttpOnly");
   });
 
   it("renders error boundary RSC responses as flat payloads", async () => {

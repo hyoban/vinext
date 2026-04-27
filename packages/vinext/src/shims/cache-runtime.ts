@@ -259,6 +259,8 @@ function _getPrivateState(): PrivateCacheState {
  * Ensures per-request isolation for "use cache: private" entries
  * on concurrent runtimes.
  */
+export function runWithPrivateCache<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithPrivateCache<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithPrivateCache<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {

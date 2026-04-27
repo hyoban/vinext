@@ -13,10 +13,23 @@ import type { NitroRouteRuleConfig } from "./build/nitro-route-rules.js";
 import { createValidFileMatcher } from "./routing/file-matcher.js";
 import { createSSRHandler } from "./server/dev-server.js";
 import { handleApiRoute } from "./server/api-handler.js";
+import { installSocketErrorBackstop } from "./server/socket-error-backstop.js";
 import { createDirectRunner } from "./server/dev-module-runner.js";
 import { generateRscEntry } from "./entries/app-rsc-entry.js";
 import { generateSsrEntry } from "./entries/app-ssr-entry.js";
 import { generateBrowserEntry } from "./entries/app-browser-entry.js";
+import {
+  buildGenerateBundleReplacement,
+  buildReasonsReplacement,
+  collectRouteClassificationManifest,
+  type RouteClassificationManifest,
+} from "./build/route-classification-manifest.js";
+import {
+  classifyLayoutByModuleGraph,
+  isStaticModuleGraphResult,
+  moduleGraphReason,
+} from "./build/layout-classification.js";
+import type { ModuleGraphStaticReason } from "./build/layout-classification-types.js";
 import { normalizePathnameForRouteMatchStrict } from "./routing/utils.js";
 import {
   findNextConfigPath,
@@ -34,6 +47,7 @@ import {
 import { findMiddlewareFile, runMiddleware } from "./server/middleware.js";
 import { logRequest, now } from "./server/request-log.js";
 import { normalizePath } from "./server/normalize-path.js";
+import { isOpenRedirectShaped } from "./server/request-pipeline.js";
 import {
   findInstrumentationClientFile,
   findInstrumentationFile,
@@ -100,6 +114,14 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import commonjs from "vite-plugin-commonjs";
+
+// Install the process-level peer-disconnect backstop at module load.
+// Vite plugin lifecycle hooks (config / configureServer) proved
+// timing-fragile in vite-plus — install was silently skipped,
+// confirmed via VINEXT_DEBUG_SOCKET_ERRORS=1. Skips Vitest workers
+// via env-var gate; bypasses during prerender via fire-time
+// VINEXT_PRERENDER check. See socket-error-backstop.ts.
+installSocketErrorBackstop();
 
 type ASTNode = ReturnType<typeof parseAst>["body"][number]["parent"];
 
@@ -495,8 +517,27 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   let warnedInlineNextConfigOverride = false;
   let hasNitroPlugin = false;
 
+  // Build-time layout classification manifest, captured in the RSC virtual
+  // module's load hook and consumed in generateBundle to patch the generated
+  // `__VINEXT_CLASS` stub with a real dispatch table.
+  let rscClassificationManifest: RouteClassificationManifest | null = null;
+
   // Resolve shim paths - works both from source (.ts) and built (.js)
   const shimsDir = path.resolve(__dirname, "shims");
+
+  // Shared with the Layer 2 generateBundle hook below. Rolldown stores module
+  // IDs as canonicalized filesystem paths (fs.realpathSync.native), so we must
+  // canonicalize anything we hand to the classifier and anything we ask the
+  // module graph for. The shim files exist in the vinext package before plugin
+  // init, so realpath is safe to evaluate eagerly.
+  const canonicalize = (p: string): string => tryRealpathSync(p) ?? p;
+  const dynamicShimPaths: ReadonlySet<string> = new Set(
+    [
+      resolveShimModulePath(shimsDir, "headers"),
+      resolveShimModulePath(shimsDir, "server"),
+      resolveShimModulePath(shimsDir, "cache"),
+    ].map(canonicalize),
+  );
 
   // Shim alias map — populated in config(), used by resolveId() for .js variants
   let nextShimMap: Record<string, string> = {};
@@ -1207,7 +1248,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           },
         };
         viteConfig.optimizeDeps = {
-          exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og"])],
+          // @tailwindcss/oxide contains native .node bindings that Rolldown cannot process
+          exclude: [...new Set([...incomingExclude, "vinext", "@vercel/og", "@tailwindcss/oxide"])],
           ...(incomingInclude.length > 0 ? { include: incomingInclude } : {}),
           rolldownOptions: { plugins: [depOptimizeAliasPlugin] },
         };
@@ -1593,6 +1635,14 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           const metaRoutes = scanMetadataFiles(appDir);
           // Check for global-error.tsx at app root
           const globalErrorPath = findFileWithExts(appDir, "global-error", fileMatcher);
+          // Collect Layer 1 (segment config) classifications for all layouts.
+          // Layer 2 (module graph) runs later in generateBundle once Rollup's
+          // module info is available.
+          // Invariant: rscClassificationManifest must be built from the same
+          // `routes` value passed to generateRscEntry below so that layout
+          // indices in the manifest correspond 1:1 to the route.layouts arrays
+          // used during codegen. generateBundle clears this after patching.
+          rscClassificationManifest = collectRouteClassificationManifest(routes);
           return generateRscEntry(
             appDir,
             routes,
@@ -1624,6 +1674,167 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         if (id.startsWith(RESOLVED_VIRTUAL_GOOGLE_FONTS + "?")) {
           return generateGoogleFontsVirtualModule(id, _fontGoogleShimPath);
         }
+      },
+
+      // Layer 2 build-time layout classification. The generated RSC entry
+      // emits a `function __VINEXT_CLASS(routeIdx) { return null; }` stub;
+      // this hook patches it with a switch-statement dispatch table so the
+      // runtime probe loop in app-page-execution.ts can skip the Layer 3
+      // per-layout dynamic-isolation probe for layouts we proved static or
+      // dynamic at build time.
+      //
+      // @vitejs/plugin-rsc runs the RSC environment build in two phases:
+      // a scan phase that discovers client references, and a final build
+      // phase that emits the real RSC entry. We only patch when we actually
+      // see the stub in a chunk — the scan phase produces a tiny stub chunk
+      // that does not contain our code.
+      generateBundle(_options, bundle) {
+        // Only run in the RSC environment. SSR/client builds never contain
+        // the __VINEXT_CLASS stub so there is nothing to patch there, and
+        // pulling ModuleInfo from the wrong graph would give nonsense results.
+        if (this.environment?.name !== "rsc") return;
+        if (!rscClassificationManifest) return;
+
+        const enableClassificationDebug = Boolean(process.env.VINEXT_DEBUG_CLASSIFICATION);
+
+        // The `?` after the semicolon is intentional: Rolldown may or may not
+        // emit the trailing semicolon depending on minification settings.
+        // This regex relies on `__VINEXT_CLASS` retaining its name, which holds
+        // because RSC entry chunk bindings are not subject to scope-hoisting renames.
+        const stubRe = /function __VINEXT_CLASS\(routeIdx\)\s*\{\s*return null;?\s*\}/;
+        const reasonsStubRe =
+          /function __VINEXT_CLASS_REASONS\(routeIdx\)\s*\{\s*return null;?\s*\}/;
+
+        // Skip the scan-phase build where the RSC entry code has been
+        // tree-shaken out entirely. In the real RSC build the chunk that
+        // carries our runtime code will reference `__VINEXT_CLASS` via the
+        // per-route literal `__buildTimeClassifications: __VINEXT_CLASS(N)`,
+        // which Rolldown emits verbatim.
+        //
+        // If we see a chunk that mentions __VINEXT_CLASS but none of them
+        // contain the stub body we recognise, something upstream reshaped the
+        // generated source and we would silently degrade back to the Layer 3
+        // runtime probe. Fail loudly instead so regressions surface at build
+        // time rather than as a mysterious perf cliff at request time.
+        const chunksMentioningStub: Array<{
+          chunk: Extract<(typeof bundle)[string], { type: "chunk" }>;
+          fileName: string;
+        }> = [];
+        const chunksWithStubBody: Array<{
+          chunk: Extract<(typeof bundle)[string], { type: "chunk" }>;
+          fileName: string;
+        }> = [];
+        for (const chunk of Object.values(bundle)) {
+          if (chunk.type !== "chunk") continue;
+          if (!chunk.code.includes("__VINEXT_CLASS")) continue;
+          chunksMentioningStub.push({ chunk, fileName: chunk.fileName });
+          if (stubRe.test(chunk.code)) {
+            chunksWithStubBody.push({ chunk, fileName: chunk.fileName });
+          }
+        }
+
+        if (chunksMentioningStub.length === 0) return;
+        if (chunksWithStubBody.length === 0) {
+          throw new Error(
+            `vinext: build-time classification — __VINEXT_CLASS is referenced in ${chunksMentioningStub
+              .map((c) => c.fileName)
+              .join(
+                ", ",
+              )} but no chunk contains the stub body. The generator and generateBundle have drifted.`,
+          );
+        }
+        if (chunksWithStubBody.length > 1) {
+          throw new Error(
+            `vinext: build-time classification — expected __VINEXT_CLASS stub in exactly one RSC chunk, found ${chunksWithStubBody.length}`,
+          );
+        }
+        if (enableClassificationDebug && !reasonsStubRe.test(chunksWithStubBody[0]!.chunk.code)) {
+          throw new Error(
+            "vinext: build-time classification — __VINEXT_CLASS_REASONS stub is missing alongside __VINEXT_CLASS. The generator and generateBundle have drifted.",
+          );
+        }
+
+        // `canonicalize` and `dynamicShimPaths` are hoisted to plugin init
+        // (above) so they are constructed once per plugin instance instead of
+        // on every generateBundle invocation. The macOS realpath quirk
+        // (/var/folders/... → /private/var/folders/...) still applies to
+        // every path we hand to the classifier.
+
+        // Adapter: the classifier in `build/layout-classification.ts` uses
+        // `dynamicImportedIds` (matches the old-Rollup field name we used when
+        // we wrote it). Rolldown's current ModuleInfo exposes it as
+        // `dynamicallyImportedIds` (the new Rollup field name). Keep the
+        // translation in one place so future call sites don't have to remember.
+        const moduleInfo = {
+          getModuleInfo: (moduleId: string) => {
+            const info = this.getModuleInfo(moduleId);
+            if (!info) return null;
+            return {
+              importedIds: info.importedIds ?? [],
+              dynamicImportedIds: info.dynamicallyImportedIds ?? [],
+            };
+          },
+        };
+
+        const layer2PerRoute = new Map<number, Map<number, ModuleGraphStaticReason>>();
+        const graphCache = new Map<string, ReturnType<typeof classifyLayoutByModuleGraph>>();
+        for (let routeIdx = 0; routeIdx < rscClassificationManifest.routes.length; routeIdx++) {
+          const route = rscClassificationManifest.routes[routeIdx]!;
+          const perRoute = new Map<number, ModuleGraphStaticReason>();
+          for (let layoutIdx = 0; layoutIdx < route.layoutPaths.length; layoutIdx++) {
+            // Skip layouts already decided by Layer 1 — segment config is
+            // authoritative, so there is no need to walk the module graph.
+            if (route.layer1.has(layoutIdx)) continue;
+            const layoutModuleId = canonicalize(route.layoutPaths[layoutIdx]!);
+            // If the layout module itself is not in the graph, we have no
+            // evidence either way — do NOT claim it static, or we would skip
+            // the runtime probe for a layout we never actually analysed.
+            // `classifyLayoutByModuleGraph` returns "static" for an empty
+            // traversal, so the seed presence check has to happen here.
+            if (!moduleInfo.getModuleInfo(layoutModuleId)) continue;
+            let graphResult = graphCache.get(layoutModuleId);
+            if (graphResult === undefined) {
+              graphResult = classifyLayoutByModuleGraph(
+                layoutModuleId,
+                dynamicShimPaths,
+                moduleInfo,
+              );
+              graphCache.set(layoutModuleId, graphResult);
+            }
+            if (isStaticModuleGraphResult(graphResult)) {
+              perRoute.set(layoutIdx, moduleGraphReason(graphResult));
+            }
+          }
+          if (perRoute.size > 0) {
+            layer2PerRoute.set(routeIdx, perRoute);
+          }
+        }
+
+        const replacement = buildGenerateBundleReplacement(
+          rscClassificationManifest,
+          layer2PerRoute,
+        );
+        const patchedBody = `function __VINEXT_CLASS(routeIdx) { return (${replacement})(routeIdx); }`;
+        const target = chunksWithStubBody[0]!.chunk;
+        target.code = target.code.replace(stubRe, patchedBody);
+
+        if (enableClassificationDebug) {
+          const reasonsReplacement = buildReasonsReplacement(
+            rscClassificationManifest,
+            layer2PerRoute,
+          );
+          const patchedReasonsBody = `function __VINEXT_CLASS_REASONS(routeIdx) { return (${reasonsReplacement})(routeIdx); }`;
+          target.code = target.code.replace(reasonsStubRe, patchedReasonsBody);
+        }
+
+        // The patched body is longer than the stub, so any existing source map
+        // would be stale. RSC entry source maps are not served or consumed, so
+        // nulling the map is safe and prevents stale-map confusion in tooling.
+        target.map = null;
+        // Consume the manifest exactly once per RSC entry load. Clearing here
+        // prevents a stale manifest from leaking into a subsequent generateBundle
+        // call if the load hook is not re-triggered (e.g., in non-standard rebuild paths).
+        rscClassificationManifest = null;
       },
     },
     // Stub node:async_hooks in client builds — see src/plugins/async-hooks-stub.ts
@@ -1790,6 +2001,18 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             rscEnv.hot.send({ type: "full-reload" });
           }
         }
+
+        // Node throws on unhandled 'error' events on sockets. When a browser
+        // drops the connection mid-response (common in dev: HMR triggers a
+        // reload while an RSC stream is still flushing), the next res.write
+        // surfaces ECONNRESET on res.socket with no listener attached and
+        // takes down the process. A no-op listener on every connection
+        // neutralises the throw without hiding write failures from callers.
+        // Matches the guard Vite's HMR server and Next.js install for the
+        // same reason. See cloudflare/vinext#905.
+        server.httpServer?.on("connection", (socket) => {
+          socket.on("error", () => {});
+        });
 
         server.watcher.on("add", (filePath: string) => {
           if (hasPagesDir && filePath.startsWith(pagesDir) && pageExtensions.test(filePath)) {
@@ -2092,15 +2315,16 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
               }
 
               // Guard against protocol-relative URL open redirects.
-              // Normalize backslashes first: browsers treat /\ as // in URL
-              // context. Check the RAW pathname before normalizePath so the
-              // guard fires before normalizePath collapses //.
-              pathname = pathname.replaceAll("\\", "/");
-              if (pathname.startsWith("//")) {
+              // Check the RAW pathname before decode/normalize so both literal
+              // (//, /\) and percent-encoded (%5C, %2F) leading delimiters are
+              // rejected. Encoded forms survive the segment-wise decode below
+              // and would otherwise reach trailing-slash redirect emitters.
+              if (isOpenRedirectShaped(pathname)) {
                 res.writeHead(404);
                 res.end("404 Not Found");
                 return;
               }
+              pathname = pathname.replaceAll("\\", "/");
 
               // Normalize the pathname to prevent path-confusion attacks.
               // decodeURIComponent prevents /%61dmin bypassing /admin matchers.

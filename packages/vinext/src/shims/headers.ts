@@ -202,6 +202,11 @@ export function setHeadersContext(ctx: HeadersContext | null): void {
  * so RSC streaming works correctly — components that render when the
  * stream is consumed still see the correct request's context.
  */
+export function runWithHeadersContext<T>(ctx: HeadersContext, fn: () => Promise<T>): Promise<T>;
+export function runWithHeadersContext<T>(
+  ctx: HeadersContext,
+  fn: () => T | Promise<T>,
+): T | Promise<T>;
 export function runWithHeadersContext<T>(
   ctx: HeadersContext,
   fn: () => T | Promise<T>,

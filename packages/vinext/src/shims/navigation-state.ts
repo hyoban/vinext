@@ -55,6 +55,8 @@ function _getState(): NavigationState {
  * Ensures per-request isolation for navigation context and
  * useServerInsertedHTML callbacks on concurrent runtimes.
  */
+export function runWithNavigationContext<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithNavigationContext<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithNavigationContext<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {
@@ -77,6 +79,8 @@ export function runWithNavigationContext<T>(fn: () => T | Promise<T>): T | Promi
  * but it needs a fresh callback collection so CSS-in-JS insertions from the
  * streamed render cannot accumulate into the cache-fill render.
  */
+export function runWithServerInsertedHTMLState<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithServerInsertedHTMLState<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithServerInsertedHTMLState<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {

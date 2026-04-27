@@ -1,6 +1,9 @@
 import type { LayoutFlags } from "./app-elements.js";
+import type { ClassificationReason } from "../build/layout-classification-types.js";
+import { mergeMiddlewareResponseHeaders } from "./middleware-response-headers.js";
 
 export type { LayoutFlags };
+export type { ClassificationReason };
 
 export type AppPageSpecialError =
   | { kind: "redirect"; location: string; statusCode: number }
@@ -11,19 +14,20 @@ export type AppPageFontPreload = {
   type: string;
 };
 
-export type AppPageRscStreamCapture = {
+type AppPageRscStreamCapture = {
   capturedRscDataPromise: Promise<ArrayBuffer> | null;
   responseStream: ReadableStream<Uint8Array>;
 };
 
-export type BuildAppPageSpecialErrorResponseOptions = {
+type BuildAppPageSpecialErrorResponseOptions = {
   clearRequestContext: () => void;
+  middlewareContext?: { headers: Headers | null };
   renderFallbackPage?: (statusCode: number) => Promise<Response | null>;
   requestUrl: string;
   specialError: AppPageSpecialError;
 };
 
-export type ProbeAppPageLayoutsResult = {
+type ProbeAppPageLayoutsResult = {
   response: Response | null;
   layoutFlags: LayoutFlags;
 };
@@ -31,13 +35,29 @@ export type ProbeAppPageLayoutsResult = {
 export type LayoutClassificationOptions = {
   /** Build-time classifications from segment config or module graph, keyed by layout index. */
   buildTimeClassifications?: ReadonlyMap<number, "static" | "dynamic"> | null;
+  /**
+   * Per-layout classification reasons keyed by layout index. Requires
+   * `VINEXT_DEBUG_CLASSIFICATION` at BOTH lifecycle points: at build time so
+   * the plugin patches the `__VINEXT_CLASS_REASONS` dispatch stub, and at
+   * runtime so the route object actually calls it. Setting the flag only at
+   * runtime leaves the stub returning `null`, and every build-time classified
+   * layout will fall through to `{ layer: "no-classifier" }` in the debug
+   * channel. The hot path never reads this and the wire payload is unchanged.
+   */
+  buildTimeReasons?: ReadonlyMap<number, ClassificationReason> | null;
+  /**
+   * Emits one log line per layout with the classification reason, keyed by
+   * layout ID. Set by the generator when `VINEXT_DEBUG_CLASSIFICATION` is
+   * active. When undefined, the probe loop skips debug emission entirely.
+   */
+  debugClassification?: (layoutId: string, reason: ClassificationReason) => void;
   /** Maps layout index to its layout ID (e.g. "layout:/blog"). */
   getLayoutId: (layoutIndex: number) => string;
   /** Runs a function with isolated dynamic usage tracking per layout. */
   runWithIsolatedDynamicScope: <T>(fn: () => T) => Promise<{ result: T; dynamicDetected: boolean }>;
 };
 
-export type ProbeAppPageLayoutsOptions = {
+type ProbeAppPageLayoutsOptions = {
   layoutCount: number;
   onLayoutError: (error: unknown, layoutIndex: number) => Promise<Response | null>;
   probeLayoutAt: (layoutIndex: number) => unknown;
@@ -46,7 +66,7 @@ export type ProbeAppPageLayoutsOptions = {
   classification?: LayoutClassificationOptions | null;
 };
 
-export type ProbeAppPageComponentOptions = {
+type ProbeAppPageComponentOptions = {
   awaitAsyncResult: boolean;
   onError: (error: unknown) => Promise<Response | null>;
   probePage: () => unknown;
@@ -64,6 +84,20 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 
 function getAppPageStatusText(statusCode: number): string {
   return statusCode === 403 ? "Forbidden" : statusCode === 401 ? "Unauthorized" : "Not Found";
+}
+
+function mergeAppPageSpecialErrorHeaders(
+  response: Response,
+  middlewareContext: { headers: Headers | null } | undefined,
+): Response {
+  const headers = new Headers(response.headers);
+  mergeMiddlewareResponseHeaders(headers, middlewareContext?.headers ?? null);
+
+  return new Response(response.body, {
+    headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
 }
 
 export function resolveAppPageSpecialError(error: unknown): AppPageSpecialError | null {
@@ -97,25 +131,36 @@ export async function buildAppPageSpecialErrorResponse(
 ): Promise<Response> {
   if (options.specialError.kind === "redirect") {
     options.clearRequestContext();
-    return Response.redirect(
-      new URL(options.specialError.location, options.requestUrl),
-      options.specialError.statusCode,
-    );
+    const headers = new Headers({
+      Location: new URL(options.specialError.location, options.requestUrl).toString(),
+    });
+    // Middleware may contribute response headers here, but redirect() owns the
+    // status. Do not apply middlewareContext.status on special-error responses.
+    mergeMiddlewareResponseHeaders(headers, options.middlewareContext?.headers ?? null);
+
+    return new Response(null, {
+      headers,
+      status: options.specialError.statusCode,
+    });
   }
 
   if (options.renderFallbackPage) {
     const fallbackResponse = await options.renderFallbackPage(options.specialError.statusCode);
     if (fallbackResponse) {
-      return fallbackResponse;
+      return mergeAppPageSpecialErrorHeaders(fallbackResponse, options.middlewareContext);
     }
   }
 
   options.clearRequestContext();
-  return new Response(getAppPageStatusText(options.specialError.statusCode), {
-    status: options.specialError.statusCode,
-  });
+  return mergeAppPageSpecialErrorHeaders(
+    new Response(getAppPageStatusText(options.specialError.statusCode), {
+      status: options.specialError.statusCode,
+    }),
+    options.middlewareContext,
+  );
 }
 
+/** See `LayoutFlags` type docblock in app-elements.ts for lifecycle. */
 export async function probeAppPageLayouts(
   options: ProbeAppPageLayoutsOptions,
 ): Promise<ProbeAppPageLayoutsResult> {
@@ -130,6 +175,17 @@ export async function probeAppPageLayouts(
         // Build-time classified (Layer 1 or Layer 2): skip dynamic isolation,
         // but still probe for special errors (redirects, not-found).
         layoutFlags[cls.getLayoutId(layoutIndex)] = buildTimeResult === "static" ? "s" : "d";
+        if (cls.debugClassification) {
+          // `no-classifier` is the documented fallback for a layout that was
+          // build-time classified but whose reason payload is absent — either
+          // because the build was run without `VINEXT_DEBUG_CLASSIFICATION` or
+          // because no Layer 1/2 classifier attached a reason. This is the sole
+          // producer of the variant; see `layout-classification-types.ts`.
+          cls.debugClassification(
+            cls.getLayoutId(layoutIndex),
+            cls.buildTimeReasons?.get(layoutIndex) ?? { layer: "no-classifier" },
+          );
+        }
         const errorResponse = await probeLayoutForErrors(options, layoutIndex);
         if (errorResponse) return errorResponse;
         continue;
@@ -143,9 +199,22 @@ export async function probeAppPageLayouts(
             options.probeLayoutAt(layoutIndex),
           );
           layoutFlags[cls.getLayoutId(layoutIndex)] = dynamicDetected ? "d" : "s";
+          if (cls.debugClassification) {
+            cls.debugClassification(cls.getLayoutId(layoutIndex), {
+              layer: "runtime-probe",
+              outcome: dynamicDetected ? "dynamic" : "static",
+            });
+          }
         } catch (error) {
           // Probe failed — conservatively treat as dynamic.
           layoutFlags[cls.getLayoutId(layoutIndex)] = "d";
+          if (cls.debugClassification) {
+            cls.debugClassification(cls.getLayoutId(layoutIndex), {
+              layer: "runtime-probe",
+              outcome: "dynamic",
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           const errorResponse = await options.onLayoutError(error, layoutIndex);
           if (errorResponse) return errorResponse;
         }
@@ -216,9 +285,7 @@ export async function readAppPageTextStream(stream: ReadableStream<Uint8Array>):
   return chunks.join("");
 }
 
-export async function readAppPageBinaryStream(
-  stream: ReadableStream<Uint8Array>,
-): Promise<ArrayBuffer> {
+async function readAppPageBinaryStream(stream: ReadableStream<Uint8Array>): Promise<ArrayBuffer> {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let totalLength = 0;

@@ -457,6 +457,8 @@ function _getCacheState(): CacheState {
  * on concurrent runtimes.
  * @internal
  */
+export function _runWithCacheState<T>(fn: () => Promise<T>): Promise<T>;
+export function _runWithCacheState<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function _runWithCacheState<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {

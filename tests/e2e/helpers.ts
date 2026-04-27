@@ -18,7 +18,11 @@ export async function waitForHydration(page: Page): Promise<void> {
  */
 export async function waitForAppRouterHydration(page: Page): Promise<void> {
   await expect(async () => {
-    const ready = await page.evaluate(() => Boolean(window.__VINEXT_RSC_ROOT__));
+    const ready = await page.evaluate(
+      () =>
+        Boolean(window.__VINEXT_RSC_ROOT__) && typeof window.__VINEXT_RSC_NAVIGATE__ === "function",
+    );
     expect(ready).toBe(true);
   }).toPass({ timeout: 10_000 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 }

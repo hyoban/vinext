@@ -15,6 +15,33 @@ import {
   startFixtureServer,
 } from "./helpers.js";
 
+function decodeHtmlText(text: string): string {
+  return text
+    .replaceAll("&quot;", '"')
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
+function textContentByTestId(html: string, testId: string): string {
+  const attrIndex = html.indexOf(`data-testid="${testId}"`);
+  if (attrIndex === -1) {
+    throw new Error(`Missing data-testid="${testId}"`);
+  }
+
+  const contentStart = html.indexOf(">", attrIndex);
+  if (contentStart === -1) {
+    throw new Error(`Missing opening tag end for data-testid="${testId}"`);
+  }
+
+  const contentEnd = html.indexOf("</", contentStart);
+  if (contentEnd === -1) {
+    throw new Error(`Missing closing tag for data-testid="${testId}"`);
+  }
+
+  return decodeHtmlText(html.slice(contentStart + 1, contentEnd));
+}
+
 describe("App Router integration", () => {
   let server: ViteDevServer;
   let baseUrl: string;
@@ -363,10 +390,8 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // The SegmentDisplay renders: <span data-testid="segments">["settings"]</span>
-    expect(html).toContain('data-testid="segments"');
     // Verify it returns ["settings"], not ["dashboard", "settings"]
-    expect(html).toMatch(/data-testid="segments"[^>]*>\[&quot;settings&quot;\]/);
+    expect(JSON.parse(textContentByTestId(html, "segments"))).toEqual(["settings"]);
   });
 
   it("useSelectedLayoutSegment returns first segment relative to dashboard layout", async () => {
@@ -374,9 +399,7 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // The SegmentDisplay renders: <span data-testid="segment">settings</span>
-    expect(html).toContain('data-testid="segment"');
-    expect(html).toMatch(/data-testid="segment"[^>]*>settings</);
+    expect(textContentByTestId(html, "segment")).toBe("settings");
   });
 
   it("useSelectedLayoutSegments returns empty array at leaf route", async () => {
@@ -385,8 +408,7 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // Should render: <span data-testid="segments">[]</span>
-    expect(html).toMatch(/data-testid="segments"[^>]*>\[\]/);
+    expect(JSON.parse(textContentByTestId(html, "segments"))).toEqual([]);
   });
 
   it("useSelectedLayoutSegment returns null at leaf route", async () => {
@@ -394,8 +416,7 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    // Should render: <span data-testid="segment">null</span>
-    expect(html).toMatch(/data-testid="segment"[^>]*>null</);
+    expect(textContentByTestId(html, "segment")).toBe("null");
   });
 
   // --- parallelRoutesKey support ---
@@ -408,8 +429,8 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    expect(html).toMatch(/data-testid="team-segments"[^>]*>\[\]/);
-    expect(html).toMatch(/data-testid="team-segment"[^>]*>null</);
+    expect(JSON.parse(textContentByTestId(html, "team-segments"))).toEqual([]);
+    expect(textContentByTestId(html, "team-segment")).toBe("null");
   });
 
   it("useSelectedLayoutSegments('analytics') returns [] when slot page is at root", async () => {
@@ -417,7 +438,7 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    expect(html).toMatch(/data-testid="analytics-segments"[^>]*>\[\]/);
+    expect(JSON.parse(textContentByTestId(html, "analytics-segments"))).toEqual([]);
   });
 
   it("useSelectedLayoutSegments('team') returns slot sub-route segments", async () => {
@@ -427,8 +448,21 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    expect(html).toMatch(/data-testid="team-segments"[^>]*>\[&quot;members&quot;\]/);
-    expect(html).toMatch(/data-testid="team-segment"[^>]*>members</);
+    expect(JSON.parse(textContentByTestId(html, "team-segments"))).toEqual(["members"]);
+    expect(textContentByTestId(html, "team-segment")).toBe("members");
+  });
+
+  it("useSelectedLayoutSegment('team') returns the leaf segment for nested slot routes", async () => {
+    // Mirrors Next.js @auth/reset/withEmail coverage:
+    // useSelectedLayoutSegments("team") should return ["members", "profile"],
+    // while useSelectedLayoutSegment("team") should return "profile".
+    const res = await fetch(`${baseUrl}/dashboard/members/profile`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    expect(html).toContain('data-testid="team-member-profile-page"');
+    expect(JSON.parse(textContentByTestId(html, "team-segments"))).toEqual(["members", "profile"]);
+    expect(textContentByTestId(html, "team-segment")).toBe("profile");
   });
 
   it("useSelectedLayoutSegments('analytics') returns [] when slot shows default on sub-route", async () => {
@@ -438,7 +472,7 @@ describe("App Router integration", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    expect(html).toMatch(/data-testid="analytics-segments"[^>]*>\[\]/);
+    expect(JSON.parse(textContentByTestId(html, "analytics-segments"))).toEqual([]);
   });
 
   it("useSelectedLayoutSegments() (default children) still returns correct segments after migration", async () => {
@@ -447,7 +481,7 @@ describe("App Router integration", () => {
     const html = await res.text();
 
     // children segments below the dashboard layout should include "settings"
-    expect(html).toMatch(/data-testid="segments"[^>]*>\[&quot;settings&quot;\]/);
+    expect(JSON.parse(textContentByTestId(html, "segments"))).toEqual(["settings"]);
   });
 
   // --- Intercepting routes ---
@@ -740,6 +774,17 @@ describe("App Router integration", () => {
     expect(html).toContain("use client");
     // Should NOT contain the actual page content (it errored before rendering)
     expect(html).not.toContain("Missing use client test");
+  });
+
+  it("errors when React client hook is used in a Server Component without 'use client' (#834)", async () => {
+    const { res, html } = await fetchHtml(baseUrl, "/missing-use-client-react-hook");
+    expect(res.status).toBe(200); // error boundary renders, not a 500
+    // The error message should be clear and actionable
+    expect(html).toContain("useState()");
+    expect(html).toContain("Client Components");
+    expect(html).toContain("use client");
+    // Should NOT contain the actual page content (it errored before rendering)
+    expect(html).not.toContain("Missing use client react hook test");
   });
 
   it("redirect() from Server Component returns redirect response", async () => {
@@ -3634,6 +3679,27 @@ describe("App Router next.config.js features (generateRscEntry)", () => {
       });
     });
   });
+
+  describe("build-time classification dispatch stub", () => {
+    it("declares a __VINEXT_CLASS dispatch function", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).toContain("function __VINEXT_CLASS(routeIdx)");
+    });
+
+    it("threads a numeric route index into each route's classification wiring", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      // minimalRoutes has three routes, so the generator should emit calls
+      // __VINEXT_CLASS(0), __VINEXT_CLASS(1), __VINEXT_CLASS(2).
+      for (let i = 0; i < minimalRoutes.length; i++) {
+        expect(code).toContain(`__VINEXT_CLASS(${i})`);
+      }
+    });
+
+    it("no longer hardcodes buildTimeClassifications to null", () => {
+      const code = generateRscEntry("/tmp/test/app", minimalRoutes, null, [], null, "", false);
+      expect(code).not.toContain("buildTimeClassifications: null");
+    });
+  });
 });
 
 describe("App Router middleware with NextRequest", () => {
@@ -4377,6 +4443,58 @@ describe("generateRscEntry ISR code generation", () => {
     expect(code).toContain("const __pageBuildResult = await __buildAppPageElement({");
   });
 
+  it("generated code threads intercept layout modules through slot overrides", () => {
+    const routeWithInterceptLayouts: AppRoute = {
+      errorPath: null,
+      forbiddenPath: null,
+      isDynamic: false,
+      layoutErrorPaths: [null],
+      layouts: ["/tmp/test/app/layout.tsx"],
+      layoutTreePositions: [0],
+      loadingPath: null,
+      notFoundPath: null,
+      notFoundPaths: [null],
+      pagePath: "/tmp/test/app/page.tsx",
+      parallelSlots: [
+        {
+          defaultPath: "/tmp/test/app/@modal/default.tsx",
+          errorPath: null,
+          interceptingRoutes: [
+            {
+              convention: ".",
+              layoutPaths: ["/tmp/test/app/@modal/(.)explicit-layout/layout.tsx"],
+              pagePath: "/tmp/test/app/@modal/(.)explicit-layout/deeper/page.tsx",
+              params: [],
+              targetPattern: "/explicit-layout/deeper",
+            },
+          ],
+          key: "modal@@modal",
+          layoutIndex: 0,
+          layoutPath: "/tmp/test/app/@modal/layout.tsx",
+          loadingPath: null,
+          name: "modal",
+          ownerDir: "/tmp/test/app/@modal",
+          pagePath: null,
+          routeSegments: null,
+        },
+      ],
+      params: [],
+      pattern: "/",
+      patternParts: [],
+      routePath: null,
+      routeSegments: [],
+      templates: [],
+      templateTreePositions: [],
+      unauthorizedPath: null,
+    };
+
+    const code = generateRscEntry("/tmp/test/app", [routeWithInterceptLayouts]);
+
+    expect(code).toContain("interceptLayouts: [mod_");
+    expect(code).toContain("interceptLayouts: intercept.interceptLayouts");
+    expect(code).toContain("layoutModules: opts.interceptLayouts || null");
+  });
+
   it("generated code delegates page boundary rendering to typed helpers", () => {
     const code = generateRscEntry("/tmp/test/app", minimalRoutes);
     expect(code).toContain("renderAppPageErrorBoundary as __renderAppPageErrorBoundary");
@@ -4386,6 +4504,24 @@ describe("generateRscEntry ISR code generation", () => {
     );
     expect(code).toContain("return __renderAppPageHttpAccessFallback({");
     expect(code).toContain("return __renderAppPageErrorBoundary({");
+  });
+
+  it("generated code threads middleware headers into page boundary and special-error responses", () => {
+    const code = generateRscEntry("/tmp/test/app", minimalRoutes);
+
+    expect(code).toContain("const __APP_PAGE_EMPTY_MW_CTX = { headers: null, status: null };");
+    expect(code).toContain("middlewareContext: middlewareContext ?? __APP_PAGE_EMPTY_MW_CTX");
+    expect(code).toContain("middlewareContext: _mwCtx");
+    expect(code).toContain("__mergeMiddlewareResponseHeaders(notFoundHeaders, _mwCtx.headers)");
+
+    const specialErrorStart = code.indexOf("renderSpecialError(__buildSpecialError)");
+    const specialErrorEnd = code.indexOf("resolveSpecialError:", specialErrorStart);
+    const specialErrorBody = code.slice(specialErrorStart, specialErrorEnd);
+    expect(specialErrorBody).toContain("middlewareContext: _mwCtx");
+    expect(specialErrorBody).toContain(
+      "additive headers like Set-Cookie and Vary are not duplicated.",
+    );
+    expect(specialErrorBody).toContain("null,");
   });
 
   it("generated code delegates page cache HIT handling to a typed helper", () => {

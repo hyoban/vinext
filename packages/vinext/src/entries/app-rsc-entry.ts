@@ -74,6 +74,7 @@ const appRouteHandlerResponsePath = resolveEntryPath(
 );
 const routeTriePath = resolveEntryPath("../routing/route-trie.js", import.meta.url);
 const metadataRoutesPath = resolveEntryPath("../server/metadata-routes.js", import.meta.url);
+const errorCausePath = resolveEntryPath("../utils/error-cause.js", import.meta.url);
 
 /**
  * Resolved config options relevant to App Router request handling.
@@ -175,15 +176,18 @@ export function generateRscEntry(
       if (slot.layoutPath) getImportVar(slot.layoutPath);
       if (slot.loadingPath) getImportVar(slot.loadingPath);
       if (slot.errorPath) getImportVar(slot.errorPath);
-      // Register intercepting route page modules
+      // Register intercepting route modules
       for (const ir of slot.interceptingRoutes) {
         getImportVar(ir.pagePath);
+        for (const layoutPath of ir.layoutPaths) {
+          getImportVar(layoutPath);
+        }
       }
     }
   }
 
   // Build route table as serialized JS
-  const routeEntries = routes.map((route) => {
+  const routeEntries = routes.map((route, routeIdx) => {
     const layoutVars = route.layouts.map((l) => getImportVar(l));
     const templateVars = route.templates.map((t) => getImportVar(t));
     const notFoundVars = (route.notFoundPaths || []).map((nf) => (nf ? getImportVar(nf) : "null"));
@@ -192,6 +196,7 @@ export function generateRscEntry(
         (ir) => `        {
           convention: ${JSON.stringify(ir.convention)},
           targetPattern: ${JSON.stringify(ir.targetPattern)},
+          interceptLayouts: [${ir.layoutPaths.map((layoutPath) => getImportVar(layoutPath)).join(", ")}],
           page: ${getImportVar(ir.pagePath)},
           params: ${JSON.stringify(ir.params)},
         }`,
@@ -214,6 +219,8 @@ ${interceptEntries.join(",\n")}
       ep ? getImportVar(ep) : "null",
     );
     return `  {
+    __buildTimeClassifications: __VINEXT_CLASS(${routeIdx}), // evaluated once at module load
+    __buildTimeReasons: __classDebug ? __VINEXT_CLASS_REASONS(${routeIdx}) : null,
     pattern: ${JSON.stringify(route.pattern)},
     patternParts: ${JSON.stringify(route.patternParts)},
     isDynamic: ${route.isDynamic},
@@ -408,6 +415,7 @@ import {
 } from ${JSON.stringify(appPageResponsePath)};
 import { getScriptNonceFromHeaderSources as __getScriptNonceFromHeaderSources } from ${JSON.stringify(cspPath)};
 import {
+  resolveAppPageActionRerenderTarget as __resolveAppPageActionRerenderTarget,
   buildAppPageElement as __buildAppPageElement,
   resolveAppPageIntercept as __resolveAppPageIntercept,
   validateAppPageDynamicParams as __validateAppPageDynamicParams,
@@ -423,6 +431,7 @@ import { buildRouteTrie as _buildRouteTrie, trieMatch as _trieMatch } from ${JSO
 import "vinext/navigation-state";
 import { runWithRequestContext as _runWithUnifiedCtx, createRequestContext as _createUnifiedCtx } from "vinext/unified-request-context";
 import { reportRequestError as _reportRequestError } from "vinext/instrumentation";
+import { flattenErrorCauses as __flattenErrorCauses } from ${JSON.stringify(errorCausePath)};
 import { getSSRFontLinks as _getSSRFontLinks, getSSRFontStyles as _getSSRFontStylesGoogle, getSSRFontPreloads as _getSSRFontPreloadsGoogle } from "next/font/google";
 import { getSSRFontStyles as _getSSRFontStylesLocal, getSSRFontPreloads as _getSSRFontPreloadsLocal } from "next/font/local";
 function _getSSRFontStyles() { return [..._getSSRFontStylesGoogle(), ..._getSSRFontStylesLocal()]; }
@@ -569,6 +578,16 @@ function __isrRouteKey(pathname) { return __isrCacheKey(pathname, "route"); }
 // have a single knob for all cache tracing.
 const __isrDebug = process.env.NEXT_PRIVATE_DEBUG_CACHE
   ? console.debug.bind(console, "[vinext] ISR:")
+  : undefined;
+
+// Classification debug — opt in with VINEXT_DEBUG_CLASSIFICATION=1. Gated on
+// the env var so the hot path pays no overhead unless an operator is actively
+// tracing why a layout was flagged static or dynamic. The reason payload is
+// carried by __VINEXT_CLASS_REASONS and consumed inside probeAppPageLayouts.
+const __classDebug = process.env.VINEXT_DEBUG_CLASSIFICATION
+  ? function(layoutId, reason) {
+      console.debug("[vinext] CLS:", layoutId, reason);
+    }
   : undefined;
 
 // Normalize null-prototype objects from matchPattern() into thenable objects
@@ -743,6 +762,24 @@ async function __ensureInstrumentation() {
     : ""
 }
 
+// Build-time layout classification dispatch. Replaced in generateBundle
+// with a switch statement that returns a pre-computed per-layout
+// Map<layoutIndex, "static" | "dynamic"> for each route. Until the
+// plugin patches this stub, every route falls back to the Layer 3
+// runtime probe, which is the current (slow) behaviour.
+function __VINEXT_CLASS(routeIdx) {
+  return null;
+}
+
+// Build-time layout classification reasons dispatch. Sibling of
+// __VINEXT_CLASS, returning a per-route Map<layoutIndex, ClassificationReason>
+// that feeds the debug channel when VINEXT_DEBUG_CLASSIFICATION is active.
+// Replaced in generateBundle with a real dispatch table; the stub returns
+// null so the hot path never allocates reason maps when debug is off.
+function __VINEXT_CLASS_REASONS(routeIdx) {
+  return null;
+}
+
 const routes = [
 ${routeEntries.join(",\n")}
 ];
@@ -756,6 +793,7 @@ const rootNotFoundModule = ${rootNotFoundVar ? rootNotFoundVar : "null"};
 const rootForbiddenModule = ${rootForbiddenVar ? rootForbiddenVar : "null"};
 const rootUnauthorizedModule = ${rootUnauthorizedVar ? rootUnauthorizedVar : "null"};
 const rootLayouts = [${rootLayoutVars.join(", ")}];
+const __APP_PAGE_EMPTY_MW_CTX = { headers: null, status: null };
 
 /**
  * Render an HTTP access fallback page (not-found/forbidden/unauthorized) with layouts and noindex meta.
@@ -764,7 +802,7 @@ const rootLayouts = [${rootLayoutVars.join(", ")}];
  * @param opts.boundaryComponent - Override the boundary component (for layout-level notFound)
  * @param opts.layouts - Override the layouts to wrap with (for layout-level notFound, excludes the throwing layout)
  */
-async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, request, opts, scriptNonce) {
+async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, request, opts, scriptNonce, middlewareContext) {
   return __renderAppPageHttpAccessFallback({
     boundaryComponent: opts?.boundaryComponent ?? null,
     buildFontLinkHeader: __buildAppPageFontLinkHeader,
@@ -787,6 +825,7 @@ async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, req
     },
     makeThenableParams,
     matchedParams: opts?.matchedParams ?? route?.params ?? {},
+    middlewareContext: middlewareContext ?? __APP_PAGE_EMPTY_MW_CTX,
     requestUrl: request.url,
     resolveChildSegments: __resolveAppPageChildSegments,
     rootForbiddenModule: rootForbiddenModule,
@@ -801,8 +840,8 @@ async function renderHTTPAccessFallbackPage(route, statusCode, isRscRequest, req
 }
 
 /** Convenience: render a not-found page (404) */
-async function renderNotFoundPage(route, isRscRequest, request, matchedParams, scriptNonce) {
-  return renderHTTPAccessFallbackPage(route, 404, isRscRequest, request, { matchedParams }, scriptNonce);
+async function renderNotFoundPage(route, isRscRequest, request, matchedParams, scriptNonce, middlewareContext) {
+  return renderHTTPAccessFallbackPage(route, 404, isRscRequest, request, { matchedParams }, scriptNonce, middlewareContext);
 }
 
 /**
@@ -812,7 +851,7 @@ async function renderNotFoundPage(route, isRscRequest, request, matchedParams, s
  * Next.js returns HTTP 200 when error.tsx catches an error (the error is "handled"
  * by the boundary). This matches that behavior intentionally.
  */
-async function renderErrorBoundaryPage(route, error, isRscRequest, request, matchedParams, scriptNonce) {
+async function renderErrorBoundaryPage(route, error, isRscRequest, request, matchedParams, scriptNonce, middlewareContext) {
   return __renderAppPageErrorBoundary({
     buildFontLinkHeader: __buildAppPageFontLinkHeader,
     clearRequestContext() {
@@ -834,6 +873,7 @@ async function renderErrorBoundaryPage(route, error, isRscRequest, request, matc
     },
     makeThenableParams,
     matchedParams: matchedParams ?? route?.params ?? {},
+    middlewareContext: middlewareContext ?? __APP_PAGE_EMPTY_MW_CTX,
     requestUrl: request.url,
     resolveChildSegments: __resolveAppPageChildSegments,
     rootLayouts: rootLayouts,
@@ -899,8 +939,12 @@ function matchPattern(urlParts, patternParts) {
   return params;
 }
 
+function mergeMatchedParams(sourceParams, targetParams) {
+  return Object.assign(Object.create(null), sourceParams, targetParams);
+}
+
 // Build a global intercepting route lookup for RSC navigation.
-// Maps target URL patterns to { sourceRouteIndex, slotKey, interceptPage, params }.
+// Maps target URL patterns to { sourceRouteIndex, slotKey, interceptPage, interceptLayouts, params }.
 const interceptLookup = [];
 for (let ri = 0; ri < routes.length; ri++) {
   const r = routes[ri];
@@ -913,6 +957,7 @@ for (let ri = 0; ri < routes.length; ri++) {
         slotKey,
         targetPattern: intercept.targetPattern,
         targetPatternParts: intercept.targetPattern.split("/").filter(Boolean),
+        interceptLayouts: intercept.interceptLayouts,
         page: intercept.page,
         params: intercept.params,
       });
@@ -924,20 +969,39 @@ for (let ri = 0; ri < routes.length; ri++) {
  * Check if a pathname matches any intercepting route.
  * Returns the match info or null.
  */
-function findIntercept(pathname) {
+function findIntercept(pathname, sourcePathname = null) {
   const urlParts = pathname.split("/").filter(Boolean);
   for (const entry of interceptLookup) {
     const params = matchPattern(urlParts, entry.targetPatternParts);
     if (params !== null) {
-      return { ...entry, matchedParams: params };
+      let sourceParams = Object.create(null);
+      if (sourcePathname !== null) {
+        const sourceRoute = routes[entry.sourceRouteIndex];
+        const sourceParts = sourcePathname.split("/").filter(Boolean);
+        const matchedSourceParams = sourceRoute
+          ? matchPattern(sourceParts, sourceRoute.patternParts)
+          : null;
+        if (matchedSourceParams !== null) {
+          sourceParams = matchedSourceParams;
+        }
+      }
+      return { ...entry, matchedParams: mergeMatchedParams(sourceParams, params) };
     }
   }
   return null;
 }
 
-async function buildPageElements(route, params, routePath, opts, searchParams, isRscRequest, request) {
+async function buildPageElements(route, params, routePath, pageRequest) {
+  const {
+    opts,
+    searchParams,
+    isRscRequest,
+    request,
+    mountedSlotsHeader,
+  } = pageRequest;
+  const hasPageModule = !!route.page;
   const PageComponent = route.page?.default;
-  if (!PageComponent) {
+  if (hasPageModule && !PageComponent) {
     const _interceptionContext = opts?.interceptionContext ?? null;
     const _noExportRouteId = __createAppPayloadRouteId(routePath, _interceptionContext);
     let _noExportRootLayout = null;
@@ -1052,15 +1116,16 @@ async function buildPageElements(route, params, routePath, opts, searchParams, i
     // dynamic, and this avoids false positives from React internals.
     if (hasSearchParams) markDynamicUsage();
   }
-  const __mountedSlotsHeader = __normalizeMountedSlotsHeader(
-    request?.headers?.get("x-vinext-mounted-slots"),
-  );
-  const mountedSlotIds = __mountedSlotsHeader
-    ? new Set(__mountedSlotsHeader.split(" "))
+  // mountedSlotsHeader is threaded through from the handler scope so every
+  // call site shares one source of truth for request-derived values. Reading
+  // the same header in two places invites silent drift when a future refactor
+  // changes only one of them.
+  const mountedSlotIds = mountedSlotsHeader
+    ? new Set(mountedSlotsHeader.split(" "))
     : null;
 
   return __buildAppPageElements({
-    element: createElement(PageComponent, pageProps),
+    element: PageComponent ? createElement(PageComponent, pageProps) : null,
     globalErrorModule: ${globalErrorVar ? globalErrorVar : "null"},
     isRscRequest,
     mountedSlotIds,
@@ -1076,6 +1141,7 @@ async function buildPageElements(route, params, routePath, opts, searchParams, i
       opts && opts.interceptSlotKey && opts.interceptPage
         ? {
             [opts.interceptSlotKey]: {
+              layoutModules: opts.interceptLayouts || null,
               pageModule: opts.interceptPage,
               params: opts.interceptParams || params,
             },
@@ -1241,7 +1307,23 @@ export default async function handler(request, ctx) {
     // _handleRequest which fills in .headers and .status;
     // avoids module-level variables that race on Workers.
     const _mwCtx = { headers: null, requestHeaders: null, status: null };
-    const response = await _handleRequest(request, __reqCtx, _mwCtx);
+    let response;
+    try {
+      response = await _handleRequest(request, __reqCtx, _mwCtx);
+    } catch (err) {
+      // Dev only: embed err.cause chain into err.message/err.stack so Vite's
+      // dev-server "Internal server error:" logger (which builds output from
+      // message + stack only) reveals the underlying root cause (ECONNREFUSED,
+      // role missing, workerd socket error, etc.) instead of dropping it.
+      // Skipped in production because Node's util.inspect / workerd's logger
+      // already render .cause natively, so flattening would double-print it.
+      // NODE_ENV is build-time-replaced by Vite, so the prod bundle compiles
+      // this branch out entirely.
+      if (process.env.NODE_ENV !== "production") {
+        __flattenErrorCauses(err);
+      }
+      throw err;
+    }
     // Apply custom headers from next.config.js to non-redirect responses.
     // Skip redirects (3xx) because Response.redirect() creates immutable headers,
     // and Next.js doesn't apply custom headers to redirects anyway.
@@ -1412,6 +1494,13 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   const isRscRequest = pathname.endsWith(".rsc") || request.headers.get("accept")?.includes("text/x-component");
+  // Read mounted-slots header once at the handler scope and thread it through
+  // every buildPageElements call site. Previously both the handler and
+  // buildPageElements read and normalized it independently, which invited
+  // silent drift if a future refactor changed only one path.
+  const __mountedSlotsHeader = __normalizeMountedSlotsHeader(
+    request.headers.get("x-vinext-mounted-slots"),
+  );
   const interceptionContextHeader = request.headers.get("X-Vinext-Interception-Context")?.replaceAll("\0", "") || null;
   let cleanPathname = pathname.replace(/\\.rsc$/, "");
 
@@ -1802,24 +1891,60 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
       // After the action, re-render the current page so the client
       // gets an updated React tree reflecting any mutations.
+      //
+      // When the original request came from inside an intercepted modal
+      // (X-Vinext-Interception-Context present + source route still
+      // matches), rebuild the intercepted tree — otherwise the modal would
+      // unmount and the direct route would render in its place. Mirrors
+      // the interception resolution used by the GET path.
       const match = matchRoute(cleanPathname);
       let element;
+      let errorPattern = match ? match.route.pattern : cleanPathname;
       if (match) {
         const { route: actionRoute, params: actionParams } = match;
+        const __actionRerenderTarget = __resolveAppPageActionRerenderTarget({
+          cleanPathname,
+          currentParams: actionParams,
+          currentRoute: actionRoute,
+          findIntercept(pathname) {
+            return findIntercept(pathname, interceptionContextHeader);
+          },
+          getRouteParamNames(sourceRoute) {
+            return sourceRoute.params;
+          },
+          getSourceRoute(sourceRouteIndex) {
+            return routes[sourceRouteIndex];
+          },
+          isRscRequest,
+          toInterceptOpts(intercept) {
+            return {
+              interceptionContext: interceptionContextHeader,
+              interceptLayouts: intercept.interceptLayouts,
+              interceptSlotKey: intercept.slotKey,
+              interceptPage: intercept.page,
+              interceptParams: intercept.matchedParams,
+            };
+          },
+        });
+
         setNavigationContext({
           pathname: cleanPathname,
           searchParams: url.searchParams,
-          params: actionParams,
+          params: __actionRerenderTarget.navigationParams,
         });
         element = buildPageElements(
-          actionRoute,
-          actionParams,
+          __actionRerenderTarget.route,
+          __actionRerenderTarget.params,
           cleanPathname,
-          undefined,
-          url.searchParams,
-          isRscRequest,
-          request,
+          {
+            opts: __actionRerenderTarget.interceptOpts,
+            searchParams: url.searchParams,
+            isRscRequest,
+            request,
+            mountedSlotsHeader: __mountedSlotsHeader,
+          },
         );
+        errorPattern = __actionRerenderTarget.route.pattern;
       } else {
         const _actionRouteId = __createAppPayloadRouteId(cleanPathname, null);
         element = {
@@ -1833,7 +1958,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       const onRenderError = createRscOnErrorHandler(
         request,
         cleanPathname,
-        match ? match.route.pattern : cleanPathname,
+        errorPattern,
       );
       const rscStream = renderToReadableStream(
         { root: element, returnValue },
@@ -1957,11 +2082,13 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         : ""
     }
     // Render custom not-found page if available, otherwise plain 404
-    const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request, undefined, _scriptNonce);
+    const notFoundResponse = await renderNotFoundPage(null, isRscRequest, request, undefined, _scriptNonce, _mwCtx);
     if (notFoundResponse) return notFoundResponse;
     setHeadersContext(null);
     setNavigationContext(null);
-    return new Response("Not Found", { status: 404 });
+    const notFoundHeaders = new Headers();
+    __mergeMiddlewareResponseHeaders(notFoundHeaders, _mwCtx.headers);
+    return new Response("Not Found", { status: 404, headers: notFoundHeaders });
   }
 
   const { route, params } = match;
@@ -2107,8 +2234,9 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
   }
 
   // Build the component tree: layouts wrapping the page
+  const hasPageModule = !!route.page;
   const PageComponent = route.page?.default;
-  if (!PageComponent) {
+  if (hasPageModule && !PageComponent) {
     setHeadersContext(null);
     setNavigationContext(null);
     return new Response("Page has no default export", { status: 500 });
@@ -2153,9 +2281,6 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
   // force-dynamic: set no-store Cache-Control
   const isForceDynamic = dynamicConfig === "force-dynamic";
-  const __mountedSlotsHeader = __normalizeMountedSlotsHeader(
-    request.headers.get("x-vinext-mounted-slots"),
-  );
 
   // ── ISR cache read (production only) ─────────────────────────────────────
   // Read from cache BEFORE generateStaticParams and all rendering work.
@@ -2211,10 +2336,13 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
             route,
             params,
             cleanPathname,
-            undefined,
-            new URLSearchParams(),
-            isRscRequest,
-            request,
+            {
+              opts: undefined,
+              searchParams: new URLSearchParams(),
+              isRscRequest,
+              request,
+              mountedSlotsHeader: __mountedSlotsHeader,
+            },
           );
           const __revalOnError = createRscOnErrorHandler(request, cleanPathname, route.pattern);
           const __revalRscStream = renderToReadableStream(__revalElement, { onError: __revalOnError });
@@ -2269,15 +2397,20 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
         interceptRoute,
         interceptParams,
         cleanPathname,
-        interceptOpts,
-        interceptSearchParams,
-        isRscRequest,
-        request,
+        {
+          opts: interceptOpts,
+          searchParams: interceptSearchParams,
+          isRscRequest,
+          request,
+          mountedSlotsHeader: __mountedSlotsHeader,
+        },
       );
     },
     cleanPathname,
     currentRoute: route,
-    findIntercept,
+    findIntercept(pathname) {
+      return findIntercept(pathname, interceptionContextHeader);
+    },
     getRouteParamNames(sourceRoute) {
       return sourceRoute.params;
     },
@@ -2313,6 +2446,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
     toInterceptOpts(intercept) {
       return {
         interceptionContext: interceptionContextHeader,
+        interceptLayouts: intercept.interceptLayouts,
         interceptSlotKey: intercept.slotKey,
         interceptPage: intercept.page,
         interceptParams: intercept.matchedParams,
@@ -2326,10 +2460,16 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
 
   const __pageBuildResult = await __buildAppPageElement({
     buildPageElement() {
-      return buildPageElements(route, params, cleanPathname, interceptOpts, url.searchParams, isRscRequest, request);
+      return buildPageElements(route, params, cleanPathname, {
+        opts: interceptOpts,
+        searchParams: url.searchParams,
+        isRscRequest,
+        request,
+        mountedSlotsHeader: __mountedSlotsHeader,
+      });
     },
     renderErrorBoundaryPage(buildErr) {
-      return renderErrorBoundaryPage(route, buildErr, isRscRequest, request, params, _scriptNonce);
+      return renderErrorBoundaryPage(route, buildErr, isRscRequest, request, params, _scriptNonce, _mwCtx);
     },
     renderSpecialError(__buildSpecialError) {
       return __buildAppPageSpecialErrorResponse({
@@ -2337,6 +2477,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           setHeadersContext(null);
           setNavigationContext(null);
         },
+        middlewareContext: _mwCtx,
         renderFallbackPage(statusCode) {
           return renderHTTPAccessFallbackPage(
             route,
@@ -2347,6 +2488,10 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
               matchedParams: params,
             },
             _scriptNonce,
+            // buildAppPageSpecialErrorResponse merges _mwCtx onto this returned
+            // fallback response; keep this inner boundary render unmerged so
+            // additive headers like Set-Cookie and Vary are not duplicated.
+            null,
           );
         },
         requestUrl: request.url,
@@ -2409,6 +2554,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       return LayoutComp({ params: _asyncLayoutParams, children: null });
     },
     probePage() {
+      if (!PageComponent) return null;
       const _probeSearchObj = {};
       url.searchParams.forEach(function(v, k) {
         if (k in _probeSearchObj) {
@@ -2422,10 +2568,30 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
       const _asyncSearchParams = makeThenableParams(_probeSearchObj);
       return PageComponent({ params: _asyncLayoutParams, searchParams: _asyncSearchParams });
     },
+    classification: {
+      getLayoutId(index) {
+        const tp = route.layoutTreePositions?.[index] ?? 0;
+        return "layout:" + __createAppPageTreePath(route.routeSegments, tp);
+      },
+      buildTimeClassifications: route.__buildTimeClassifications,
+      buildTimeReasons: route.__buildTimeReasons,
+      debugClassification: __classDebug,
+      async runWithIsolatedDynamicScope(fn) {
+        const priorDynamic = consumeDynamicUsage();
+        try {
+          const result = await fn();
+          const dynamicDetected = consumeDynamicUsage();
+          return { result, dynamicDetected };
+        } finally {
+          consumeDynamicUsage();
+          if (priorDynamic) markDynamicUsage();
+        }
+      },
+    },
     revalidateSeconds,
     mountedSlotsHeader: __mountedSlotsHeader,
     renderErrorBoundaryResponse(renderErr) {
-      return renderErrorBoundaryPage(route, renderErr, isRscRequest, request, params, _scriptNonce);
+      return renderErrorBoundaryPage(route, renderErr, isRscRequest, request, params, _scriptNonce, _mwCtx);
     },
     async renderLayoutSpecialError(__layoutSpecialError, li) {
       return __buildAppPageSpecialErrorResponse({
@@ -2433,6 +2599,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           setHeadersContext(null);
           setNavigationContext(null);
         },
+        middlewareContext: _mwCtx,
         renderFallbackPage(statusCode) {
           // Find the not-found component from the parent level (the boundary that
           // would catch this in Next.js). Walk up from the throwing layout to find
@@ -2459,6 +2626,10 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
               matchedParams: params,
             },
             _scriptNonce,
+            // buildAppPageSpecialErrorResponse merges _mwCtx onto this returned
+            // fallback response; keep this inner boundary render unmerged so
+            // additive headers like Set-Cookie and Vary are not duplicated.
+            null,
           );
         },
         requestUrl: request.url,
@@ -2471,6 +2642,7 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
           setHeadersContext(null);
           setNavigationContext(null);
         },
+        middlewareContext: _mwCtx,
         renderFallbackPage(statusCode) {
           return renderHTTPAccessFallbackPage(
             route,
@@ -2481,6 +2653,10 @@ async function _handleRequest(request, __reqCtx, _mwCtx) {
               matchedParams: params,
             },
             _scriptNonce,
+            // buildAppPageSpecialErrorResponse merges _mwCtx onto this returned
+            // fallback response; keep this inner boundary render unmerged so
+            // additive headers like Set-Cookie and Vary are not duplicated.
+            null,
           );
         },
         requestUrl: request.url,

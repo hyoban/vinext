@@ -45,6 +45,8 @@ function _getState(): I18nState {
  * Run a function within an i18n state ALS scope.
  * Ensures per-request isolation for i18n context on concurrent runtimes.
  */
+export function runWithI18nState<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithI18nState<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithI18nState<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {

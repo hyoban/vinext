@@ -16,6 +16,7 @@ import { createAppPayloadCacheKey } from "../server/app-elements.js";
 import { toBrowserNavigationHref, toSameOriginAppPath } from "./url-utils.js";
 import { stripBasePath } from "../utils/base-path.js";
 import { ReadonlyURLSearchParams } from "./readonly-url-search-params.js";
+import { assertSafeNavigationUrl } from "./url-safety.js";
 
 // ─── Layout segment context ───────────────────────────────────────────────────
 // Stores the child segments below the current layout. Each layout wraps its
@@ -163,8 +164,29 @@ export const GLOBAL_ACCESSORS_KEY = Symbol.for("vinext.navigation.globalAccessor
 const _GLOBAL_ACCESSORS_KEY = GLOBAL_ACCESSORS_KEY;
 type _GlobalWithAccessors = typeof globalThis & { [_GLOBAL_ACCESSORS_KEY]?: _StateAccessors };
 
+// Browser hydration has the same module-split shape as SSR in Vite dev:
+// the browser entry seeds the snapshot before hydrateRoot(), but client
+// components can import a different module instance of this shim.
+const GLOBAL_HYDRATION_CONTEXT_KEY = Symbol.for("vinext.navigation.clientHydrationContext");
+const _GLOBAL_HYDRATION_CONTEXT_KEY = GLOBAL_HYDRATION_CONTEXT_KEY;
+type _GlobalWithHydrationContext = typeof globalThis & {
+  [_GLOBAL_HYDRATION_CONTEXT_KEY]?: NavigationContext | null;
+};
+
 function _getGlobalAccessors(): _StateAccessors | undefined {
   return (globalThis as _GlobalWithAccessors)[_GLOBAL_ACCESSORS_KEY];
+}
+
+function _getClientHydrationContext(): NavigationContext | null | undefined {
+  const globalState = globalThis as _GlobalWithHydrationContext;
+  if (Object.prototype.hasOwnProperty.call(globalState, _GLOBAL_HYDRATION_CONTEXT_KEY)) {
+    return globalState[_GLOBAL_HYDRATION_CONTEXT_KEY] ?? null;
+  }
+  return undefined;
+}
+
+function _setClientHydrationContext(ctx: NavigationContext | null): void {
+  (globalThis as _GlobalWithHydrationContext)[_GLOBAL_HYDRATION_CONTEXT_KEY] = ctx;
 }
 
 let _serverContext: NavigationContext | null = null;
@@ -173,10 +195,19 @@ let _serverInsertedHTMLCallbacks: Array<() => unknown> = [];
 // These are overridden by navigation-state.ts on the server to use ALS.
 // The defaults check globalThis for cross-module-instance access (issue #688).
 let _getServerContext = (): NavigationContext | null => {
+  if (typeof window !== "undefined") {
+    const hydrationContext = _getClientHydrationContext();
+    return hydrationContext !== undefined ? hydrationContext : _serverContext;
+  }
   const g = _getGlobalAccessors();
   return g ? g.getServerContext() : _serverContext;
 };
 let _setServerContext = (ctx: NavigationContext | null): void => {
+  if (typeof window !== "undefined") {
+    _serverContext = ctx;
+    _setClientHydrationContext(ctx);
+    return;
+  }
   const g = _getGlobalAccessors();
   if (g) {
     g.setServerContext(ctx);
@@ -1117,6 +1148,7 @@ export async function navigateClientSide(
   href: string,
   mode: "push" | "replace",
   scroll: boolean,
+  programmaticTransition = false,
 ): Promise<void> {
   // Normalize same-origin absolute URLs to local paths for SPA navigation
   let normalizedHref = href;
@@ -1172,7 +1204,14 @@ export async function navigateClientSide(
   // double-push and ensures window.location still reflects the *current* URL
   // when navigateRsc computes isSameRoute (cross-route vs same-route).
   if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
-    await window.__VINEXT_RSC_NAVIGATE__(fullHref, 0, "navigate", mode);
+    await window.__VINEXT_RSC_NAVIGATE__(
+      fullHref,
+      0,
+      "navigate",
+      mode,
+      undefined,
+      programmaticTransition,
+    );
   } else {
     if (mode === "replace") {
       replaceHistoryStateWithoutNotify(null, "", fullHref);
@@ -1203,12 +1242,18 @@ export async function navigateClientSide(
 
 const _appRouter = {
   push(href: string, options?: { scroll?: boolean }): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
-    void navigateClientSide(href, "push", options?.scroll !== false);
+    React.startTransition(() => {
+      void navigateClientSide(href, "push", options?.scroll !== false, true);
+    });
   },
   replace(href: string, options?: { scroll?: boolean }): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
-    void navigateClientSide(href, "replace", options?.scroll !== false);
+    React.startTransition(() => {
+      void navigateClientSide(href, "replace", options?.scroll !== false, true);
+    });
   },
   back(): void {
     if (isServer) return;
@@ -1221,11 +1266,16 @@ const _appRouter = {
   refresh(): void {
     if (isServer) return;
     // Re-fetch the current page's RSC stream
-    if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
-      void window.__VINEXT_RSC_NAVIGATE__(window.location.href, 0, "refresh");
+    const rscNavigate = window.__VINEXT_RSC_NAVIGATE__;
+    if (typeof rscNavigate === "function") {
+      const navigate = () => {
+        void rscNavigate(window.location.href, 0, "refresh", undefined, undefined, true);
+      };
+      React.startTransition(navigate);
     }
   },
   prefetch(href: string): void {
+    assertSafeNavigationUrl(href);
     if (isServer) return;
     // Prefetch the RSC payload for the target route and store in cache.
     // We must add to prefetchedUrls manually for deduplication.
@@ -1281,7 +1331,11 @@ export function useRouter() {
  */
 export function useSelectedLayoutSegment(parallelRoutesKey?: string): string | null {
   const segments = useSelectedLayoutSegments(parallelRoutesKey);
-  return segments.length > 0 ? segments[0] : null;
+  if (segments.length === 0) return null;
+
+  return parallelRoutesKey === undefined || parallelRoutesKey === "children"
+    ? segments[0]
+    : segments[segments.length - 1];
 }
 
 /**

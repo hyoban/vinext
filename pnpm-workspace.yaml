@@ -46,7 +46,7 @@ catalog:
   clsx: ^2.1.1
   codehike: 1.0.7
   date-fns: 4.1.0
-  sanitize-html: ^2.17.2
+  sanitize-html: ^2.17.3
   fumadocs-core: 16.7.9
   fumadocs-mdx: 14.2.10
   fumadocs-ui: 16.7.9
@@ -61,7 +61,7 @@ catalog:
   nitro: npm:nitro-nightly@latest
   nuqs: ^2.8.8
   playwright: ^1.52.0
-  postcss: 8.5.3
+  postcss: 8.5.10
   react: ^19.2.5
   react-dom: ^19.2.5
   react-server-dom-webpack: ^19.2.5
@@ -72,13 +72,14 @@ catalog:
   typescript: ^5.7.0
   use-count-up: 3.0.1
   validator: ^13.15.26
-  vite: npm:@voidzero-dev/vite-plus-core@0.1.12
+  vite: npm:@voidzero-dev/vite-plus-core@0.1.17
   vite-plugin-commonjs: ^0.10.4
-  vite-plus: 0.1.12
+  vite-plus: 0.1.17
   vite-tsconfig-paths: ^6.1.1
-  vitest: npm:@voidzero-dev/vite-plus-test@0.1.12
+  vitest: npm:@voidzero-dev/vite-plus-test@0.1.17
   wrangler: ^4.80.0
   zod: 3.24.3
+  knip: ^6.6.2
 overrides:
   vite: "catalog:"
   vitest: "catalog:"

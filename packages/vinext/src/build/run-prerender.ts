@@ -42,7 +42,7 @@ import { startProdServer } from "../server/prod-server.js";
  * Writes a single updating line to stderr using \r so it doesn't interleave
  * with Vite's stdout output. Automatically clears on finish().
  */
-export class PrerenderProgress {
+class PrerenderProgress {
   private isTTY = process.stderr.isTTY;
   private lastLineLen = 0;
 
@@ -72,7 +72,7 @@ export class PrerenderProgress {
 
 // ─── Shared runner ────────────────────────────────────────────────────────────
 
-export type RunPrerenderOptions = {
+type RunPrerenderOptions = {
   /** Project root directory. */
   root: string;
   /**
@@ -123,6 +123,15 @@ export async function runPrerender(options: RunPrerenderOptions): Promise<Preren
   const pagesDir = findDir(root, "pages", "src/pages");
 
   if (!appDir && !pagesDir) return null;
+
+  // Mark the entire prerender orchestration so the socket-error backstop
+  // re-throws peer-disconnect errors during user fetch() calls instead of
+  // silently absorbing them and producing corrupt output. prerender.ts
+  // sets and clears this var around its own render passes, but we widen
+  // the scope here to cover startProdServer / shared-server setup that
+  // happens before those phases run. See server/socket-error-backstop.ts.
+  const previousPrerenderFlag = process.env.VINEXT_PRERENDER;
+  process.env.VINEXT_PRERENDER = "1";
 
   // The manifest lands in dist/server/ alongside the server bundle so it's
   // cleaned by Vite's emptyOutDir on rebuild and co-located with server artifacts.
@@ -262,6 +271,8 @@ export async function runPrerender(options: RunPrerenderOptions): Promise<Preren
     if (sharedProdServer) {
       await new Promise<void>((resolve) => sharedProdServer!.server.close(() => resolve()));
     }
+    if (previousPrerenderFlag === undefined) delete process.env.VINEXT_PRERENDER;
+    else process.env.VINEXT_PRERENDER = previousPrerenderFlag;
   }
 
   if (allRoutes.length === 0) {

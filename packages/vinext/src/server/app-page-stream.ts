@@ -1,4 +1,5 @@
 import type { AppPageFontPreload } from "./app-page-execution.js";
+import { mergeMiddlewareResponseHeaders } from "./middleware-response-headers.js";
 
 export type AppPageFontData = {
   links: string[];
@@ -6,7 +7,7 @@ export type AppPageFontData = {
   styles: string[];
 };
 
-export type CreateAppPageFontDataOptions = {
+type CreateAppPageFontDataOptions = {
   getLinks: () => string[];
   getPreloads: () => AppPageFontPreload[];
   getStyles: () => string[];
@@ -21,7 +22,7 @@ export type AppPageSsrHandler = {
   ) => Promise<ReadableStream<Uint8Array>>;
 };
 
-export type RenderAppPageHtmlStreamOptions = {
+type RenderAppPageHtmlStreamOptions = {
   fontData: AppPageFontData;
   navigationContext: unknown;
   rscStream: ReadableStream<Uint8Array>;
@@ -29,18 +30,19 @@ export type RenderAppPageHtmlStreamOptions = {
   ssrHandler: AppPageSsrHandler;
 };
 
-export type RenderAppPageHtmlResponseOptions = {
+type RenderAppPageHtmlResponseOptions = {
   clearRequestContext: () => void;
   fontLinkHeader?: string;
+  middlewareHeaders?: Headers | null;
   status: number;
 } & RenderAppPageHtmlStreamOptions;
 
-export type AppPageHtmlStreamRecoveryResult = {
+type AppPageHtmlStreamRecoveryResult = {
   htmlStream: ReadableStream<Uint8Array> | null;
   response: Response | null;
 };
 
-export type RenderAppPageHtmlStreamWithRecoveryOptions<TSpecialError> = {
+type RenderAppPageHtmlStreamWithRecoveryOptions<TSpecialError> = {
   onShellRendered?: () => void;
   renderErrorBoundaryResponse: (error: unknown) => Promise<Response | null>;
   renderHtmlStream: () => Promise<ReadableStream<Uint8Array>>;
@@ -48,12 +50,12 @@ export type RenderAppPageHtmlStreamWithRecoveryOptions<TSpecialError> = {
   resolveSpecialError: (error: unknown) => TSpecialError | null;
 };
 
-export type AppPageRscErrorTracker = {
+type AppPageRscErrorTracker = {
   getCapturedError: () => unknown;
   onRenderError: (error: unknown, requestInfo: unknown, errorContext: unknown) => unknown;
 };
 
-export type ShouldRerenderAppPageWithGlobalErrorOptions = {
+type ShouldRerenderAppPageWithGlobalErrorOptions = {
   capturedError: unknown;
   hasLocalBoundary: boolean;
 };
@@ -148,14 +150,16 @@ export async function renderAppPageHtmlResponse(
     options.clearRequestContext();
   });
 
-  const headers: Record<string, string> = {
+  const headers = new Headers({
     "Content-Type": "text/html; charset=utf-8",
     Vary: "RSC, Accept",
-  };
+  });
 
   if (options.fontLinkHeader) {
-    headers.Link = options.fontLinkHeader;
+    headers.set("Link", options.fontLinkHeader);
   }
+
+  mergeMiddlewareResponseHeaders(headers, options.middlewareHeaders ?? null);
 
   return new Response(safeStream, {
     status: options.status,

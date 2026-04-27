@@ -34,11 +34,11 @@ export type AppPageModule = Record<string, unknown> & {
   default?: AppPageComponent | null | undefined;
 };
 
-export type AppPageErrorModule = Record<string, unknown> & {
+type AppPageErrorModule = Record<string, unknown> & {
   default?: AppPageErrorComponent | null | undefined;
 };
 
-export type AppPageRouteWiringSlot<
+type AppPageRouteWiringSlot<
   TModule extends AppPageModule = AppPageModule,
   TErrorModule extends AppPageErrorModule = AppPageErrorModule,
 > = {
@@ -53,7 +53,7 @@ export type AppPageRouteWiringSlot<
   routeSegments?: readonly string[] | null;
 };
 
-export type AppPageRouteWiringRoute<
+type AppPageRouteWiringRoute<
   TModule extends AppPageModule = AppPageModule,
   TErrorModule extends AppPageErrorModule = AppPageErrorModule,
 > = {
@@ -74,12 +74,13 @@ export type AppPageRouteWiringRoute<
 };
 
 export type AppPageSlotOverride<TModule extends AppPageModule = AppPageModule> = {
+  layoutModules?: readonly (TModule | null | undefined)[] | null;
   pageModule: TModule;
   params?: AppPageParams;
   props?: Readonly<Record<string, unknown>>;
 };
 
-export type AppPageLayoutEntry<
+type AppPageLayoutEntry<
   TModule extends AppPageModule = AppPageModule,
   TErrorModule extends AppPageErrorModule = AppPageErrorModule,
 > = {
@@ -91,7 +92,7 @@ export type AppPageLayoutEntry<
   treePosition: number;
 };
 
-export type BuildAppPageRouteElementOptions<
+type BuildAppPageRouteElementOptions<
   TModule extends AppPageModule = AppPageModule,
   TErrorModule extends AppPageErrorModule = AppPageErrorModule,
 > = {
@@ -106,7 +107,7 @@ export type BuildAppPageRouteElementOptions<
   slotOverrides?: Readonly<Record<string, AppPageSlotOverride<TModule>>> | null;
 };
 
-export type BuildAppPageElementsOptions<
+type BuildAppPageElementsOptions<
   TModule extends AppPageModule = AppPageModule,
   TErrorModule extends AppPageErrorModule = AppPageErrorModule,
 > = BuildAppPageRouteElementOptions<TModule, TErrorModule> & {
@@ -169,7 +170,7 @@ export function createAppPageLayoutEntries<
   });
 }
 
-export function createAppPageTemplateEntries<TModule extends AppPageModule>(
+function createAppPageTemplateEntries<TModule extends AppPageModule>(
   route: Pick<
     AppPageRouteWiringRoute<TModule>,
     "routeSegments" | "templateTreePositions" | "templates"
@@ -483,8 +484,9 @@ export function buildAppPageElements<
       continue;
     }
 
+    const slotThenableParams = options.makeThenableParams(slotParams);
     const slotProps: Record<string, unknown> = {
-      params: options.makeThenableParams(slotParams),
+      params: slotThenableParams,
     };
     if (slotOverride?.props) {
       Object.assign(slotProps, slotOverride.props);
@@ -492,14 +494,26 @@ export function buildAppPageElements<
 
     const SlotComponent = slotComponent;
     let slotElement: ReactNode = <SlotComponent {...slotProps} />;
+    const interceptLayouts = slotOverride?.layoutModules ?? [];
+
+    for (let layoutIndex = interceptLayouts.length - 1; layoutIndex >= 0; layoutIndex--) {
+      const interceptLayoutComponent = getDefaultExport(interceptLayouts[layoutIndex]);
+      if (!interceptLayoutComponent) {
+        continue;
+      }
+      const InterceptLayoutComponent = interceptLayoutComponent;
+      slotElement = (
+        <InterceptLayoutComponent params={slotThenableParams}>
+          {slotElement}
+        </InterceptLayoutComponent>
+      );
+    }
 
     const slotLayoutComponent = getDefaultExport(slot.layout);
     if (slotLayoutComponent) {
       const SlotLayoutComponent = slotLayoutComponent;
       slotElement = (
-        <SlotLayoutComponent params={options.makeThenableParams(slotParams)}>
-          {slotElement}
-        </SlotLayoutComponent>
+        <SlotLayoutComponent params={slotThenableParams}>{slotElement}</SlotLayoutComponent>
       );
     }
 

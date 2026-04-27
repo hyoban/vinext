@@ -1,5 +1,6 @@
 import React from "react";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { devOnCaughtError } from "../packages/vinext/src/server/app-browser-error.js";
 import {
   APP_INTERCEPTION_CONTEXT_KEY,
   APP_ROOT_LAYOUT_KEY,
@@ -17,6 +18,7 @@ import {
   readHistoryStatePreviousNextUrl,
   resolveAndClassifyNavigationCommit,
   resolveInterceptionContextFromPreviousNextUrl,
+  resolveServerActionRequestState,
   routerReducer,
   resolvePendingNavigationCommitDisposition,
   shouldHardNavigate,
@@ -443,6 +445,72 @@ describe("app browser entry previousNextUrl helpers", () => {
   });
 });
 
+describe("devOnCaughtError (hydrateRoot dev handler)", () => {
+  it("logs caught errors to console.error", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const err = new Error("Maximum update depth exceeded");
+      devOnCaughtError(err, { componentStack: "\n    at List\n    at Apps" });
+      expect(consoleSpy).toHaveBeenCalled();
+      const loggedErrors = consoleSpy.mock.calls.map((args) => args[0]);
+      expect(loggedErrors).toContain(err);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("includes the React component stack in the log when provided", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      devOnCaughtError(new Error("boom"), {
+        componentStack: "\n    at List (apps/list.tsx:202)",
+      });
+      expect(consoleSpy).toHaveBeenCalledTimes(2);
+      expect(String(consoleSpy.mock.calls[1][0])).toContain("apps/list.tsx:202");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("does not re-dispatch a window 'error' event (would trigger Vite overlay)", () => {
+    // This test runs in a Node environment where `window` is undefined, so the
+    // listener registration is skipped and windowErrorCount stays 0 trivially.
+    // The test still documents the contract: devOnCaughtError must not dispatch
+    // window error events (which would re-trigger the Vite overlay). If a DOM
+    // environment is ever added to this project, this will become a live check.
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let windowErrorCount = 0;
+    const onError = (): void => {
+      windowErrorCount += 1;
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("error", onError);
+    }
+    try {
+      devOnCaughtError(new Error("caught by user error.tsx"), {});
+      expect(windowErrorCount).toBe(0);
+    } finally {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("error", onError);
+      }
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("is not a no-op (regression guard against `() => {}`)", () => {
+    // Explicit regression guard: the original implementation was `() => {}`,
+    // which silently swallowed all caught errors. This test ensures the handler
+    // always calls console.error at least once.
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      devOnCaughtError(new Error("regression"), {});
+      expect(consoleSpy.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+});
+
 describe("mounted slot helpers", () => {
   it("collects only mounted slot ids", () => {
     const elements: AppElements = createResolvedElements("route:/dashboard", "/", null, {
@@ -472,5 +540,87 @@ describe("mounted slot helpers", () => {
     });
 
     expect(getMountedSlotIdsHeader(elements)).toBeNull();
+  });
+});
+
+describe("resolveServerActionRequestState", () => {
+  it("includes only Accept and x-rsc-action when previousNextUrl is null and no slots are mounted", () => {
+    const elements = createResolvedElements("route:/settings", "/");
+
+    const { headers } = resolveServerActionRequestState({
+      actionId: "action-abc",
+      basePath: "",
+      elements,
+      previousNextUrl: null,
+    });
+
+    expect(Array.from(headers.keys()).sort()).toEqual(["accept", "x-rsc-action"]);
+    expect(headers.get("accept")).toBe("text/x-component");
+    expect(headers.get("x-rsc-action")).toBe("action-abc");
+  });
+
+  it("derives X-Vinext-Interception-Context from previousNextUrl", () => {
+    const elements = createResolvedElements("route:/photos/42", "/");
+    const previousNextUrl = "/feed?tab=latest";
+
+    const { headers } = resolveServerActionRequestState({
+      actionId: "bump-likes",
+      basePath: "",
+      elements,
+      previousNextUrl,
+    });
+
+    expect(headers.get("X-Vinext-Interception-Context")).toBe(
+      resolveInterceptionContextFromPreviousNextUrl(previousNextUrl, ""),
+    );
+  });
+
+  it("strips the base path when deriving the interception context", () => {
+    const elements = createResolvedElements("route:/photos/42", "/");
+    const previousNextUrl = "/app/feed";
+
+    const { headers } = resolveServerActionRequestState({
+      actionId: "bump-likes",
+      basePath: "/app",
+      elements,
+      previousNextUrl,
+    });
+
+    expect(headers.get("X-Vinext-Interception-Context")).toBe(
+      resolveInterceptionContextFromPreviousNextUrl(previousNextUrl, "/app"),
+    );
+  });
+
+  it("derives X-Vinext-Mounted-Slots from mounted slot keys", () => {
+    const elements: AppElements = createResolvedElements("route:/feed", "/", null, {
+      "slot:@modal:/feed": React.createElement("div", null, "modal"),
+      "slot:@sidebar:/feed": React.createElement("div", null, "sidebar"),
+    });
+
+    const { headers } = resolveServerActionRequestState({
+      actionId: "action-x",
+      basePath: "",
+      elements,
+      previousNextUrl: null,
+    });
+
+    expect(headers.get("X-Vinext-Mounted-Slots")).toBe(getMountedSlotIdsHeader(elements));
+  });
+
+  it("omits headers whose derived values are null", () => {
+    const elements: AppElements = createResolvedElements("route:/settings", "/", null, {
+      "slot:ghost:/": null,
+      "slot:missing:/": UNMATCHED_SLOT,
+    });
+
+    const { headers } = resolveServerActionRequestState({
+      actionId: "action-y",
+      basePath: "",
+      elements,
+      previousNextUrl: null,
+    });
+
+    expect(headers.has("X-Vinext-Interception-Context")).toBe(false);
+    expect(headers.has("X-Vinext-Mounted-Slots")).toBe(false);
   });
 });

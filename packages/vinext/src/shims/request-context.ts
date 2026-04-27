@@ -67,6 +67,14 @@ const _als = (_g[_ALS_KEY] ??=
  */
 export function runWithExecutionContext<T>(
   ctx: ExecutionContextLike,
+  fn: () => Promise<T>,
+): Promise<T>;
+export function runWithExecutionContext<T>(
+  ctx: ExecutionContextLike,
+  fn: () => T | Promise<T>,
+): T | Promise<T>;
+export function runWithExecutionContext<T>(
+  ctx: ExecutionContextLike,
   fn: () => T | Promise<T>,
 ): T | Promise<T> {
   if (isInsideUnifiedScope()) {

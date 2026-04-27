@@ -229,6 +229,90 @@ describe("next/navigation shim", () => {
     setNavigationContext(null);
   });
 
+  it("shares the hydrated navigation snapshot across browser module instances", async () => {
+    // Next.js derives usePathname/useSearchParams from PathnameContext in
+    // packages/next/src/client/components/app-router.tsx, so hydration does
+    // not have a per-module fallback to "/" for the first client snapshot.
+    const React = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const previousWindow = globalThis.window;
+    const accessorsKey = Symbol.for("vinext.navigation.globalAccessors");
+    const hydrationKey = Symbol.for("vinext.navigation.clientHydrationContext");
+    const globalRecord = globalThis as Record<PropertyKey, unknown>;
+    const previousAccessors = globalRecord[accessorsKey];
+    const previousHydration = globalRecord[hydrationKey];
+
+    try {
+      delete globalRecord[accessorsKey];
+      delete globalRecord[hydrationKey];
+      (globalThis as any).window = {
+        addEventListener() {},
+        dispatchEvent() {
+          return true;
+        },
+        history: {
+          pushState() {},
+          replaceState() {},
+        },
+        location: {
+          href: "http://localhost/split-hydration?q=hello",
+          origin: "http://localhost",
+          pathname: "/split-hydration",
+          search: "?q=hello",
+        },
+        removeEventListener() {},
+      };
+
+      const setterPath = "../packages/vinext/src/shims/navigation.js?hydration-setter=issue-871";
+      const hookPath = "../packages/vinext/src/shims/navigation.js?hydration-hook=issue-871";
+      const setterMod = (await import(
+        setterPath
+      )) as typeof import("../packages/vinext/src/shims/navigation.js");
+      const hookMod = (await import(
+        hookPath
+      )) as typeof import("../packages/vinext/src/shims/navigation.js");
+
+      setterMod.setNavigationContext({
+        pathname: "/split-hydration",
+        searchParams: new URLSearchParams("q=hello"),
+        params: { slug: "hello" },
+      });
+
+      function Probe() {
+        const pathname = hookMod.usePathname();
+        const searchParams = hookMod.useSearchParams();
+        const params = hookMod.useParams<{ slug: string }>();
+        return React.createElement(
+          "span",
+          null,
+          `${pathname}|${searchParams.get("q") ?? ""}|${params.slug ?? ""}`,
+        );
+      }
+
+      expect(renderToStaticMarkup(React.createElement(Probe))).toBe(
+        "<span>/split-hydration|hello|hello</span>",
+      );
+
+      setterMod.setNavigationContext(null);
+    } finally {
+      if (previousWindow === undefined) {
+        delete (globalThis as any).window;
+      } else {
+        (globalThis as any).window = previousWindow;
+      }
+      if (previousAccessors === undefined) {
+        delete globalRecord[accessorsKey];
+      } else {
+        globalRecord[accessorsKey] = previousAccessors;
+      }
+      if (previousHydration === undefined) {
+        delete globalRecord[hydrationKey];
+      } else {
+        globalRecord[hydrationKey] = previousHydration;
+      }
+    }
+  });
+
   it("setClientParams provides referential stability for identical params", async () => {
     const { setClientParams, getClientParams } =
       await import("../packages/vinext/src/shims/navigation.js");
@@ -1255,11 +1339,27 @@ describe("next/server shim", () => {
     expect(res.headers.get("Location")).toBe("https://example.com/new");
   });
 
+  // Ported from Next.js: test/e2e/middleware-general/test/index.test.ts
+  // https://github.com/vercel/next.js/blob/canary/test/e2e/middleware-general/test/index.test.ts
+  it("NextResponse.redirect() throws when using a relative URL", async () => {
+    const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
+
+    expect(() => NextResponse.redirect("/urls-b")).toThrow("URL is malformed");
+  });
+
   it("NextResponse.rewrite() sets x-middleware-rewrite header", async () => {
     const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
     const res = NextResponse.rewrite("https://example.com/internal");
 
     expect(res.headers.get("x-middleware-rewrite")).toBe("https://example.com/internal");
+  });
+
+  // Ported from Next.js: test/e2e/middleware-general/test/index.test.ts
+  // https://github.com/vercel/next.js/blob/canary/test/e2e/middleware-general/test/index.test.ts
+  it("NextResponse.rewrite() throws when using a relative URL", async () => {
+    const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
+
+    expect(() => NextResponse.rewrite("/urls-b")).toThrow("URL is malformed");
   });
 
   it("NextResponse.rewrite() forwards request header overrides", async () => {
@@ -3496,7 +3596,9 @@ describe("double-encoded path handling in middleware", () => {
     // (the RSC handler is the single decode point)
     expect(entryCode).not.toMatch(/normalizedRequest\s*=\s*new Request\(normalizedUrl/);
     // It should still validate malformed encoding (return 400)
-    expect(entryCode).toContain("decodeURIComponent(rawPathname)");
+    expect(entryCode).toMatch(
+      /decodeURIComponent\(\s*(?:raw)?[pP]athname|decodeURIComponent\(url\.pathname\)/,
+    );
     // The delegate call should pass the original request object through,
     // without reconstructing a normalized Request before delegation.
     expect(entryCode).toMatch(/rscHandler\(request(?:,\s*ctx)?\)/);
@@ -5107,7 +5209,8 @@ describe("NextResponse.redirect() status codes", () => {
     const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
     const res = NextResponse.redirect("https://example.com", 301);
     expect(res.status).toBe(301);
-    expect(res.headers.get("Location")).toBe("https://example.com");
+    // validateURL() normalizes via `new URL()`, adding a trailing slash for origin-only URLs.
+    expect(res.headers.get("Location")).toBe("https://example.com/");
   });
 
   it("supports 302 Found", async () => {

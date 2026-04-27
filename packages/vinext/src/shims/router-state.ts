@@ -55,6 +55,8 @@ function _getState(): RouterState {
  * Ensures per-request isolation for Pages Router SSR context
  * on concurrent runtimes.
  */
+export function runWithRouterState<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithRouterState<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithRouterState<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {

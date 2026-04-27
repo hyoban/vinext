@@ -34,7 +34,16 @@ const DANGEROUS_SCHEME_RES = [
   buildDangerousSchemeRegex("vbscript"),
 ];
 
+export const DANGEROUS_URL_BLOCK_MESSAGE =
+  "Next.js has blocked a javascript: URL as a security precaution.";
+
 export function isDangerousScheme(url: string): boolean {
   const str = "" + (url as unknown as string);
   return DANGEROUS_SCHEME_RES.some((re) => re.test(str));
+}
+
+export function assertSafeNavigationUrl(url: string): void {
+  if (isDangerousScheme(url)) {
+    throw new Error(DANGEROUS_URL_BLOCK_MESSAGE);
+  }
 }

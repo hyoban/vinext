@@ -46,6 +46,8 @@ function _getState(): HeadState {
  * Ensures per-request isolation for Pages Router <Head> elements
  * on concurrent runtimes.
  */
+export function runWithHeadState<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithHeadState<T>(fn: () => T | Promise<T>): T | Promise<T>;
 export function runWithHeadState<T>(fn: () => T | Promise<T>): T | Promise<T> {
   if (isInsideUnifiedScope()) {
     return runWithUnifiedStateMutation((uCtx) => {
