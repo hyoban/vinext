@@ -6,7 +6,7 @@
  * Vite plugin to wrap them with `registerCachedFunction()`.
  *
  * The runtime:
- * 1. Generates a cache key from build ID + function identity + serialized arguments
+ * 1. Generates a cache key from deployment/build ID + function identity + serialized arguments
  * 2. Checks the CacheHandler for a cached value
  * 3. On HIT: returns the cached value (deserialized via RSC stream)
  * 4. On MISS: creates an AsyncLocalStorage context for cacheLife/cacheTag,
@@ -90,11 +90,21 @@ type RscModule = {
   decodeReply: (body: string | FormData, options?: unknown) => Promise<unknown[]>;
 };
 
-function getUseCacheBuildId(): string | undefined {
+function getUseCacheDeploymentIdDefine(): string | undefined {
   try {
     // Keep this direct reference so Vite's define transform can inline it for
-    // Worker bundles where the process global might not exist at runtime. A
-    // typeof process guard would return before the inlined build ID is reached.
+    // Worker bundles where the process global might not exist at runtime.
+    return process.env.__VINEXT_DEPLOYMENT_ID || process.env.NEXT_DEPLOYMENT_ID;
+  } catch (error) {
+    if (error instanceof ReferenceError) return undefined;
+    throw error;
+  }
+}
+
+function getUseCacheBuildIdDefine(): string | undefined {
+  try {
+    // Keep this direct reference so Vite's define transform can inline it for
+    // Worker bundles where the process global might not exist at runtime.
     return process.env.__VINEXT_BUILD_ID;
   } catch (error) {
     if (error instanceof ReferenceError) return undefined;
@@ -102,8 +112,12 @@ function getUseCacheBuildId(): string | undefined {
   }
 }
 
-function buildUseCacheKey(id: string, buildId: string | undefined, argsKey?: string): string {
-  const scopedId = buildId ? `build:${encodeURIComponent(buildId)}:${id}` : id;
+function getUseCacheKeySeed(): string | undefined {
+  return getUseCacheDeploymentIdDefine() || getUseCacheBuildIdDefine();
+}
+
+function buildUseCacheKey(id: string, keySeed: string | undefined, argsKey?: string): string {
+  const scopedId = keySeed ? `build:${encodeURIComponent(keySeed)}:${id}` : id;
   return argsKey === undefined ? `use-cache:${scopedId}` : `use-cache:${scopedId}:${argsKey}`;
 }
 
@@ -332,11 +346,11 @@ export function registerCachedFunction<T extends (...args: any[]) => Promise<any
   // Per-request ("use cache: private") caching still works in dev since
   // it's scoped to a single request and doesn't persist across HMR.
   const isDev = typeof process !== "undefined" && process.env.NODE_ENV === "development";
-  const buildId = getUseCacheBuildId();
 
   // oxlint-disable-next-line @typescript-eslint/no-explicit-any
   const cachedFn = async (...args: any[]): Promise<any> => {
     const rsc = await getRscModule();
+    const keySeed = getUseCacheKeySeed();
 
     // Build the cache key. Use encodeReply (RSC protocol) when available —
     // it correctly handles React elements as temporary references (excluded
@@ -359,10 +373,10 @@ export function registerCachedFunction<T extends (...args: any[]) => Promise<any
         const encoded = await rsc.encodeReply(processedArgs, {
           temporaryReferences: tempRefs,
         });
-        cacheKey = buildUseCacheKey(id, buildId, await replyToCacheKey(encoded));
+        cacheKey = buildUseCacheKey(id, keySeed, await replyToCacheKey(encoded));
       } else {
         const argsKey = args.length > 0 ? stableStringify(args) : undefined;
-        cacheKey = buildUseCacheKey(id, buildId, argsKey);
+        cacheKey = buildUseCacheKey(id, keySeed, argsKey);
       }
     } catch {
       // Non-serializable arguments — run without caching

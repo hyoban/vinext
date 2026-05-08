@@ -494,6 +494,7 @@ describe("detectNextIntlConfig", () => {
       enablePrerenderSourceMaps: true,
       expireTime: 31_536_000,
       buildId: "test-build-id",
+      deploymentId: undefined,
       ...overrides,
     };
   }
@@ -732,6 +733,62 @@ describe("generateBuildId", () => {
     const b = await resolveNextConfig({ generateBuildId: fn });
     expect(a.buildId).toBe("stable-id");
     expect(b.buildId).toBe("stable-id");
+  });
+});
+
+describe("deploymentId", () => {
+  const OLD_ENV = process.env.NEXT_DEPLOYMENT_ID;
+
+  afterEach(() => {
+    if (OLD_ENV === undefined) {
+      delete process.env.NEXT_DEPLOYMENT_ID;
+    } else {
+      process.env.NEXT_DEPLOYMENT_ID = OLD_ENV;
+    }
+  });
+
+  it("defaults to undefined when no deployment ID is configured", async () => {
+    delete process.env.NEXT_DEPLOYMENT_ID;
+
+    const config = await resolveNextConfig(null);
+
+    expect(config.deploymentId).toBeUndefined();
+  });
+
+  it("uses NEXT_DEPLOYMENT_ID when next.config.js does not set deploymentId", async () => {
+    process.env.NEXT_DEPLOYMENT_ID = "env-deployment";
+
+    const config = await resolveNextConfig({});
+
+    expect(config.deploymentId).toBe("env-deployment");
+  });
+
+  it("lets next.config.js deploymentId take precedence over NEXT_DEPLOYMENT_ID", async () => {
+    process.env.NEXT_DEPLOYMENT_ID = "env-deployment";
+
+    const config = await resolveNextConfig({ deploymentId: "config-deployment" });
+
+    expect(config.deploymentId).toBe("config-deployment");
+  });
+
+  it("treats an empty next.config.js deploymentId as unset even when NEXT_DEPLOYMENT_ID is set", async () => {
+    process.env.NEXT_DEPLOYMENT_ID = "env-deployment";
+
+    const config = await resolveNextConfig({ deploymentId: "" });
+
+    expect(config.deploymentId).toBeUndefined();
+  });
+
+  it("throws when deploymentId contains invalid characters", async () => {
+    await expect(resolveNextConfig({ deploymentId: "bad value" })).rejects.toThrow(
+      "Invalid `deploymentId` configuration: contains invalid characters",
+    );
+  });
+
+  it("throws when deploymentId is not a string", async () => {
+    await expect(resolveNextConfig({ deploymentId: 42 as unknown as string })).rejects.toThrow(
+      "Invalid `deploymentId` configuration: must be a string",
+    );
   });
 });
 

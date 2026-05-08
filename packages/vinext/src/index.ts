@@ -907,6 +907,11 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // Also used to namespace ISR cache keys so old cached entries from a
         // previous deploy are never served by the new one.
         defines["process.env.__VINEXT_BUILD_ID"] = JSON.stringify(nextConfig.buildId);
+        // Deployment ID — mirrors Next.js' NEXT_DEPLOYMENT_ID seed for shared
+        // "use cache" entries, falling back to build ID when absent.
+        defines["process.env.__VINEXT_DEPLOYMENT_ID"] = JSON.stringify(
+          nextConfig.deploymentId ?? "",
+        );
 
         // Build the shim alias map. Exact `.js` variants are included for the
         // public Next entrypoints that are file-backed in `next/package.json`.

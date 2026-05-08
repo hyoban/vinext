@@ -35,61 +35,70 @@ export default {
     env?: WorkerAssetEnv,
     ctx?: ExecutionContextLike,
   ): Promise<Response> {
-    const url = new URL(request.url);
-
-    // Block protocol-relative URL open redirects (//evil.com/, /\evil.com/,
-    // /%5Cevil.com/, /%2F/evil.com/). Check BEFORE decode so both literal and
-    // percent-encoded variants are caught — encoded forms survive segment-wise
-    // decoding and would otherwise reach trailing-slash redirect emitters.
-    if (isOpenRedirectShaped(url.pathname)) {
-      return notFoundResponse();
-    }
-
-    // Validate that percent-encoding is well-formed. The RSC handler performs
-    // the actual decode + normalize; we only check here to return a clean 400
-    // instead of letting a malformed sequence crash downstream.
-    try {
-      decodeURIComponent(url.pathname);
-    } catch {
-      // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of throwing.
-      return badRequestResponse();
-    }
-
-    // Strip internal headers from inbound requests before any handler or
-    // middleware sees them. Must happen before the RSC handler runs.
-    // Builds a new Headers — Request.headers is immutable in Workers.
-    {
-      const filteredHeaders = filterInternalHeaders(request.headers);
-      request = cloneRequestWithHeaders(request, filteredHeaders);
-    }
-
-    // Do NOT decode/normalize the pathname here. The RSC handler
-    // (virtual:vinext-rsc-entry) is the single point of decoding — it calls
-    // decodeURIComponent + normalizePath on the incoming URL. Decoding here
-    // AND in the handler would double-decode, causing inconsistent path
-    // matching between middleware and routing.
-
-    // Delegate to RSC handler (which decodes + normalizes the pathname itself),
-    // wrapping in the ExecutionContext ALS scope so downstream code can reach
-    // ctx.waitUntil() without having ctx threaded through every call site.
-    const handleFn = () => rscHandler(request, ctx);
-    const result = await (ctx ? runWithExecutionContext(ctx, handleFn) : handleFn());
-
-    if (result instanceof Response) {
-      if (env?.ASSETS) {
-        const assetResponse = await resolveStaticAssetSignal(result, {
-          fetchAsset: (path) =>
-            Promise.resolve(env.ASSETS!.fetch(new Request(new URL(path, request.url)))),
-        });
-        if (assetResponse) return assetResponse;
-      }
-      return result;
-    }
-
-    if (result === null || result === undefined) {
-      return notFoundResponse();
-    }
-
-    return new Response(String(result), { status: 200 });
+    return handleRequest(request, env, ctx);
   },
 };
+
+async function handleRequest(
+  request: Request,
+  env: WorkerAssetEnv | undefined,
+  ctx: ExecutionContextLike | undefined,
+): Promise<Response> {
+  const url = new URL(request.url);
+
+  // Block protocol-relative URL open redirects (//evil.com/, /\evil.com/,
+  // /%5Cevil.com/, /%2F/evil.com/). Check BEFORE decode so both literal and
+  // percent-encoded variants are caught — encoded forms survive segment-wise
+  // decoding and would otherwise reach trailing-slash redirect emitters.
+  if (isOpenRedirectShaped(url.pathname)) {
+    return notFoundResponse();
+  }
+
+  // Validate that percent-encoding is well-formed. The RSC handler performs
+  // the actual decode + normalize; we only check here to return a clean 400
+  // instead of letting a malformed sequence crash downstream.
+  try {
+    decodeURIComponent(url.pathname);
+  } catch {
+    // Malformed percent-encoding (e.g. /%E0%A4%A) — return 400 instead of throwing.
+    return badRequestResponse();
+  }
+
+  // Strip internal headers from inbound requests before any handler or
+  // middleware sees them. Must happen before the RSC handler runs.
+  // Builds a new Headers — Request.headers is immutable in Workers.
+  {
+    const filteredHeaders = filterInternalHeaders(request.headers);
+    request = cloneRequestWithHeaders(request, filteredHeaders);
+  }
+
+  // Do NOT decode/normalize the pathname here. The RSC handler
+  // (virtual:vinext-rsc-entry) is the single point of decoding — it calls
+  // decodeURIComponent + normalizePath on the incoming URL. Decoding here
+  // AND in the handler would double-decode, causing inconsistent path
+  // matching between middleware and routing.
+
+  // Delegate to RSC handler (which decodes + normalizes the pathname itself),
+  // wrapping in the ExecutionContext ALS scope so downstream code can reach
+  // ctx.waitUntil() without having ctx threaded through every call site.
+  const handleFn = () => rscHandler(request, ctx);
+  const result = await (ctx ? runWithExecutionContext(ctx, handleFn) : handleFn());
+
+  if (result instanceof Response) {
+    if (env?.ASSETS) {
+      const assetFetcher = env.ASSETS;
+      const assetResponse = await resolveStaticAssetSignal(result, {
+        fetchAsset: (path) =>
+          Promise.resolve(assetFetcher.fetch(new Request(new URL(path, request.url)))),
+      });
+      if (assetResponse) return assetResponse;
+    }
+    return result;
+  }
+
+  if (result === null || result === undefined) {
+    return notFoundResponse();
+  }
+
+  return new Response(String(result), { status: 200 });
+}
