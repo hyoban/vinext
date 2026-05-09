@@ -193,7 +193,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - run: vp exec playwright install chromium webkit
+      - run: vp exec playwright install --with-deps chromium webkit
 
       - run: vp run test:e2e
         env:
