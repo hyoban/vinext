@@ -70,7 +70,6 @@ type BrowserNavigationController = {
     previousNextUrl: string | null;
     targetHref: string;
     navId: number;
-    useTransition?: boolean;
   }): Promise<NavigationPayloadOutcome>;
   commitSameUrlNavigatePayload(
     nextElements: Promise<AppElements>,
@@ -398,7 +397,7 @@ export function createAppBrowserNavigationController(
     // initialized-setter error.
     if (!hasBrowserRouterState()) return;
 
-    dispatchApprovedVisibleCommit(approveHmrVisibleCommit(pending), null, false);
+    dispatchSynchronousVisibleCommit(approveHmrVisibleCommit(pending));
   }
 
   function NavigationCommitSignal(
@@ -432,27 +431,25 @@ export function createAppBrowserNavigationController(
   function dispatchApprovedVisibleCommit(
     commit: ApprovedVisibleCommit,
     pendingRouterState: PendingBrowserRouterState | null,
-    useTransitionMode: boolean,
   ): void {
     const setter = getBrowserRouterStateSetter();
 
-    const applyAction = () => {
-      if (pendingRouterState) {
-        // The programmatic navigation is already running inside React.startTransition
-        // (from router.push/replace/refresh), so resolving the deferred promise is
-        // sufficient — no additional startTransition wrapper is needed below.
-        resolvePendingBrowserRouterState(pendingRouterState, commit);
-        return;
-      }
-
-      setter(applyApprovedVisibleCommit(getBrowserRouterState(), commit));
-    };
-
-    if (useTransitionMode) {
-      startTransition(applyAction);
-    } else {
-      applyAction();
+    if (pendingRouterState) {
+      // The programmatic navigation is already running inside React.startTransition
+      // (from router.push/replace/refresh/Link), so resolving the deferred promise
+      // is sufficient.
+      resolvePendingBrowserRouterState(pendingRouterState, commit);
+      return;
     }
+
+    startTransition(() => {
+      setter(applyApprovedVisibleCommit(getBrowserRouterState(), commit));
+    });
+  }
+
+  function dispatchSynchronousVisibleCommit(commit: ApprovedVisibleCommit): void {
+    const setter = getBrowserRouterStateSetter();
+    setter(applyApprovedVisibleCommit(getBrowserRouterState(), commit));
   }
 
   async function renderNavigationPayload(options: {
@@ -467,7 +464,6 @@ export function createAppBrowserNavigationController(
     previousNextUrl: string | null;
     targetHref: string;
     navId: number;
-    useTransition?: boolean;
   }): Promise<NavigationPayloadOutcome> {
     const renderId = allocateRenderId();
     let resolveCommitted: (() => void) | undefined;
@@ -526,11 +522,7 @@ export function createAppBrowserNavigationController(
       );
       activateNavigationSnapshot();
       snapshotActivated = true;
-      dispatchApprovedVisibleCommit(
-        approvedCommit,
-        options.pendingRouterState,
-        options.useTransition ?? true,
-      );
+      dispatchApprovedVisibleCommit(approvedCommit, options.pendingRouterState);
     } catch (error) {
       pendingNavigationPrePaintEffects.delete(renderId);
       pendingNavigationCommits.delete(renderId);
@@ -600,7 +592,7 @@ export function createAppBrowserNavigationController(
       }
 
       if (latestApproval.approvedCommit) {
-        dispatchApprovedVisibleCommit(latestApproval.approvedCommit, null, false);
+        dispatchSynchronousVisibleCommit(latestApproval.approvedCommit);
       }
     }
 

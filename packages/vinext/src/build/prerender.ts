@@ -178,6 +178,88 @@ const NOT_FOUND_SENTINEL_PATH = "/__vinext_nonexistent_for_404__";
 
 const DEFAULT_CONCURRENCY = Math.min(os.availableParallelism(), 8);
 
+const RSC_CHUNK_SCRIPT_PREFIX = "self.__VINEXT_RSC_CHUNKS__=self.__VINEXT_RSC_CHUNKS__||[];";
+const RSC_DONE_MARKER = "__VINEXT_RSC_DONE__=true";
+// Full literal that createRscEmbedTransform concatenates before the
+// safeJsonStringify(chunk) argument. Keep this in sync with the writer at
+// packages/vinext/src/server/app-ssr-stream.ts:73.
+const RSC_CHUNK_FULL_PREFIX = `${RSC_CHUNK_SCRIPT_PREFIX}self.__VINEXT_RSC_CHUNKS__.push(`;
+
+/**
+ * Reconstruct the RSC payload from a prerender HTML response by parsing the
+ * inline bootstrap chunk scripts emitted by createRscEmbedTransform.
+ *
+ * Returns null when the HTML contains no chunk scripts at all — the caller
+ * should fall back to a second handler invocation. This is reachable when
+ * middleware short-circuits the App Router pipeline with a custom 200 HTML
+ * response that never went through createRscEmbedTransform.
+ *
+ * Throws on partial or malformed embeds (chunks present but no done marker,
+ * tampered chunk JSON, etc.) — those are real vinext-internal regressions.
+ *
+ * Safe regex usage: safeJsonStringify (used by createRscEmbedTransform) escapes
+ * all '<' and '>' in the embedded JSON, preventing false </script> matches.
+ */
+export function extractRscPayloadFromPrerenderedHtml(html: string): string | null {
+  const scriptPattern = /<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
+  const chunks: string[] = [];
+  let sawDone = false;
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptPattern.exec(html)) !== null) {
+    const script = (match[1] ?? "").trim().replace(/;$/, "");
+
+    if (script === `self.${RSC_DONE_MARKER}`) {
+      sawDone = true;
+      continue;
+    }
+
+    if (script.startsWith(RSC_CHUNK_SCRIPT_PREFIX)) {
+      chunks.push(parseRscChunkPushArgument(script));
+    }
+  }
+
+  // No chunks AND no done marker → middleware/early-return path. Caller falls
+  // back to a second invocation with `RSC: 1`.
+  if (chunks.length === 0 && !sawDone) {
+    return null;
+  }
+  if (chunks.length === 0) {
+    throw new Error(
+      "[vinext] Malformed prerender RSC embed: done marker present without chunk scripts",
+    );
+  }
+  if (!sawDone) {
+    throw new Error("[vinext] Malformed prerender RSC embed: missing __VINEXT_RSC_DONE__ marker");
+  }
+
+  return chunks.join("");
+}
+
+/**
+ * Parse the JSON-string argument of a single chunk-push script. The script
+ * shape is exactly `<prefix>(<safeJsonStringify(chunk)>)` because the writer
+ * concatenates those literals — so the body always starts with the full
+ * prefix and ends with `)`. JSON.parse on the slice catches any tampering or
+ * trailing code.
+ */
+function parseRscChunkPushArgument(script: string): string {
+  if (!script.startsWith(RSC_CHUNK_FULL_PREFIX) || !script.endsWith(")")) {
+    throw new Error("[vinext] Malformed prerender RSC embed: unexpected chunk script shape");
+  }
+  const jsonSource = script.slice(RSC_CHUNK_FULL_PREFIX.length, -1);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonSource);
+  } catch {
+    throw new Error("[vinext] Malformed prerender RSC embed: invalid chunk JSON");
+  }
+  if (typeof parsed !== "string") {
+    throw new Error("[vinext] Malformed prerender RSC embed: chunk payload is not a string");
+  }
+  return parsed;
+}
+
 /**
  * Run an array of async tasks with bounded concurrency.
  * Results are returned in the same order as `items`.
@@ -1077,15 +1159,32 @@ export async function prerenderApp({
         }
         const html = htmlRender.html;
 
-        // Fetch RSC payload via a second invocation with RSC headers
-        // TODO: Extract RSC payload from the first response instead of invoking the handler twice.
-        const rscRequest = new Request(`http://localhost${urlPath}`, {
-          headers: { Accept: "text/x-component", RSC: "1" },
-        });
-        const rscRes = await runWithHeadersContext(headersContextFromRequest(rscRequest), () =>
-          rscHandler(rscRequest),
-        );
-        const rscData = rscRes.ok ? await rscRes.text() : null;
+        // Reconstruct the RSC payload from the inline bootstrap chunks already
+        // streamed into the HTML body. The chunks went through fixFlightHints
+        // (createRscEmbedTransform applies it before pushing each chunk into
+        // the embed scripts), so the resulting `.rsc` file contains the
+        // rewritten Flight form rather than raw Flight bytes.
+        //
+        // Falls back to a second invocation with `RSC: 1` when the HTML has
+        // no chunk scripts at all — covers cases where middleware
+        // short-circuits the App Router pipeline with a custom 200 HTML
+        // response that never went through createRscEmbedTransform.
+        let rscData = extractRscPayloadFromPrerenderedHtml(html);
+        if (rscData === null) {
+          const rscRequest = new Request(`http://localhost${urlPath}`, {
+            headers: { Accept: "text/x-component", RSC: "1" },
+          });
+          const rscRes = await runWithHeadersContext(headersContextFromRequest(rscRequest), () =>
+            rscHandler(rscRequest),
+          );
+          if (!rscRes.ok) {
+            await rscRes.body?.cancel();
+            throw new Error(
+              `[vinext] prerenderApp: RSC fallback returned ${rscRes.status} for ${urlPath}`,
+            );
+          }
+          rscData = await rscRes.text();
+        }
 
         const outputFiles: string[] = [];
 
@@ -1097,13 +1196,11 @@ export async function prerenderApp({
         outputFiles.push(htmlOutputPath);
 
         // Write RSC payload (.rsc file)
-        if (rscData !== null) {
-          const rscOutputPath = getRscOutputPath(urlPath);
-          const rscFullPath = path.join(outDir, rscOutputPath);
-          fs.mkdirSync(path.dirname(rscFullPath), { recursive: true });
-          fs.writeFileSync(rscFullPath, rscData, "utf-8");
-          outputFiles.push(rscOutputPath);
-        }
+        const rscOutputPath = getRscOutputPath(urlPath);
+        const rscFullPath = path.join(outDir, rscOutputPath);
+        fs.mkdirSync(path.dirname(rscFullPath), { recursive: true });
+        fs.writeFileSync(rscFullPath, rscData, "utf-8");
+        outputFiles.push(rscOutputPath);
 
         const renderedCacheControl = resolveRenderedCacheControl(
           htmlRender.requestCacheLife ?? {},

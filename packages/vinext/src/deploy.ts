@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { execFileSync, type ExecSyncOptions } from "node:child_process";
+import { execFileSync, type ExecFileSyncOptions } from "node:child_process";
 import { parseArgs as nodeParseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import {
@@ -1086,6 +1086,7 @@ function installDeps(root: string, deps: MissingDep[]): void {
   execFileSync(pm, [...pmArgs, ...depSpecs], {
     cwd: root,
     stdio: "inherit",
+    shell: process.platform === "win32",
   });
 }
 
@@ -1260,10 +1261,14 @@ export function resolveWranglerBin(
 function runWranglerDeploy(root: string, options: Pick<DeployOptions, "preview" | "env">): string {
   const wranglerBin = resolveWranglerBin(root);
 
-  const execOpts: ExecSyncOptions = {
+  const execOpts: ExecFileSyncOptions = {
     cwd: root,
     stdio: "pipe",
     encoding: "utf-8",
+    // On Windows, .bin/wrangler is a .cmd wrapper; execFileSync can't run
+    // it without a shell.  Enabling shell only on win32 keeps the
+    // no-shell-injection guarantee on other platforms.
+    shell: process.platform === "win32",
   };
 
   const { args, env } = buildWranglerDeployArgs(options);
@@ -1274,8 +1279,9 @@ function runWranglerDeploy(root: string, options: Pick<DeployOptions, "preview" 
     console.log("\n  Deploying to production...");
   }
 
-  // Use execFileSync to avoid shell injection — args are passed as an array,
-  // never interpolated into a shell command string.
+  // execFileSync passes args as an array, avoiding shell injection on Unix.
+  // On Windows, shell: true is required for .cmd wrappers but the array form
+  // still prevents trivial injection.
   const output = execFileSync(wranglerBin, args, execOpts) as string;
 
   // Parse the deployed URL from wrangler output
@@ -1329,7 +1335,11 @@ export async function deploy(options: DeployOptions): Promise<void> {
       console.log(
         `  Upgrading ${reactUpgrade.map((d) => d.replace(/@latest$/, "")).join(", ")}...`,
       );
-      execFileSync(pm, [...pmArgs, ...reactUpgrade], { cwd: root, stdio: "inherit" });
+      execFileSync(pm, [...pmArgs, ...reactUpgrade], {
+        cwd: root,
+        stdio: "inherit",
+        shell: process.platform === "win32",
+      });
     }
   }
   const missingDeps = getMissingDeps(info);

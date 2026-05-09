@@ -19,7 +19,6 @@ import {
   getCurrentNextUrl,
   getCurrentInterceptionContext,
   getClientNavigationRenderContext,
-  getClientNavigationState,
   getPrefetchCache,
   getPrefetchedUrls,
   pushHistoryStateWithoutNotify,
@@ -34,7 +33,6 @@ import {
   type CachedRscResponse,
   type ClientNavigationRenderSnapshot,
 } from "vinext/shims/navigation";
-import { stripBasePath } from "../utils/base-path.js";
 import {
   chunksToReadableStream,
   createProgressiveRscStream,
@@ -262,7 +260,6 @@ async function renderNavigationPayload(
   params: Record<string, string | string[]>,
   previousNextUrl: string | null,
   pendingRouterState: PendingBrowserRouterState | null,
-  useTransition = true,
   actionType: "navigate" | "replace" | "traverse" = "navigate",
   operationLane: OperationLane = "navigation",
 ): Promise<NavigationPayloadOutcome> {
@@ -282,7 +279,6 @@ async function renderNavigationPayload(
       previousNextUrl,
       targetHref,
       navId,
-      useTransition,
     });
   } catch (error) {
     pendingNavigationRecoveryHref = null;
@@ -965,17 +961,6 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
         const requestInterceptionContext = requestState.interceptionContext;
         const requestPreviousNextUrl = requestState.previousNextUrl;
 
-        // Compare against previous pending navigation first, then committed state.
-        // This avoids isSameRoute misclassification during rapid back-to-back clicks.
-        const navState = getClientNavigationState();
-        const currentPath =
-          navState?.pendingPathname ??
-          navState?.cachedPathname ??
-          stripBasePath(window.location.pathname, __basePath);
-
-        const targetPath = stripBasePath(url.pathname, __basePath);
-        const isSameRoute = targetPath === currentPath;
-
         // Set this navigation as the pending pathname, overwriting any previous.
         // Pass navId so only this navigation (or a newer one) can clear it later.
         setPendingPathname(url.pathname, navId);
@@ -1028,7 +1013,6 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
             cachedParams,
             requestPreviousNextUrl,
             pendingRouterState,
-            isSameRoute,
             toActionType(navigationKind),
             toOperationLane(navigationKind),
           );
@@ -1161,7 +1145,6 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
           navParams,
           requestPreviousNextUrl,
           pendingRouterState,
-          isSameRoute,
           toActionType(navigationKind),
           toOperationLane(navigationKind),
         );

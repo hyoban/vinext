@@ -8,6 +8,7 @@ import {
   type MetadataMergeEntry,
   type Viewport,
 } from "vinext/shims/metadata";
+import { runWithFetchDedupe } from "vinext/shims/fetch-cache";
 import { applyFileBasedMetadata } from "./file-based-metadata.js";
 import type { AppPageParams } from "./app-page-boundary.js";
 import { resolveAppPageSegmentParams } from "./app-page-params.js";
@@ -299,6 +300,12 @@ async function resolveParallelRouteHead<TModule extends AppPageHeadModule>(
 }
 
 export async function resolveAppPageHead<TModule extends AppPageHeadModule>(
+  options: ResolveAppPageHeadOptions<TModule>,
+): Promise<ResolveAppPageHeadResult> {
+  return await runWithFetchDedupe(() => resolveAppPageHeadInner(options));
+}
+
+async function resolveAppPageHeadInner<TModule extends AppPageHeadModule>(
   options: ResolveAppPageHeadOptions<TModule>,
 ): Promise<ResolveAppPageHeadResult> {
   const routeSegments = options.routeSegments ?? [];

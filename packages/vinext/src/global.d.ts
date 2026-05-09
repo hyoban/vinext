@@ -328,6 +328,12 @@ declare global {
       __VINEXT_BUILD_ID?: string;
 
       /**
+       * Deployment ID string injected via Vite `define` when
+       * `NEXT_DEPLOYMENT_ID` is present at build time.
+       */
+      __VINEXT_DEPLOYMENT_ID?: string;
+
+      /**
        * JSON-encoded array of `RemotePattern` objects from
        * `next.config.js` → `images.remotePatterns`.
        */

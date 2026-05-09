@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { CachedAppPageValue } from "vinext/shims/cache";
+import { runWithFetchDedupe } from "vinext/shims/fetch-cache";
 import { AppElementsWire, isAppElementsRecord, type AppOutgoingElements } from "./app-elements.js";
 import {
   finalizeAppPageHtmlCacheResponse,
@@ -297,9 +298,18 @@ export async function renderAppPageLifecycle(
   const compileEnd = options.isProduction ? undefined : performance.now();
   const baseOnError = options.createRscOnErrorHandler(options.cleanPathname, options.routePattern);
   const rscErrorTracker = createAppPageRscErrorTracker(baseOnError);
-  const rscStream = options.renderToReadableStream(outgoingElement, {
-    onError: rscErrorTracker.onRenderError,
-  });
+  // Defensive wrap for standalone callers. In the normal dispatch path this is
+  // a no-op since dispatchAppPage already activated dedupe. Note that
+  // renderToReadableStream returns synchronously — the actual fetch calls
+  // happen later during async stream consumption — so the dedupe map a
+  // standalone call would establish here is only effective if the caller has
+  // an outer runWithRequestContext / runWithFetchDedupe scope keeping the ALS
+  // store alive across that consumption.
+  const rscStream = runWithFetchDedupe(() =>
+    options.renderToReadableStream(outgoingElement, {
+      onError: rscErrorTracker.onRenderError,
+    }),
+  );
 
   let revalidateSeconds = options.revalidateSeconds;
   let expireSeconds = options.expireSeconds;

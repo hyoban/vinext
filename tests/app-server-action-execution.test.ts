@@ -9,6 +9,8 @@ import {
   type HandleProgressiveServerActionRequestOptions,
 } from "../packages/vinext/src/server/app-server-action-execution.js";
 import { VINEXT_RSC_VARY_HEADER } from "../packages/vinext/src/server/app-rsc-cache-busting.js";
+import { refresh, revalidatePath, revalidateTag } from "../packages/vinext/src/shims/cache.js";
+import { setHeadersAccessPhase } from "../packages/vinext/src/shims/headers.js";
 
 type TestRoute = {
   id: string;
@@ -101,9 +103,7 @@ function createOptions(
     },
     reportRequestError() {},
     request: createMultipartRequest(),
-    setHeadersAccessPhase() {
-      return "render";
-    },
+    setHeadersAccessPhase,
     ...overrides,
   };
 }
@@ -210,9 +210,7 @@ function createRscOptions(
       return error;
     },
     searchParams: new URLSearchParams("tab=activity"),
-    setHeadersAccessPhase() {
-      return "render";
-    },
+    setHeadersAccessPhase,
     setNavigationContext() {},
     toInterceptOpts(intercept) {
       return { slot: intercept.slotKey };
@@ -601,6 +599,73 @@ describe("app server action execution helpers", () => {
     expect(navigationContexts).toEqual([{ params: {}, pathname: "/dashboard" }]);
   });
 
+  // Mirrors Next.js' action revalidation header contract:
+  // packages/next/src/server/app-render/action-handler.ts addRevalidationHeader()
+  // https://github.com/vercel/next.js/blob/canary/packages/next/src/server/app-render/action-handler.ts
+  it("emits x-action-revalidated when a fetch action revalidates a path", async () => {
+    const response = await handleServerActionRscRequest(
+      createRscOptions({
+        loadServerAction() {
+          return Promise.resolve(async () => {
+            await revalidatePath("/dashboard");
+            return "revalidated";
+          });
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-action-revalidated")).toBe("1");
+  });
+
+  it("does not emit x-action-revalidated when a fetch action revalidates a tag with a profile", async () => {
+    const response = await handleServerActionRscRequest(
+      createRscOptions({
+        loadServerAction() {
+          return Promise.resolve(async () => {
+            await revalidateTag("dashboard", "hours");
+            return "revalidated";
+          });
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-action-revalidated")).toBeNull();
+  });
+
+  it("emits x-action-revalidated when a fetch action revalidates a tag with expire zero", async () => {
+    const response = await handleServerActionRscRequest(
+      createRscOptions({
+        loadServerAction() {
+          return Promise.resolve(async () => {
+            await revalidateTag("dashboard", { expire: 0 });
+            return "revalidated";
+          });
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-action-revalidated")).toBe("1");
+  });
+
+  it("emits dynamic-only x-action-revalidated when a fetch action refreshes", async () => {
+    const response = await handleServerActionRscRequest(
+      createRscOptions({
+        loadServerAction() {
+          return Promise.resolve(() => {
+            refresh();
+            return "refreshed";
+          });
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-action-revalidated")).toBe("2");
+  });
+
   // Ported from Next.js: test/e2e/app-dir/actions/app-action.test.ts
   // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/actions/app-action.test.ts
   it("rejects fetch actions with too many decoded arguments before invoking the action", async () => {
@@ -759,6 +824,23 @@ describe("app server action execution helpers", () => {
     expect(await response?.text()).toBe("");
     expect(clearContext).toHaveBeenCalledTimes(1);
     expect(renderToReadableStream).not.toHaveBeenCalled();
+  });
+
+  it("emits x-action-revalidated when a redirecting fetch action revalidates a tag", async () => {
+    const response = await handleServerActionRscRequest(
+      createRscOptions({
+        loadServerAction() {
+          return Promise.resolve(async () => {
+            await revalidateTag("dashboard");
+            throw { digest: "NEXT_REDIRECT;;%2Ftarget;307" };
+          });
+        },
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-action-revalidated")).toBe("1");
+    expect(response?.headers.get("x-action-redirect")).toBe("/target");
   });
 
   // Ported from Next.js: packages/next/src/server/app-render/action-handler.ts

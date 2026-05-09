@@ -288,6 +288,10 @@ export function setHeadersAccessPhase(phase: HeadersAccessPhase): HeadersAccessP
   return _setStatePhase(_getState(), phase);
 }
 
+export function getHeadersAccessPhase(): HeadersAccessPhase {
+  return _getState().phase;
+}
+
 /**
  * Set the headers/cookies context for the current RSC render.
  * Called by the framework's RSC entry before rendering each request.

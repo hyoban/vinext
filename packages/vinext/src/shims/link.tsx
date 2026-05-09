@@ -424,11 +424,14 @@ const Link = forwardRef<HTMLAnchorElement, LinkProps>(function Link(
     // hash-only changes, RSC fetch, and two-phase URL commit.
     if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
       setPending(true);
-      try {
-        await navigateClientSide(navigateHref, replace ? "replace" : "push", scroll);
-      } finally {
-        if (mountedRef.current) setPending(false);
-      }
+      React.startTransition(() => {
+        void navigateClientSide(navigateHref, replace ? "replace" : "push", scroll, true).finally(
+          () => {
+            if (mountedRef.current) setPending(false);
+          },
+        );
+      });
+      return;
     } else {
       // Next.js only consumes onRouterTransitionStart in the App Router.
       // Pages Router still executes instrumentation-client side effects

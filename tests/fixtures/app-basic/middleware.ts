@@ -116,6 +116,19 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
     return new Response("Event OK", { status: 200 });
   }
 
+  if (pathname === "/middleware-fetch-dedupe") {
+    const target = process.env.TEST_FETCH_DEDUPE_TARGET;
+    if (!target) {
+      return Response.json({ error: "missing TEST_FETCH_DEDUPE_TARGET" }, { status: 500 });
+    }
+
+    const first = await fetch(target, { cache: "no-store" });
+    const second = await fetch(target, { cache: "no-store" });
+    const firstBody = (await first.json()) as { count: number };
+    const secondBody = (await second.json()) as { count: number };
+    return Response.json({ counts: [firstBody.count, secondBody.count] });
+  }
+
   // Inject mw-before-user=1 cookie for beforeFiles rewrite gating test.
   // In App Router order, beforeFiles rewrites run after middleware, so they
   // should see this cookie. The /mw-gated-before rule in next.config.ts has:
@@ -274,6 +287,7 @@ export const config = {
     "/middleware-blocked",
     "/middleware-throw",
     "/middleware-event",
+    "/middleware-fetch-dedupe",
     "/search-query",
     "/headers/override-from-middleware",
     "/header-override-delete",

@@ -135,11 +135,13 @@ function createNextRequest(
   basePath?: string,
 ): NextRequest {
   const url = new URL(request.url);
-  let mwRequest = request;
+  // Middleware gets an isolated body branch; downstream routing keeps owning
+  // the original request body.
+  let mwRequest = request.body && !request.bodyUsed ? request.clone() : request;
   if (normalizedPathname !== url.pathname) {
     const mwUrl = new URL(url);
     mwUrl.pathname = normalizedPathname;
-    mwRequest = new Request(mwUrl, request);
+    mwRequest = new Request(mwUrl, mwRequest);
   }
 
   const nextConfig =

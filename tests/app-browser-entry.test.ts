@@ -176,6 +176,31 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("app browser entry navigation scheduling", () => {
+  it("does not expose a per-navigation transition override at the controller boundary", () => {
+    type Controller = ReturnType<typeof createAppBrowserNavigationController>;
+    function assertNoTransitionOverride(controller: Controller) {
+      void controller.renderNavigationPayload({
+        actionType: "navigate",
+        createNavigationCommitEffect: () => () => {},
+        historyUpdateMode: "push",
+        navigationSnapshot: createClientNavigationRenderSnapshot("https://example.com/initial", {}),
+        nextElements: Promise.resolve(createResolvedElements("route:/dashboard", "/")),
+        operationLane: "navigation",
+        params: {},
+        pendingRouterState: null,
+        previousNextUrl: null,
+        targetHref: "https://example.com/dashboard",
+        navId: 1,
+        // @ts-expect-error ordinary navigations must not choose their own scheduling lane.
+        useTransition: false,
+      });
+    }
+
+    expect(assertNoTransitionOverride).toBeTypeOf("function");
+  });
+});
+
 describe("app browser entry state helpers", () => {
   it("requires renderId when creating pending commits", () => {
     // @ts-expect-error renderId is required to avoid duplicate commit ids.
@@ -1036,7 +1061,6 @@ describe("app browser navigation controller", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       // Yield microticks so the async function reaches dispatch and sets state.
@@ -1099,7 +1123,6 @@ describe("app browser navigation controller", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId: controller.beginNavigation(),
-        useTransition: false,
       });
 
       await expect(pendingRouterState.promise).resolves.toMatchObject({
@@ -1137,7 +1160,6 @@ describe("app browser navigation controller", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       controller.beginNavigation();
@@ -1182,7 +1204,6 @@ describe("app browser navigation controller", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       // Yield enough microticks for the async function to reach dispatch
@@ -1500,7 +1521,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/a",
         navId: navA,
-        useTransition: false,
       });
 
       const navB = controller.beginNavigation();
@@ -1519,7 +1539,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/b",
         navId: navB,
-        useTransition: false,
       });
 
       const navC = controller.beginNavigation();
@@ -1538,14 +1557,13 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/c",
         navId: navC,
-        useTransition: false,
       });
 
       // Yield so C's async payload resolves and state is committed.
       // renderNavigationPayload returns a promise that settles only when
       // NavigationCommitSignal fires (a React component not mounted in
       // unit tests). The state mutation through dispatchApprovedVisibleCommit is
-      // synchronous when useTransition=false, so we verify via stateRef.
+      // applied during React.startTransition's action, so we verify via stateRef.
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
@@ -1610,7 +1628,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId: navA,
-        useTransition: false,
       });
 
       // Start new navigation B (same root). B advances activeNavigationId past A.
@@ -1631,7 +1648,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/marketing/settings",
         navId: navB,
-        useTransition: false,
       });
 
       // Yield so B's async payload resolves and state commits.
@@ -1681,7 +1697,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/initial",
         navId: refreshNav,
-        useTransition: false,
       });
 
       await controller.hmrReplaceTree(
@@ -1735,7 +1750,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/previous",
         navId: traverseNav,
-        useTransition: false,
       });
 
       await controller.hmrReplaceTree(
@@ -1904,7 +1918,6 @@ describe("app browser navigation lifecycle settlement", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       await expect(renderPromise).rejects.toThrow("RSC fetch failed");
@@ -1948,7 +1961,6 @@ describe("app browser root-layout hard navigation", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       await expect(renderPromise).resolves.toBe("hard-navigate");
@@ -1991,7 +2003,6 @@ describe("app browser root-layout hard navigation", () => {
         previousNextUrl: null,
         targetHref: "https://example.com/dashboard",
         navId,
-        useTransition: false,
       });
 
       // Yield so the async function runs the settle+hard-navigate path.
@@ -2034,7 +2045,6 @@ describe("app browser root-layout hard navigation", () => {
           previousNextUrl: null,
           targetHref: "https://example.com/dashboard",
           navId: firstNavId,
-          useTransition: false,
         }),
       ).resolves.toBe("hard-navigate");
       expect(assign).toHaveBeenCalledTimes(1);
@@ -2063,7 +2073,6 @@ describe("app browser root-layout hard navigation", () => {
           previousNextUrl: null,
           targetHref: "https://example.com/dashboard",
           navId: secondNavId,
-          useTransition: false,
         }),
       ).resolves.toBe("no-commit");
       expect(assign).not.toHaveBeenCalled();
@@ -2101,7 +2110,6 @@ describe("app browser root-layout hard navigation", () => {
           previousNextUrl: null,
           targetHref: "https://example.com/dashboard",
           navId: firstNavId,
-          useTransition: false,
         }),
       ).resolves.toBe("hard-navigate");
       expect(assign).toHaveBeenCalledTimes(1);
@@ -2129,7 +2137,6 @@ describe("app browser root-layout hard navigation", () => {
           previousNextUrl: null,
           targetHref: "https://example.com/dashboard",
           navId: secondNavId,
-          useTransition: false,
         }),
       ).resolves.toBe("hard-navigate");
       expect(assign).toHaveBeenCalledTimes(1);

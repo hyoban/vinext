@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -40,6 +41,56 @@ function textContentByTestId(html: string, testId: string): string {
   }
 
   return decodeHtmlText(html.slice(contentStart + 1, contentEnd));
+}
+
+async function withCountingFetchTarget<T>(
+  fn: (targetUrl: string, getRequestCount: () => number) => Promise<T>,
+): Promise<T> {
+  let requestCount = 0;
+  const upstream = http.createServer((_req, res) => {
+    requestCount += 1;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ count: requestCount }));
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    upstream.once("error", reject);
+    upstream.listen(0, "127.0.0.1", () => {
+      upstream.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = upstream.address();
+  if (!address || typeof address === "string") {
+    await new Promise<void>((resolve, reject) => {
+      upstream.close((error) => (error ? reject(error) : resolve()));
+    });
+    throw new Error("Counting fetch target did not bind to a TCP port");
+  }
+
+  try {
+    return await fn(`http://127.0.0.1:${address.port}/tick`, () => requestCount);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      upstream.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+}
+
+async function waitForCondition(
+  condition: () => boolean,
+  options?: { intervalMs?: number; timeoutMs?: number },
+): Promise<void> {
+  const intervalMs = options?.intervalMs ?? 100;
+  const deadline = Date.now() + (options?.timeoutMs ?? 3000);
+
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
 }
 
 describe("App Router integration", () => {
@@ -236,6 +287,63 @@ describe("App Router integration", () => {
     // If broken, useContext returns null and we see "NOT_FOUND".
     expect(html).toContain("dark-test-theme");
     expect(html).not.toContain("NOT_FOUND");
+  });
+
+  it("does not dedupe identical fetches in app route handlers", async () => {
+    await withCountingFetchTarget(async (targetUrl, getRequestCount) => {
+      process.env.TEST_FETCH_DEDUPE_TARGET = targetUrl;
+      try {
+        const res = await fetch(`${baseUrl}/api/fetch-dedupe`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ counts: [1, 2] });
+        expect(getRequestCount()).toBe(2);
+      } finally {
+        delete process.env.TEST_FETCH_DEDUPE_TARGET;
+      }
+    });
+  });
+
+  it("does not dedupe identical fetches in middleware", async () => {
+    await withCountingFetchTarget(async (targetUrl, getRequestCount) => {
+      process.env.TEST_FETCH_DEDUPE_TARGET = targetUrl;
+      try {
+        const res = await fetch(`${baseUrl}/middleware-fetch-dedupe`);
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ counts: [1, 2] });
+        expect(getRequestCount()).toBe(2);
+      } finally {
+        delete process.env.TEST_FETCH_DEDUPE_TARGET;
+      }
+    });
+  });
+
+  it("dedupes identical fetches during app page server component render", async () => {
+    await withCountingFetchTarget(async (targetUrl, getRequestCount) => {
+      process.env.TEST_FETCH_DEDUPE_TARGET = targetUrl;
+      try {
+        const { res, html } = await fetchHtml(baseUrl, "/fetch-dedupe-render");
+        expect(res.status).toBe(200);
+        expect(textContentByTestId(html, "fetch-dedupe-counts")).toBe("[1,1]");
+        expect(getRequestCount()).toBe(1);
+      } finally {
+        delete process.env.TEST_FETCH_DEDUPE_TARGET;
+      }
+    });
+  });
+
+  it("dedupes identical no-store fetches across generateMetadata and page render", async () => {
+    await withCountingFetchTarget(async (targetUrl, getRequestCount) => {
+      process.env.TEST_FETCH_DEDUPE_TARGET = targetUrl;
+      try {
+        const { res, html } = await fetchHtml(baseUrl, "/fetch-dedupe-metadata");
+        expect(res.status).toBe(200);
+        expect(html).toContain("<title>Product 1</title>");
+        expect(textContentByTestId(html, "fetch-dedupe-metadata-count")).toBe("1");
+        expect(getRequestCount()).toBe(1);
+      } finally {
+        delete process.env.TEST_FETCH_DEDUPE_TARGET;
+      }
+    });
   });
 
   it("SSR renders 'use client' components that use usePathname/useSearchParams", async () => {
@@ -2307,6 +2415,46 @@ describe("App Router Production server (startProdServer)", () => {
     expect(reqId3).toBeTruthy();
     expect(reqId3).not.toBe(reqId1);
     expect(res3.headers.get("x-vinext-cache")).toBe("MISS");
+  });
+
+  it("dedupes identical no-store fetches across metadata and page render during ISR background regeneration", async () => {
+    await withCountingFetchTarget(async (targetUrl, getRequestCount) => {
+      process.env.TEST_FETCH_DEDUPE_TARGET = targetUrl;
+      try {
+        const warmRes = await fetch(`${baseUrl}/fetch-dedupe-isr-metadata`);
+        expect(warmRes.status).toBe(200);
+        expect(await warmRes.text()).toContain("<title>ISR Product 1</title>");
+        expect(getRequestCount()).toBe(1);
+
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        const staleRes = await fetch(`${baseUrl}/fetch-dedupe-isr-metadata`);
+        expect(staleRes.status).toBe(200);
+        await staleRes.arrayBuffer();
+
+        await waitForCondition(() => getRequestCount() > 1, {
+          intervalMs: 100,
+          timeoutMs: 3000,
+        });
+        // Poll for count stabilization rather than assuming a fixed window —
+        // a stray third fetch would betray dedupe leaking across the
+        // metadata + page boundary in background regeneration.
+        let stableCount = getRequestCount();
+        let stableSince = Date.now();
+        while (Date.now() - stableSince < 500) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const current = getRequestCount();
+          if (current !== stableCount) {
+            stableCount = current;
+            stableSince = Date.now();
+          }
+        }
+
+        expect(stableCount).toBe(2);
+      } finally {
+        delete process.env.TEST_FETCH_DEDUPE_TARGET;
+      }
+    });
   });
 
   it("page ISR + searchParams: RSC requests stay dynamic instead of serving cached query data", async () => {

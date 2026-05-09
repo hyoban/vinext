@@ -85,6 +85,7 @@ function _getInheritedExecutionContext(): ExecutionContextLike | null {
 export function createRequestContext(opts?: Partial<UnifiedRequestContext>): UnifiedRequestContext {
   return {
     headersContext: null,
+    actionRevalidationKind: 0,
     dynamicUsageDetected: false,
     invalidDynamicUsageError: null,
     pendingSetCookies: [],
@@ -99,6 +100,8 @@ export function createRequestContext(opts?: Partial<UnifiedRequestContext>): Uni
     currentRequestTags: [],
     currentFetchSoftTags: [],
     currentFetchCacheMode: null,
+    isFetchDedupeActive: false,
+    currentFetchDedupeEntries: new Map(),
     executionContext: _getInheritedExecutionContext(), // inherits from standalone ALS if present
     requestCache: new WeakMap(),
     ssrContext: null,

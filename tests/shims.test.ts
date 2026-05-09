@@ -1459,6 +1459,21 @@ describe("next/server shim", () => {
     expect(req.cookies.has("missing")).toBe(false);
   });
 
+  it("NextRequest copies a Request body without disturbing the source request", async () => {
+    const { NextRequest } = await import("../packages/vinext/src/shims/server.js");
+    const source = new Request("https://example.com/api/echo", {
+      body: JSON.stringify({ ok: true }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+
+    const req = new NextRequest(source);
+
+    await expect(req.json()).resolves.toEqual({ ok: true });
+    expect(source.bodyUsed).toBe(false);
+    await expect(source.json()).resolves.toEqual({ ok: true });
+  });
+
   it("NextResponse.json() creates a JSON response", async () => {
     const { NextResponse } = await import("../packages/vinext/src/shims/server.js");
     const res = NextResponse.json({ message: "hello" }, { status: 201 });
@@ -1895,31 +1910,31 @@ describe("next/cache shim", () => {
 
   // Ported from Next.js: packages/next/src/client/request/io.browser.ts
   // https://github.com/vercel/next.js/blob/canary/packages/next/src/client/request/io.browser.ts
-  it("exports unstable_io function", async () => {
+  it("exports io function", async () => {
     const mod = await import("../packages/vinext/src/shims/cache.js");
-    expect(typeof mod.unstable_io).toBe("function");
+    expect(typeof mod.io).toBe("function");
   });
 
-  it("unstable_io returns a resolved promise", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
-    const result = unstable_io();
+  it("io returns a resolved promise", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
+    const result = io();
     expect(result).toBeInstanceOf(Promise);
     expect((result as any).status).toBe("fulfilled");
     expect((result as any).value).toBeUndefined();
     await expect(result).resolves.toBeUndefined();
   });
 
-  it("unstable_io returns same instance (singleton)", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
-    const r1 = unstable_io();
-    const r2 = unstable_io();
+  it("io returns same instance (singleton)", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
+    const r1 = io();
+    const r2 = io();
     expect(r1).toBe(r2);
   });
 
   // Ported from Next.js: packages/next/src/server/request/io.ts
   // https://github.com/vercel/next.js/blob/canary/packages/next/src/server/request/io.ts
-  it("unstable_io returns a hanging promise during prerender", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io returns a hanging promise during prerender", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
@@ -1928,7 +1943,7 @@ describe("next/cache shim", () => {
     // run() returns whatever the callback returns — a hanging promise.
     const hanging = workUnitAsyncStorage.run(
       { type: "prerender", renderSignal: controller.signal },
-      unstable_io,
+      io,
     );
 
     // The promise should not be resolved or rejected (it's "hanging")
@@ -1945,30 +1960,30 @@ describe("next/cache shim", () => {
     controller.abort();
   });
 
-  it("unstable_io resolves immediately with request store", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io resolves immediately with request store", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
-    const promise = workUnitAsyncStorage.run({ type: "request" }, unstable_io);
+    const promise = workUnitAsyncStorage.run({ type: "request" }, io);
 
     expect(promise).toBeInstanceOf(Promise);
     await expect(promise).resolves.toBeUndefined();
   });
 
-  it("unstable_io resolves immediately with cache store", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io resolves immediately with cache store", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
-    const promise = workUnitAsyncStorage.run({ type: "cache" }, unstable_io);
+    const promise = workUnitAsyncStorage.run({ type: "cache" }, io);
 
     expect(promise).toBeInstanceOf(Promise);
     await expect(promise).resolves.toBeUndefined();
   });
 
-  it("unstable_io rejects hanging promise on abort when prerendering", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io rejects hanging promise on abort when prerendering", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
@@ -1976,18 +1991,18 @@ describe("next/cache shim", () => {
 
     const hanging = workUnitAsyncStorage.run(
       { type: "prerender", renderSignal: controller.signal },
-      unstable_io,
+      io,
     );
 
     expect(hanging).toBeInstanceOf(Promise);
 
     // Abort the signal — the hanging promise should reject
     controller.abort();
-    await expect(hanging).rejects.toThrow(/unstable_io/i);
+    await expect(hanging).rejects.toThrow(/`io\(\)`/);
   });
 
-  it("unstable_io returns rejected promise when signal already aborted", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io returns rejected promise when signal already aborted", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
@@ -1996,14 +2011,14 @@ describe("next/cache shim", () => {
 
     const promise = workUnitAsyncStorage.run(
       { type: "prerender", renderSignal: controller.signal },
-      unstable_io,
+      io,
     );
 
     await expect(promise).rejects.toThrow(/prerendering/i);
   });
 
-  it("unstable_io does not emit unhandled rejection when signal already aborted", async () => {
-    const { unstable_io } = await import("../packages/vinext/src/shims/cache.js");
+  it("io does not emit unhandled rejection when signal already aborted", async () => {
+    const { io } = await import("../packages/vinext/src/shims/cache.js");
     const { workUnitAsyncStorage } =
       await import("../packages/vinext/src/shims/internal/work-unit-async-storage.js");
 
@@ -2019,7 +2034,7 @@ describe("next/cache shim", () => {
 
       const promise = workUnitAsyncStorage.run(
         { type: "prerender", renderSignal: controller.signal, route: "/test" },
-        unstable_io,
+        io,
       );
 
       // Wait a tick for potential unhandled rejection to be detected
@@ -2035,6 +2050,23 @@ describe("next/cache shim", () => {
       expect(unhandledRejections.length).toBe(0);
     } finally {
       process.off("unhandledRejection", onUnhandledRejection);
+    }
+  });
+
+  it("unstable_io is exported as a deprecation alias for io", async () => {
+    const mod = await import("../packages/vinext/src/shims/cache.js");
+    expect(typeof mod.unstable_io).toBe("function");
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = mod.unstable_io();
+      expect(result).toBeInstanceOf(Promise);
+      await expect(result).resolves.toBeUndefined();
+      // Warning fires at most once per process; at least one call must mention deprecation.
+      const warned = warn.mock.calls.some((args) => String(args[0] ?? "").includes("unstable_io"));
+      expect(warned).toBe(true);
+    } finally {
+      warn.mockRestore();
     }
   });
 
@@ -2487,6 +2519,105 @@ describe('"use cache" runtime', () => {
         delete process.env.__VINEXT_BUILD_ID;
       } else {
         process.env.__VINEXT_BUILD_ID = previousBuildId;
+      }
+    }
+  });
+
+  it("scopes shared cache entries by deployment ID when available", async () => {
+    // Ported from Next.js: test/production/app-dir/use-cache-cross-deployment/use-cache-cross-deployment.test.ts
+    // https://github.com/vercel/next.js/blob/07f76411b07de9417d4a6b816f3137cafe1045fc/test/production/app-dir/use-cache-cross-deployment/use-cache-cross-deployment.test.ts
+    const { registerCachedFunction } =
+      await import("../packages/vinext/src/shims/cache-runtime.js");
+    const { setCacheHandler, MemoryCacheHandler } =
+      await import("../packages/vinext/src/shims/cache.js");
+    setCacheHandler(new MemoryCacheHandler());
+
+    const previousBuildId = process.env.__VINEXT_BUILD_ID;
+    const previousDeploymentId = process.env.__VINEXT_DEPLOYMENT_ID;
+    const previousNextDeploymentId = process.env.NEXT_DEPLOYMENT_ID;
+    try {
+      process.env.__VINEXT_BUILD_ID = "stable-build";
+      delete process.env.NEXT_DEPLOYMENT_ID;
+
+      let callCount = 0;
+      const cached = registerCachedFunction(async () => {
+        callCount++;
+        return { count: callCount };
+      }, "test:deployment-id");
+
+      process.env.__VINEXT_DEPLOYMENT_ID = "deployment-one";
+      expect(await cached()).toEqual({ count: 1 });
+      expect(await cached()).toEqual({ count: 1 });
+
+      process.env.__VINEXT_DEPLOYMENT_ID = "deployment-two";
+      expect(await cached()).toEqual({ count: 2 });
+      expect(await cached()).toEqual({ count: 2 });
+
+      delete process.env.__VINEXT_DEPLOYMENT_ID;
+      expect(await cached()).toEqual({ count: 3 });
+      expect(await cached()).toEqual({ count: 3 });
+    } finally {
+      if (previousBuildId === undefined) {
+        delete process.env.__VINEXT_BUILD_ID;
+      } else {
+        process.env.__VINEXT_BUILD_ID = previousBuildId;
+      }
+      if (previousDeploymentId === undefined) {
+        delete process.env.__VINEXT_DEPLOYMENT_ID;
+      } else {
+        process.env.__VINEXT_DEPLOYMENT_ID = previousDeploymentId;
+      }
+      if (previousNextDeploymentId === undefined) {
+        delete process.env.NEXT_DEPLOYMENT_ID;
+      } else {
+        process.env.NEXT_DEPLOYMENT_ID = previousNextDeploymentId;
+      }
+    }
+  });
+
+  it("uses NEXT_DEPLOYMENT_ID when the internal define is empty", async () => {
+    const { registerCachedFunction } =
+      await import("../packages/vinext/src/shims/cache-runtime.js");
+    const { setCacheHandler, MemoryCacheHandler } =
+      await import("../packages/vinext/src/shims/cache.js");
+    setCacheHandler(new MemoryCacheHandler());
+
+    const previousBuildId = process.env.__VINEXT_BUILD_ID;
+    const previousDeploymentId = process.env.__VINEXT_DEPLOYMENT_ID;
+    const previousNextDeploymentId = process.env.NEXT_DEPLOYMENT_ID;
+    try {
+      process.env.__VINEXT_BUILD_ID = "stable-build";
+      process.env.__VINEXT_DEPLOYMENT_ID = "";
+
+      let callCount = 0;
+      const cached = registerCachedFunction(async () => {
+        callCount++;
+        return { count: callCount };
+      }, "test:next-deployment-id");
+
+      process.env.NEXT_DEPLOYMENT_ID = "env-deployment-one";
+      expect(await cached()).toEqual({ count: 1 });
+      expect(await cached()).toEqual({ count: 1 });
+
+      process.env.NEXT_DEPLOYMENT_ID = "env-deployment-two";
+      expect(await cached()).toEqual({ count: 2 });
+      expect(await cached()).toEqual({ count: 2 });
+      expect(callCount).toBe(2);
+    } finally {
+      if (previousBuildId === undefined) {
+        delete process.env.__VINEXT_BUILD_ID;
+      } else {
+        process.env.__VINEXT_BUILD_ID = previousBuildId;
+      }
+      if (previousDeploymentId === undefined) {
+        delete process.env.__VINEXT_DEPLOYMENT_ID;
+      } else {
+        process.env.__VINEXT_DEPLOYMENT_ID = previousDeploymentId;
+      }
+      if (previousNextDeploymentId === undefined) {
+        delete process.env.NEXT_DEPLOYMENT_ID;
+      } else {
+        process.env.NEXT_DEPLOYMENT_ID = previousNextDeploymentId;
       }
     }
   });
@@ -3914,6 +4045,37 @@ describe("double-encoded path handling in middleware", () => {
     expect(result.kind).toBe("continue");
     expect(request.body?.locked).toBe(false);
     expect(await request.text()).toBe("action-payload");
+  });
+
+  it("App Router middleware can read the body without consuming the downstream request", async () => {
+    const { applyAppMiddleware } = await import("../packages/vinext/src/server/app-middleware.js");
+    const request = new Request("http://localhost:3000/api/echo", {
+      body: JSON.stringify({ message: "hello" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    let middlewareBody: unknown;
+    const module = {
+      default: async (req: Request) => {
+        middlewareBody = await req.json();
+        return new Response(null, {
+          headers: { "x-middleware-next": "1" },
+        });
+      },
+    };
+
+    const result = await applyAppMiddleware({
+      cleanPathname: "/api/echo",
+      context: { headers: null, requestHeaders: null, status: null },
+      isProxy: false,
+      module,
+      request,
+    });
+
+    expect(result.kind).toBe("continue");
+    expect(middlewareBody).toEqual({ message: "hello" });
+    expect(request.bodyUsed).toBe(false);
+    await expect(request.json()).resolves.toEqual({ message: "hello" });
   });
 
   it("external middleware rewrite proxy strips upstream x-middleware headers without middleware context", async () => {

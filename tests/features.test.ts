@@ -2867,11 +2867,11 @@ describe("fetch cache (extended fetch with next options)", () => {
     expect(typeof mod.getCollectedFetchTags).toBe("function");
   });
 
-  it("passes through fetch without next options unchanged", async () => {
+  it("passes through fetch without next options to persistent cache but dedupes within a render", async () => {
     const { withFetchCache } = await import("../packages/vinext/src/shims/fetch-cache.js");
 
     fetchCallCount = 0;
-    const cleanup = withFetchCache();
+    let cleanup = withFetchCache();
     try {
       const resp1 = await fetch(`${mockServerUrl}/plain`);
       const data1 = await resp1.json();
@@ -2879,7 +2879,13 @@ describe("fetch cache (extended fetch with next options)", () => {
 
       const resp2 = await fetch(`${mockServerUrl}/plain`);
       const data2 = await resp2.json();
-      expect(data2.count).toBe(2); // NOT cached — no next options
+      expect(data2.count).toBe(1); // Same render fetch is deduped
+
+      cleanup();
+      cleanup = withFetchCache();
+      const resp3 = await fetch(`${mockServerUrl}/plain`);
+      const data3 = await resp3.json();
+      expect(data3.count).toBe(2); // New render still bypasses persistent cache
     } finally {
       cleanup();
     }
@@ -3005,7 +3011,7 @@ describe("fetch cache (extended fetch with next options)", () => {
     }
   });
 
-  it("cache: 'no-store' bypasses cache", async () => {
+  it("cache: 'no-store' bypasses persistent cache but dedupes within a render", async () => {
     const { withFetchCache } = await import("../packages/vinext/src/shims/fetch-cache.js");
     const { setCacheHandler, MemoryCacheHandler } =
       await import("../packages/vinext/src/shims/cache.js");
@@ -3013,7 +3019,7 @@ describe("fetch cache (extended fetch with next options)", () => {
     setCacheHandler(new MemoryCacheHandler());
     fetchCallCount = 0;
 
-    const cleanup = withFetchCache();
+    let cleanup = withFetchCache();
     try {
       const resp1 = await fetch(`${mockServerUrl}/no-store`, {
         cache: "no-store",
@@ -3025,14 +3031,22 @@ describe("fetch cache (extended fetch with next options)", () => {
         cache: "no-store",
       });
       const data2 = await resp2.json();
-      expect(data2.count).toBe(2); // NOT cached
+      expect(data2.count).toBe(1); // Same render fetch is deduped
+
+      cleanup();
+      cleanup = withFetchCache();
+      const resp3 = await fetch(`${mockServerUrl}/no-store`, {
+        cache: "no-store",
+      });
+      const data3 = await resp3.json();
+      expect(data3.count).toBe(2); // New render still bypasses persistent cache
     } finally {
       cleanup();
       setCacheHandler(new MemoryCacheHandler());
     }
   });
 
-  it("next.revalidate: false bypasses cache", async () => {
+  it("next.revalidate: false bypasses persistent cache but dedupes within a render", async () => {
     const { withFetchCache } = await import("../packages/vinext/src/shims/fetch-cache.js");
     const { setCacheHandler, MemoryCacheHandler } =
       await import("../packages/vinext/src/shims/cache.js");
@@ -3040,18 +3054,23 @@ describe("fetch cache (extended fetch with next options)", () => {
     setCacheHandler(new MemoryCacheHandler());
     fetchCallCount = 0;
 
-    const cleanup = withFetchCache();
+    let cleanup = withFetchCache();
     try {
       await fetch(`${mockServerUrl}/no-rev`, { next: { revalidate: false } });
       await fetch(`${mockServerUrl}/no-rev`, { next: { revalidate: false } });
-      expect(fetchCallCount).toBe(2); // Both hit the network
+      expect(fetchCallCount).toBe(1);
+
+      cleanup();
+      cleanup = withFetchCache();
+      await fetch(`${mockServerUrl}/no-rev`, { next: { revalidate: false } });
+      expect(fetchCallCount).toBe(2);
     } finally {
       cleanup();
       setCacheHandler(new MemoryCacheHandler());
     }
   });
 
-  it("next.revalidate: 0 bypasses cache", async () => {
+  it("next.revalidate: 0 bypasses persistent cache but dedupes within a render", async () => {
     const { withFetchCache } = await import("../packages/vinext/src/shims/fetch-cache.js");
     const { setCacheHandler, MemoryCacheHandler } =
       await import("../packages/vinext/src/shims/cache.js");
@@ -3059,9 +3078,14 @@ describe("fetch cache (extended fetch with next options)", () => {
     setCacheHandler(new MemoryCacheHandler());
     fetchCallCount = 0;
 
-    const cleanup = withFetchCache();
+    let cleanup = withFetchCache();
     try {
       await fetch(`${mockServerUrl}/zero`, { next: { revalidate: 0 } });
+      await fetch(`${mockServerUrl}/zero`, { next: { revalidate: 0 } });
+      expect(fetchCallCount).toBe(1);
+
+      cleanup();
+      cleanup = withFetchCache();
       await fetch(`${mockServerUrl}/zero`, { next: { revalidate: 0 } });
       expect(fetchCallCount).toBe(2);
     } finally {
@@ -3078,7 +3102,7 @@ describe("fetch cache (extended fetch with next options)", () => {
     setCacheHandler(new MemoryCacheHandler());
     fetchCallCount = 0;
 
-    const cleanup = withFetchCache();
+    let cleanup = withFetchCache();
     try {
       // First fetch — cache miss, hits network
       const resp1 = await fetch(`${mockServerUrl}/tagged`, {
@@ -3099,7 +3123,10 @@ describe("fetch cache (extended fetch with next options)", () => {
       // Invalidate the tag
       await revalidateTag("posts");
 
-      // Third fetch — cache miss after tag invalidation
+      cleanup();
+      cleanup = withFetchCache();
+
+      // Third fetch — cache miss after tag invalidation in a later render
       const resp3 = await fetch(`${mockServerUrl}/tagged`, {
         next: { revalidate: 3600, tags: ["posts"] },
       });

@@ -51,6 +51,11 @@ const { createRequestContext, runWithRequestContext } =
 describe("fetch cache shim", () => {
   let cleanup: (() => void) | null = null;
 
+  function startNewFetchCacheScope(): void {
+    cleanup?.();
+    cleanup = withFetchCache();
+  }
+
   beforeEach(() => {
     // Reset state
     requestCount = 0;
@@ -158,8 +163,8 @@ describe("fetch cache shim", () => {
       cache: "no-store",
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("segment fetchCache default-no-store bypasses cache with metadata-only next options", async () => {
@@ -175,8 +180,8 @@ describe("fetch cache shim", () => {
       next: { tags: ["segment-default-no-store-tags"] },
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("segment fetchCache force-no-store overrides explicit force-cache", async () => {
@@ -192,8 +197,8 @@ describe("fetch cache shim", () => {
       cache: "force-cache",
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("segment fetchCache force-no-store forwards no-store to the real fetch", async () => {
@@ -253,8 +258,10 @@ describe("fetch cache shim", () => {
   });
 
   // ── No caching (no-store, revalidate: 0, revalidate: false) ─────────
+  // Ported from Next.js: test coverage for packages/next/src/server/lib/dedupe-fetch.test.ts
+  // https://github.com/vercel/next.js/blob/canary/packages/next/src/server/lib/dedupe-fetch.test.ts
 
-  it("cache: 'no-store' bypasses cache entirely", async () => {
+  it("cache: 'no-store' bypasses persistent cache but dedupes identical render fetches", async () => {
     const res1 = await fetch("https://api.example.com/nostore", {
       cache: "no-store",
     });
@@ -265,11 +272,11 @@ describe("fetch cache shim", () => {
       cache: "no-store",
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Fresh fetch each time
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("next.revalidate: 0 skips caching", async () => {
+  it("next.revalidate: 0 bypasses persistent cache but dedupes identical render fetches", async () => {
     const res1 = await fetch("https://api.example.com/rev0", {
       next: { revalidate: 0 },
     });
@@ -280,11 +287,11 @@ describe("fetch cache shim", () => {
       next: { revalidate: 0 },
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Not cached
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("next.revalidate: false skips caching", async () => {
+  it("next.revalidate: false bypasses persistent cache but dedupes identical render fetches", async () => {
     const res1 = await fetch("https://api.example.com/revfalse", {
       next: { revalidate: false },
     });
@@ -295,18 +302,156 @@ describe("fetch cache shim", () => {
       next: { revalidate: false },
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Not cached
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("no cache or next options passes through without caching", async () => {
+  it("no cache or next options bypasses persistent cache but dedupes identical render fetches", async () => {
     const res1 = await fetch("https://api.example.com/passthrough");
     const data1 = await res1.json();
     expect(data1.count).toBe(1);
 
     const res2 = await fetch("https://api.example.com/passthrough");
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Pass-through, no caching
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("no cache or next options do not dedupe across request scopes", async () => {
+    cleanup?.();
+    cleanup = null;
+
+    const data1 = await runWithFetchCache(async () => {
+      const res = await fetch("https://api.example.com/request-scoped-dedupe");
+      return await res.json();
+    });
+    const data2 = await runWithFetchCache(async () => {
+      const res = await fetch("https://api.example.com/request-scoped-dedupe");
+      return await res.json();
+    });
+
+    expect(data1.count).toBe(1);
+    expect(data2.count).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    cleanup = withFetchCache();
+  });
+
+  it("does not dedupe ordinary fetches outside a fetch-cache scope", async () => {
+    cleanup?.();
+    cleanup = null;
+
+    await fetch("https://api.example.com/outside-scope");
+    await fetch("https://api.example.com/outside-scope");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    cleanup = withFetchCache();
+  });
+
+  it("dedupes identical uncached responses with independent response bodies", async () => {
+    const [res1, res2] = await Promise.all([
+      fetch("https://api.example.com/body-dedupe"),
+      fetch("https://api.example.com/body-dedupe"),
+    ]);
+
+    expect(await res1.json()).toEqual({
+      url: "https://api.example.com/body-dedupe",
+      count: 1,
+    });
+    expect(await res2.json()).toEqual({
+      url: "https://api.example.com/body-dedupe",
+      count: 1,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not dedupe uncached fetches with abort signals", async () => {
+    const controller = new AbortController();
+
+    await fetch("https://api.example.com/signal-dedupe", { signal: controller.signal });
+    await fetch("https://api.example.com/signal-dedupe", { signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not dedupe uncached fetches with side-effecting methods", async () => {
+    await fetch("https://api.example.com/post-dedupe", { method: "POST", body: "one" });
+    await fetch("https://api.example.com/post-dedupe", { method: "POST", body: "one" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes uncached fetches across trace header differences only", async () => {
+    const [res1, res2] = await Promise.all([
+      fetch("https://api.example.com/trace-dedupe", {
+        headers: {
+          traceparent: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+          tracestate: "vendor=a",
+        },
+      }),
+      fetch("https://api.example.com/trace-dedupe", {
+        headers: {
+          traceparent: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cccccccccccccccc-01",
+          tracestate: "vendor=b",
+        },
+      }),
+    ]);
+
+    expect((await res1.json()).count).toBe(1);
+    expect((await res2.json()).count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await fetch("https://api.example.com/trace-dedupe", {
+      headers: { "x-custom": "different" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes identical Request object inputs as the dedupe key source", async () => {
+    const [res1, res2] = await Promise.all([
+      fetch(new Request("https://api.example.com/req-input-dedupe")),
+      fetch(new Request("https://api.example.com/req-input-dedupe")),
+    ]);
+
+    expect((await res1.json()).count).toBe(1);
+    expect((await res2.json()).count).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes failed dedupe entries so a later fetch in the same scope can retry", async () => {
+    fetchMock.mockReset();
+    fetchMock
+      .mockImplementationOnce(async () => {
+        throw new Error("network down");
+      })
+      .mockImplementation(defaultFetchMockImplementation);
+
+    await expect(fetch("https://api.example.com/retry-after-failure")).rejects.toThrow(
+      "network down",
+    );
+
+    const res = await fetch("https://api.example.com/retry-after-failure");
+    expect((await res.json()).url).toBe("https://api.example.com/retry-after-failure");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not dedupe Request inputs that differ in non-trace headers", async () => {
+    const [res1, res2] = await Promise.all([
+      fetch(
+        new Request("https://api.example.com/req-input-headers", {
+          headers: { "x-variant": "a" },
+        }),
+      ),
+      fetch(
+        new Request("https://api.example.com/req-input-headers", {
+          headers: { "x-variant": "b" },
+        }),
+      ),
+    ]);
+
+    expect((await res1.json()).count).toBe(1);
+    expect((await res2.json()).count).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -329,6 +474,7 @@ describe("fetch cache shim", () => {
 
     // Invalidate via tag
     await revalidateTag("posts");
+    startNewFetchCacheScope();
 
     // Should re-fetch after tag invalidation
     const res3 = await fetch("https://api.example.com/posts", {
@@ -351,6 +497,7 @@ describe("fetch cache shim", () => {
 
     // Invalidate only "posts"
     await revalidateTag("posts");
+    startNewFetchCacheScope();
 
     // Posts should re-fetch
     const postRes = await fetch("https://api.example.com/posts-tag", {
@@ -383,6 +530,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000; // Expired 1 second ago
     }
+    startNewFetchCacheScope();
 
     // Should return stale data immediately
     const res2 = await fetch("https://api.example.com/stale-test", {
@@ -427,6 +575,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     const res2 = await fetch(makeRequest(), { next: { revalidate: 1 } });
     const data2 = await res2.json();
@@ -455,6 +604,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
 
       // Trigger stale hit — should fire background refetch via waitUntil
       const res2 = await fetch("https://api.example.com/waituntil-test", {
@@ -488,6 +638,7 @@ describe("fetch cache shim", () => {
         for (const [, entry] of store) {
           entry.revalidateAt = Date.now() - 1000;
         }
+        startNewFetchCacheScope();
 
         const res2 = await fetch("https://api.example.com/unified-waituntil-test", {
           next: { revalidate: 1 },
@@ -535,6 +686,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // Fire 5 concurrent stale hits — should all return stale data
     // but only trigger ONE background refetch
@@ -573,6 +725,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // First stale hit — triggers background refetch
     await fetch("https://api.example.com/dedup-cycle", {
@@ -585,6 +738,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // Second stale hit — should trigger a NEW background refetch
     // (the previous one completed and cleaned up)
@@ -613,6 +767,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // Stale hit — background refetch will fail
     const res = await fetch("https://api.example.com/dedup-error", {
@@ -629,6 +784,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // A new stale hit should trigger a fresh refetch (dedup entry was cleaned up)
     await fetch("https://api.example.com/dedup-error", {
@@ -710,6 +866,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
 
       // Stale hit — background refetch hangs
       await fetch("https://api.example.com/dedup-hang", {
@@ -721,6 +878,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
       await fetch("https://api.example.com/dedup-hang", {
         next: { revalidate: 1 },
       });
@@ -734,6 +892,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
 
       // New stale hit should trigger a fresh refetch
       await fetch("https://api.example.com/dedup-hang", {
@@ -773,6 +932,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
       await fetch("https://api.example.com/dedup-race", {
         next: { revalidate: 1 },
       });
@@ -788,6 +948,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
       await fetch("https://api.example.com/dedup-race", {
         next: { revalidate: 1 },
       });
@@ -813,6 +974,7 @@ describe("fetch cache shim", () => {
       for (const [, entry] of store) {
         entry.revalidateAt = Date.now() - 1000;
       }
+      startNewFetchCacheScope();
       await fetch("https://api.example.com/dedup-race", {
         next: { revalidate: 1 },
       });
@@ -934,6 +1096,8 @@ describe("fetch cache shim", () => {
     expect(data1.count).toBe(1);
 
     await revalidatePath("/posts/hello");
+    startNewFetchCacheScope();
+    setCurrentFetchSoftTags(["_N_T_/posts/hello"]);
 
     const res2 = await fetch("https://api.example.com/path-soft-tag", {
       next: { revalidate: 3600 },
@@ -959,6 +1123,7 @@ describe("fetch cache shim", () => {
     expect(res1.status).toBe(404);
 
     // Should re-fetch since 404 wasn't cached
+    startNewFetchCacheScope();
     const res2 = await fetch("https://api.example.com/missing-page", {
       next: { revalidate: 60 },
     });
@@ -1183,6 +1348,7 @@ describe("fetch cache shim", () => {
     for (const [, entry] of store) {
       entry.revalidateAt = Date.now() - 1000;
     }
+    startNewFetchCacheScope();
 
     // Should return stale
     const res3 = await fetch("https://api.example.com/force-ttl", {
@@ -1225,15 +1391,15 @@ describe("fetch cache shim", () => {
 
   // ── next: {} empty passes through ───────────────────────────────────
 
-  it("next: {} with no revalidate or tags passes through", async () => {
+  it("next: {} with no revalidate or tags bypasses persistent cache but dedupes render fetches", async () => {
     const res1 = await fetch("https://api.example.com/empty-next", { next: {} });
     const data1 = await res1.json();
     expect(data1.count).toBe(1);
 
     const res2 = await fetch("https://api.example.com/empty-next", { next: {} });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Not cached
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   // ── Concurrent request isolation via ALS ─────────────────────────────
@@ -1364,8 +1530,8 @@ describe("fetch cache shim", () => {
         next: { tags: ["user-data"] },
       });
       const data2 = await res2.json();
-      expect(data2.count).toBe(2); // Not cached — safety bypass
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(data2.count).toBe(1); // Same render fetch is deduped
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("X-API-Key header is included in cache key", async () => {
@@ -1416,8 +1582,8 @@ describe("fetch cache shim", () => {
       cache: "no-cache" as RequestCache,
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Fresh fetch each time
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("cache: 'no-store' with auth headers bypasses cache", async () => {
@@ -1433,8 +1599,8 @@ describe("fetch cache shim", () => {
       headers: { Authorization: "Bearer token" },
     });
     const data2 = await res2.json();
-    expect(data2.count).toBe(2); // Always fresh
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(data2.count).toBe(1); // Same render fetch is deduped
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("cache: 'no-cache' with auth headers bypasses cache", async () => {

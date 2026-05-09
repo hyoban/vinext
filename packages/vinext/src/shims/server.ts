@@ -95,18 +95,12 @@ export class NextRequest extends Request {
     // Strip nextConfig before passing to super() — it's vinext-internal,
     // not a valid RequestInit property.
     const { nextConfig: _nextConfig, ...requestInit } = init ?? {};
-    // Handle the case where input is a Request object - we need to extract URL and init
-    // to avoid Node.js undici issues with passing Request objects directly to super()
     if (input instanceof Request) {
-      const req = input;
-      super(req.url, {
-        method: req.method,
-        headers: req.headers,
-        body: req.body,
-        // @ts-expect-error - duplex is not in RequestInit type but needed for streams
-        duplex: req.body ? "half" : undefined,
-        ...requestInit,
-      });
+      // Keep caller-owned request bodies readable after wrapping. Middleware and
+      // route-handler plumbing may need the source Request after this wrapper runs.
+      const requestInput =
+        requestInit.body === undefined && input.body && !input.bodyUsed ? input.clone() : input;
+      super(requestInput, requestInit);
     } else {
       super(input, requestInit);
     }

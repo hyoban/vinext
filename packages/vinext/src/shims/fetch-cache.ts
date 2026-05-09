@@ -20,6 +20,7 @@
  */
 
 import { getCacheHandler, type CachedFetchValue } from "./cache.js";
+import { encodeCacheTags } from "../utils/encode-cache-tag.js";
 import { getOrCreateAls } from "./internal/als-registry.js";
 import { getRequestExecutionContext } from "./request-context.js";
 import {
@@ -419,6 +420,12 @@ type NextFetchOptions = {
   tags?: string[];
 };
 
+type FetchDedupeEntry = {
+  key: string;
+  promise: Promise<Response>;
+  response: Response | null;
+};
+
 // Extend the standard RequestInit to include `next`
 declare global {
   // oxlint-disable-next-line typescript/consistent-type-definitions
@@ -470,6 +477,8 @@ export type FetchCacheState = {
   currentRequestTags: string[];
   currentFetchSoftTags: string[];
   currentFetchCacheMode: FetchCacheMode | null;
+  isFetchDedupeActive: boolean;
+  currentFetchDedupeEntries: Map<string, FetchDedupeEntry[]>;
 };
 
 export type FetchCacheMode =
@@ -484,11 +493,25 @@ export type FetchCacheMode =
 const _FALLBACK_KEY = Symbol.for("vinext.fetchCache.fallback");
 const _g = globalThis as unknown as Record<PropertyKey, unknown>;
 const _als = getOrCreateAls<FetchCacheState>("vinext.fetchCache.als");
+const _noop = (): void => {};
+
+let _responseBodyRegistry: FinalizationRegistry<WeakRef<ReadableStream<Uint8Array>>> | undefined;
+
+if (globalThis.FinalizationRegistry) {
+  _responseBodyRegistry = new FinalizationRegistry((weakRef) => {
+    const stream = weakRef.deref();
+    if (stream && !stream.locked) {
+      void stream.cancel("Response object has been garbage collected").then(_noop, _noop);
+    }
+  });
+}
 
 const _fallbackState = (_g[_FALLBACK_KEY] ??= {
   currentRequestTags: [],
   currentFetchSoftTags: [],
   currentFetchCacheMode: null,
+  isFetchDedupeActive: false,
+  currentFetchDedupeEntries: new Map(),
 } satisfies FetchCacheState) as FetchCacheState;
 
 function _getState(): FetchCacheState {
@@ -502,10 +525,12 @@ function _getState(): FetchCacheState {
  * Reset the fallback state for a new request.  Used by `withFetchCache()`
  * in single-threaded contexts where ALS.run() isn't used.
  */
-function _resetFallbackState(): void {
+function _resetFallbackState(isFetchDedupeActive: boolean): void {
   _fallbackState.currentRequestTags = [];
   _fallbackState.currentFetchSoftTags = [];
   _fallbackState.currentFetchCacheMode = null;
+  _fallbackState.isFetchDedupeActive = isFetchDedupeActive;
+  _fallbackState.currentFetchDedupeEntries = new Map();
 }
 
 /**
@@ -612,6 +637,151 @@ function getFetchCacheDirective(
   return input.cache;
 }
 
+function buildFetchDedupeKey(request: Request): string {
+  const filteredHeaders = Array.from(request.headers.entries()).filter(
+    ([key]) => !HEADER_BLOCKLIST.includes(key.toLowerCase()),
+  );
+
+  return JSON.stringify([
+    request.method,
+    filteredHeaders,
+    request.mode,
+    request.redirect,
+    request.credentials,
+    request.referrer,
+    request.referrerPolicy,
+    request.integrity,
+  ]);
+}
+
+function createFetchDedupeCandidate(
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+): { url: string; key: string } | null {
+  if (init?.signal) {
+    return null;
+  }
+
+  const method = init?.method?.toUpperCase();
+  if (method && method !== "GET" && method !== "HEAD") {
+    return null;
+  }
+
+  if (init?.keepalive) {
+    return null;
+  }
+
+  const request =
+    typeof input === "string" || input instanceof URL ? new Request(input, init) : input;
+
+  if ((request.method !== "GET" && request.method !== "HEAD") || request.keepalive) {
+    return null;
+  }
+
+  return {
+    url: request.url,
+    key: buildFetchDedupeKey(request),
+  };
+}
+
+function buildDedupeClone(body: ReadableStream<Uint8Array> | null, source: Response): Response {
+  const cloned = new Response(body, {
+    status: source.status,
+    statusText: source.statusText,
+    headers: new Headers(source.headers),
+  });
+  Object.defineProperty(cloned, "url", {
+    value: source.url,
+    configurable: true,
+    enumerable: true,
+    writable: false,
+  });
+  if (_responseBodyRegistry && cloned.body) {
+    _responseBodyRegistry.register(cloned, new WeakRef(cloned.body));
+  }
+  return cloned;
+}
+
+function cloneDedupeResponse(response: Response): [Response, Response] {
+  // Mirrors Next.js' cloneResponse helper. Native Response.clone() has had
+  // undici stream-lifetime bugs in Node, so tee explicitly and register the
+  // branches for cleanup if the caller drops a body without consuming it.
+  // Always construct fresh Response objects (even for bodyless responses) so
+  // the dedupe entry's stored response and the caller's response are distinct
+  // — mirrors Next.js, and avoids any "disturbed response" surprise if a
+  // runtime tracks consumption state on shared references.
+  if (!response.body) {
+    return [buildDedupeClone(null, response), buildDedupeClone(null, response)];
+  }
+
+  const [body1, body2] = response.body.tee();
+  return [buildDedupeClone(body1, response), buildDedupeClone(body2, response)];
+}
+
+function dedupeFetch(
+  input: string | URL | Request,
+  init: RequestInit | undefined,
+): Promise<Response> {
+  const state = _getState();
+  if (!state.isFetchDedupeActive) {
+    return originalFetch(input, init);
+  }
+
+  const candidate = createFetchDedupeCandidate(input, init);
+  if (!candidate) {
+    return originalFetch(input, init);
+  }
+
+  const entriesByUrl = state.currentFetchDedupeEntries;
+  let entries = entriesByUrl.get(candidate.url);
+  if (!entries) {
+    entries = [];
+    entriesByUrl.set(candidate.url, entries);
+  }
+
+  for (const entry of entries) {
+    if (entry.key !== candidate.key) continue;
+
+    return entry.promise.then(() => {
+      if (!entry.response) {
+        throw new Error("[vinext] Missing deduped fetch response");
+      }
+      const [responseForCaller, responseForFutureCaller] = cloneDedupeResponse(entry.response);
+      entry.response = responseForFutureCaller;
+      return responseForCaller;
+    });
+  }
+
+  const promise = originalFetch(input, init);
+  const entry: FetchDedupeEntry = {
+    key: candidate.key,
+    promise,
+    response: null,
+  };
+  entries.push(entry);
+
+  return promise.then(
+    (response) => {
+      // entry.response holds an unconsumed tee'd branch for the duration of the
+      // render scope. The dedupe map is owned by the per-render context and is
+      // dropped when runWithFetchDedupe exits, at which point the
+      // FinalizationRegistry cancels any still-unconsumed branch.
+      const [responseForCaller, responseForFutureCaller] = cloneDedupeResponse(response);
+      entry.response = responseForFutureCaller;
+      return responseForCaller;
+    },
+    (err) => {
+      // Drop the failed entry so a later fetch to the same URL within this
+      // render scope can retry instead of chaining on the rejected promise.
+      // Mirrors React.cache() retry-on-error semantics in Next.js, where a
+      // new call site naturally creates a fresh cache entry.
+      const idx = entries.indexOf(entry);
+      if (idx !== -1) entries.splice(idx, 1);
+      throw err;
+    },
+  );
+}
+
 /**
  * Create a patched fetch function with Next.js caching semantics.
  *
@@ -646,7 +816,7 @@ function createPatchedFetch(): typeof globalThis.fetch {
 
     // If no caching options at all, just pass through to original fetch
     if (!nextOpts && !cacheDirective) {
-      return originalFetch(input, init);
+      return dedupeFetch(input, init);
     }
 
     // Explicit no-store or no-cache — bypass cache entirely
@@ -658,7 +828,7 @@ function createPatchedFetch(): typeof globalThis.fetch {
     ) {
       // Strip the `next` property before passing to real fetch
       const cleanInit = stripNextFromInit(init, cacheDirective);
-      return originalFetch(input, cleanInit);
+      return dedupeFetch(input, cleanInit);
     }
 
     // Safety: when per-user auth headers are present and the developer hasn't
@@ -671,7 +841,7 @@ function createPatchedFetch(): typeof globalThis.fetch {
       (typeof nextOpts?.revalidate === "number" && nextOpts.revalidate > 0);
     if (!hasExplicitCacheOpt && hasAuthHeaders(input, init)) {
       const cleanInit = stripNextFromInit(init, cacheDirective);
-      return originalFetch(input, cleanInit);
+      return dedupeFetch(input, cleanInit);
     }
 
     // Determine revalidation period
@@ -693,11 +863,11 @@ function createPatchedFetch(): typeof globalThis.fetch {
       } else {
         // next: {} with no revalidate or tags — pass through
         const cleanInit = stripNextFromInit(init, cacheDirective);
-        return originalFetch(input, cleanInit);
+        return dedupeFetch(input, cleanInit);
       }
     }
 
-    const tags = nextOpts?.tags ?? [];
+    const tags = encodeCacheTags(nextOpts?.tags ?? []);
     const softTags = _getState().currentFetchSoftTags;
     let fetchInit = stripNextFromInit(init, cacheDirective);
     let cacheKey: string;
@@ -712,7 +882,7 @@ function createPatchedFetch(): typeof globalThis.fetch {
         err instanceof SkipCacheKeyGenerationError
       ) {
         fetchInit = stripNextFromInit(fetchInit, cacheDirective);
-        return originalFetch(input, fetchInit);
+        return dedupeFetch(input, fetchInit);
       }
       throw err;
     }
@@ -831,7 +1001,7 @@ function createPatchedFetch(): typeof globalThis.fetch {
     }
 
     // Cache miss — fetch from network
-    const response = await originalFetch(input, fetchInit);
+    const response = await dedupeFetch(input, fetchInit);
 
     // Only cache 200 responses
     if (response.status === 200) {
@@ -932,10 +1102,10 @@ function _ensurePatchInstalled(): void {
  */
 export function withFetchCache(): () => void {
   _ensurePatchInstalled();
-  _resetFallbackState();
+  _resetFallbackState(true);
 
   return () => {
-    _resetFallbackState();
+    _resetFallbackState(false);
   };
 }
 
@@ -950,10 +1120,56 @@ export async function runWithFetchCache<T>(fn: () => Promise<T>): Promise<T> {
     return await runWithUnifiedStateMutation((uCtx) => {
       uCtx.currentRequestTags = [];
       uCtx.currentFetchSoftTags = [];
+      uCtx.isFetchDedupeActive = true;
+      uCtx.currentFetchDedupeEntries = new Map();
     }, fn);
   }
   return _als.run(
-    { currentRequestTags: [], currentFetchSoftTags: [], currentFetchCacheMode: null },
+    {
+      currentRequestTags: [],
+      currentFetchSoftTags: [],
+      currentFetchCacheMode: null,
+      isFetchDedupeActive: true,
+      currentFetchDedupeEntries: new Map(),
+    },
+    fn,
+  );
+}
+
+/**
+ * Activate per-render fetch memoization without resetting request fetch tags.
+ * Next.js request memoization is scoped to React render work, not the whole
+ * request pipeline, so route handlers and middleware stay observable.
+ *
+ * ALS scope lifetime: when `fn` returns synchronously (e.g. wrapping a
+ * `renderToReadableStream` call), the ALS scope established here only covers
+ * the synchronous portion. Any fetch work that happens later during async
+ * stream consumption falls back to the parent ALS store, which is fine when
+ * the parent already activated dedupe (the common dispatch case) but means
+ * standalone callers must keep the dedupe scope alive across consumption.
+ */
+export function runWithFetchDedupe<T>(fn: () => T): T;
+export function runWithFetchDedupe<T>(fn: () => Promise<T>): Promise<T>;
+export function runWithFetchDedupe<T>(fn: () => T | Promise<T>): T | Promise<T> {
+  _ensurePatchInstalled();
+  const state = _getState();
+  if (state.isFetchDedupeActive) {
+    return fn();
+  }
+
+  if (isInsideUnifiedScope()) {
+    return runWithUnifiedStateMutation((uCtx) => {
+      uCtx.isFetchDedupeActive = true;
+      uCtx.currentFetchDedupeEntries = new Map();
+    }, fn);
+  }
+
+  return _als.run(
+    {
+      ...state,
+      isFetchDedupeActive: true,
+      currentFetchDedupeEntries: new Map(),
+    },
     fn,
   );
 }

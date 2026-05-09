@@ -1,4 +1,5 @@
 import type { AppPageSpecialError } from "./app-page-execution.js";
+import { runWithFetchDedupe } from "vinext/shims/fetch-cache";
 import { getAppPageSegmentParamName } from "./app-page-params.js";
 import { notFoundResponse } from "./http-error-responses.js";
 
@@ -258,9 +259,11 @@ export async function validateAppPageDynamicParams(
   }
 
   for (const source of generateStaticParamsSources) {
-    const staticParams = await source.generateStaticParams({
-      params: pickRouteParams(options.params, source.parentParamNames),
-    });
+    const staticParams = await runWithFetchDedupe(() =>
+      source.generateStaticParams({
+        params: pickRouteParams(options.params, source.parentParamNames),
+      }),
+    );
     if (Array.isArray(staticParams) && !areStaticParamsAllowed(options.params, staticParams)) {
       options.clearRequestContext();
       return notFoundResponse();

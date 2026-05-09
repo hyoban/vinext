@@ -1,3 +1,4 @@
+import { runWithFetchDedupe } from "vinext/shims/fetch-cache";
 import { mergeMiddlewareResponseHeaders } from "./middleware-response-headers.js";
 import { VINEXT_RSC_VARY_HEADER } from "./app-rsc-cache-busting.js";
 import { resolveAppPageSegmentParams } from "./app-page-params.js";
@@ -219,9 +220,15 @@ export function wrapAppPageBoundaryElement<
 export async function renderAppPageBoundaryResponse<TElement>(
   options: RenderAppPageBoundaryResponseOptions<TElement>,
 ): Promise<Response> {
-  const rscStream = options.renderToReadableStream(options.element, {
-    onError: options.createRscOnErrorHandler(),
-  });
+  // Defensive wrap for standalone callers; idempotent under dispatchAppPage.
+  // The async stream consumption that follows relies on the surrounding
+  // runWithRequestContext to keep ALS state alive after this synchronous call
+  // returns. See app-page-render.ts for the same pattern.
+  const rscStream = runWithFetchDedupe(() =>
+    options.renderToReadableStream(options.element, {
+      onError: options.createRscOnErrorHandler(),
+    }),
+  );
 
   if (options.isRscRequest) {
     // Do NOT clear request-scoped context here. RSC responses are consumed lazily

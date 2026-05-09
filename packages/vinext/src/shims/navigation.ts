@@ -968,8 +968,7 @@ function isHashOnlyChange(href: string): boolean {
   try {
     const current = new URL(window.location.href);
     const next = new URL(href, window.location.href);
-    // Strip basePath from both pathnames for consistent comparison
-    // (matches how isSameRoute handles basePath in app-browser-entry.ts)
+    // Strip basePath for consistent same-origin comparison.
     const strippedCurrentPath = stripBasePath(current.pathname, __basePath);
     const strippedNextPath = stripBasePath(next.pathname, __basePath);
     return (
@@ -1207,7 +1206,7 @@ export async function navigateClientSide(
   // History is NOT pushed here for RSC navigations — the commit effect inside
   // navigateRsc owns the push/replace exclusively. This avoids a fragile
   // double-push and ensures window.location still reflects the *current* URL
-  // when navigateRsc computes isSameRoute (cross-route vs same-route).
+  // when navigateRsc publishes the committed URL.
   if (typeof window.__VINEXT_RSC_NAVIGATE__ === "function") {
     await window.__VINEXT_RSC_NAVIGATE__(
       fullHref,
