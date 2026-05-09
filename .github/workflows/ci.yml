@@ -171,6 +171,8 @@ jobs:
         project:
           - pages-router
           - app-router
+          - app-router-chrome-browser-specific
+          - app-router-webkit-browser-specific
           - cloudflare-pages-router
           - pages-router-prod
           - cloudflare-workers
@@ -189,9 +191,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - run: vp exec playwright install chromium
+      - run: vp exec playwright install chromium webkit
 
       - run: vp run test:e2e
         env:
