@@ -74,6 +74,7 @@ import { manifestFileWithBase, manifestFilesWithBase } from "./utils/manifest-pa
 import { hasBasePath, removeTrailingSlash } from "./utils/base-path.js";
 import { asyncHooksStubPlugin } from "./plugins/async-hooks-stub.js";
 import { clientReferenceDedupPlugin } from "./plugins/client-reference-dedup.js";
+import { createRscClientReferenceLoadersPlugin } from "./plugins/rsc-client-reference-loaders.js";
 import { createInstrumentationClientTransformPlugin } from "./plugins/instrumentation-client.js";
 import { createOptimizeImportsPlugin } from "./plugins/optimize-imports.js";
 import { createOgInlineFetchAssetsPlugin, ogAssetsPlugin } from "./plugins/og-assets.js";
@@ -111,7 +112,6 @@ import {
 import { stripServerExports } from "./plugins/strip-server-exports.js";
 import { hasMdxFiles } from "./utils/mdx-scan.js";
 import { scanPublicFileRoutes } from "./utils/public-routes.js";
-import { fnv1a64 } from "./utils/hash.js";
 import tsconfigPaths from "vite-tsconfig-paths";
 import type { Options as VitePluginReactOptions } from "@vitejs/plugin-react";
 import MagicString from "magic-string";
@@ -419,13 +419,6 @@ const _reactServerShims = new Map<string, string>([
   ["next/dist/client/components/navigation", "navigation"],
 ]);
 
-function createClientReferenceChunkName(normalizedId: string): string {
-  const pathname = normalizedId.split(/[?#]/)[0] ?? normalizedId;
-  const basename = pathname.split("/").filter(Boolean).pop() ?? "module";
-  const label = basename.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 48) || "module";
-  return `vinext-client-reference/${label}-${fnv1a64(normalizedId)}`;
-}
-
 const clientManualChunks = createClientManualChunks(_shimsDir);
 const clientOutputConfig = createClientOutputConfig(clientManualChunks);
 const clientCodeSplittingConfig = createClientCodeSplittingConfig(clientManualChunks);
@@ -656,9 +649,6 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
             rsc: VIRTUAL_RSC_ENTRY,
             ssr: VIRTUAL_APP_SSR_ENTRY,
             client: VIRTUAL_APP_BROWSER_ENTRY,
-          },
-          clientChunks({ normalizedId }: { normalizedId: string }) {
-            return createClientReferenceChunkName(normalizedId);
           },
         });
       })
@@ -3726,6 +3716,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
   // Append auto-injected RSC plugins if applicable
   if (rscPluginPromise) {
     plugins.push(rscPluginPromise);
+    plugins.push(createRscClientReferenceLoadersPlugin());
   }
 
   return plugins;

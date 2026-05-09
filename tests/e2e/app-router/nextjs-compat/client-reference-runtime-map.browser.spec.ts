@@ -81,7 +81,10 @@ export default function WebKitClientReferenceCrashPage() {
 }
 
 async function closeServer(server: Server): Promise<void> {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+  server.closeIdleConnections();
+  server.closeAllConnections();
+  await closed;
 }
 
 async function buildAndServeProductionFixture(): Promise<{
