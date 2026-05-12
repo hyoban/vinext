@@ -17,6 +17,8 @@ function withResolvedIdProxy(resolvedId: string): string {
 }
 
 function generateClientReferenceObject(meta: RscClientReferenceMeta): string {
+  // Keep exports lazy. In async or cyclic client module evaluation, eagerly
+  // copying module namespace values can observe an uninitialized binding.
   const exports = meta.renderedExports
     .slice()
     .sort()
@@ -63,14 +65,21 @@ export function createRscClientReferenceLoadersPlugin(): Plugin {
       const manager = rscApi?.manager;
       if (!manager || manager.isScanBuild) return null;
 
-      const metaEntries = Object.entries(manager.clientReferenceMetaMap ?? {}).filter(
+      // This post-transform runs after @vitejs/plugin-rsc has loaded the
+      // client-reference virtual module and populated the manager metadata. The
+      // clientChunks option can change facade grouping, but it still emits
+      // facades; this replaces the generated facade with direct loaders while
+      // preserving the manifest fields the RSC plugin writes later in the build.
+      const metaEntries = Object.entries(manager.clientReferenceMetaMap).filter(
         ([, meta]) => meta.serverChunk,
       );
       const metas = metaEntries.map(([, meta]) => meta);
       if (metas.length === 0) return null;
 
       for (const [id, meta] of metaEntries) {
-        // The RSC assets manifest reads this field to collect JS/CSS deps.
+        // The RSC assets manifest indexes deps by Rollup/Rolldown module ids
+        // from chunk.moduleIds. Keep the resolved map key here; meta.importId
+        // can be a bare package specifier for node_modules client references.
         meta.groupChunkId = id;
       }
 

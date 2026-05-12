@@ -196,6 +196,8 @@ jobs:
       - run: vp exec playwright install chromium
         if: ${{ matrix.project != 'app-router-webkit-browser-specific' }}
 
+      # WebKit requires Linux system dependencies. Keep this scoped to the
+      # WebKit matrix job so Chromium jobs use the lighter browser-only install.
       - name: Install Playwright WebKit with system dependencies
         if: ${{ matrix.project == 'app-router-webkit-browser-specific' }}
         run: vp exec playwright install --with-deps webkit
