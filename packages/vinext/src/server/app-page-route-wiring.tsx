@@ -4,6 +4,7 @@ import {
   ErrorBoundary,
   ForbiddenBoundary,
   NotFoundBoundary,
+  RedirectBoundary,
   UnauthorizedBoundary,
 } from "vinext/shims/error-boundary";
 import type { AppRouteSemanticIds } from "../routing/app-route-graph.js";
@@ -18,6 +19,18 @@ import {
   type AppRenderDependency,
 } from "./app-render-dependency.js";
 import { resolveAppPageSegmentParams } from "./app-page-params.js";
+import {
+  APP_RSC_RENDER_MODE_NAVIGATION,
+  shouldSuppressLoadingBoundaries,
+  type AppRscRenderMode,
+} from "./app-rsc-render-mode.js";
+import {
+  resolveAppPageChildSegments,
+  resolveAppPageRouteStateKey,
+  resolveAppPageSegmentStateKey,
+} from "./app-page-segment-state.js";
+
+export { resolveAppPageChildSegments } from "./app-page-segment-state.js";
 
 type AppPageComponentProps = {
   children?: ReactNode;
@@ -140,6 +153,7 @@ type BuildAppPageElementsOptions<
   interceptionContext?: string | null;
   isRscRequest?: boolean;
   mountedSlotIds?: ReadonlySet<string> | null;
+  renderMode?: AppRscRenderMode;
   routePath: string;
 };
 
@@ -243,75 +257,6 @@ function createAppPageErrorEntries<TErrorModule extends AppPageErrorModule>(
   });
 }
 
-export function resolveAppPageChildSegments(
-  routeSegments: readonly string[],
-  treePosition: number,
-  params: AppPageParams,
-): string[] {
-  const rawSegments = routeSegments.slice(treePosition);
-  const resolvedSegments: string[] = [];
-
-  for (const segment of rawSegments) {
-    if (
-      segment.startsWith("[[...") &&
-      segment.endsWith("]]") &&
-      segment.length > "[[...x]]".length - 1
-    ) {
-      const paramName = segment.slice(5, -2);
-      const paramValue = params[paramName];
-      if (Array.isArray(paramValue) && paramValue.length === 0) {
-        continue;
-      }
-      if (paramValue === undefined) {
-        continue;
-      }
-      resolvedSegments.push(Array.isArray(paramValue) ? paramValue.join("/") : paramValue);
-      continue;
-    }
-
-    if (segment.startsWith("[...") && segment.endsWith("]")) {
-      const paramName = segment.slice(4, -1);
-      const paramValue = params[paramName];
-      if (Array.isArray(paramValue)) {
-        resolvedSegments.push(paramValue.join("/"));
-        continue;
-      }
-      resolvedSegments.push(paramValue ?? segment);
-      continue;
-    }
-
-    if (segment.startsWith("[") && segment.endsWith("]") && !segment.includes(".")) {
-      const paramName = segment.slice(1, -1);
-      const paramValue = params[paramName];
-      resolvedSegments.push(
-        Array.isArray(paramValue) ? paramValue.join("/") : (paramValue ?? segment),
-      );
-      continue;
-    }
-
-    resolvedSegments.push(segment);
-  }
-
-  return resolvedSegments;
-}
-
-function resolveAppPageVisibleSegments(
-  routeSegments: readonly string[],
-  params: AppPageParams,
-): string[] {
-  const resolvedSegments = resolveAppPageChildSegments(routeSegments, 0, params);
-  return resolvedSegments.filter((segment) => !(segment.startsWith("(") && segment.endsWith(")")));
-}
-
-function resolveAppPageTemplateKey(
-  routeSegments: readonly string[],
-  treePosition: number,
-  params: AppPageParams,
-): string {
-  const visibleSegments = resolveAppPageVisibleSegments(routeSegments.slice(treePosition), params);
-  return visibleSegments[0] ?? "";
-}
-
 function createAppPageParallelSlotEntries<
   TModule extends AppPageModule,
   TErrorModule extends AppPageErrorModule,
@@ -361,6 +306,8 @@ export function buildAppPageElements<
   TErrorModule extends AppPageErrorModule,
 >(options: BuildAppPageElementsOptions<TModule, TErrorModule>): AppElements {
   const interceptionContext = options.interceptionContext ?? null;
+  const routeSegments = options.route.routeSegments ?? [];
+  const routeResetKey = resolveAppPageRouteStateKey(routeSegments, options.matchedParams);
   const routeId = AppElementsWire.encodeRouteId(options.routePath, interceptionContext);
   const pageId = AppElementsWire.encodePageId(options.routePath, interceptionContext);
   const layoutEntries = createAppPageLayoutEntries(options.route);
@@ -392,6 +339,7 @@ export function buildAppPageElements<
   const elements: Record<string, ReactNode | string | null> = {
     ...AppElementsWire.createMetadataEntries({
       interceptionContext,
+      layoutIds: options.route.ids?.layouts ?? layoutEntries.map((entry) => entry.id),
       rootLayoutTreePath,
       routeId,
     }),
@@ -529,6 +477,8 @@ export function buildAppPageElements<
     const slotId = AppElementsWire.encodeSlotId(slotName, treePath);
     const slotOverride = resolveSlotOverride(slotKey, slotName);
     const slotParams = getEffectiveSlotParams(slotKey, slotName);
+    const slotRouteSegments = slot.routeSegments ?? [];
+    const slotResetKey = resolveAppPageRouteStateKey(slotRouteSegments, slotParams);
     const overrideOrPageComponent =
       getDefaultExport(slotOverride?.pageModule) ?? getDefaultExport(slot.page);
     const defaultComponent = getDefaultExport(slot.default);
@@ -587,14 +537,25 @@ export function buildAppPageElements<
     }
 
     const slotLoadingComponent = getDefaultExport(slot.loading);
-    if (slotLoadingComponent) {
+    if (
+      slotLoadingComponent &&
+      !shouldSuppressLoadingBoundaries(options.renderMode ?? APP_RSC_RENDER_MODE_NAVIGATION)
+    ) {
       const SlotLoadingComponent = slotLoadingComponent;
-      slotElement = <Suspense fallback={<SlotLoadingComponent />}>{slotElement}</Suspense>;
+      slotElement = (
+        <Suspense key={slotResetKey} fallback={<SlotLoadingComponent />}>
+          {slotElement}
+        </Suspense>
+      );
     }
 
     const slotErrorComponent = getErrorBoundaryExport(slot.error);
     if (slotErrorComponent) {
-      slotElement = <ErrorBoundary fallback={slotErrorComponent}>{slotElement}</ErrorBoundary>;
+      slotElement = (
+        <ErrorBoundary resetKey={slotResetKey} fallback={slotErrorComponent}>
+          {slotElement}
+        </ErrorBoundary>
+      );
     }
 
     elements[slotId] = renderAfterAppDependencies(
@@ -609,10 +570,41 @@ export function buildAppPageElements<
     </LayoutSegmentProvider>
   );
 
+  // Wrap the page slot in a per-segment RedirectBoundary so that a
+  // redirect() thrown from a server component (or a client component
+  // within the page subtree) is caught here — below the route's layouts —
+  // rather than at the top-level boundary in app-browser-entry. Catching
+  // at the top level unmounts the entire route tree including layouts,
+  // which destroys client-side state in layout-hosted components
+  // (counters, theme toggles, form drafts). Here, only the page subtree
+  // is unmounted; the surrounding layouts stay mounted across the
+  // boundary's null-render → router.replace transition, and segment
+  // reuse keeps their React state intact.
+  //
+  // Placed inside the Suspense (loading) boundary to match Next.js nesting
+  // for the redirect boundary specifically:
+  //   Error > AccessFallback > Loading (Suspense) > Redirect > content
+  // (Note: Next.js places AccessFallback inside Loading, not outside — that
+  // is a pre-existing nesting divergence tracked separately.)
+  // This keeps the loading fallback visible during redirect-driven
+  // transitions rather than unmounting it.
+  routeChildren = <RedirectBoundary>{routeChildren}</RedirectBoundary>;
+
   const routeLoadingComponent = getDefaultExport(options.route.loading);
-  if (routeLoadingComponent) {
+  if (
+    routeLoadingComponent &&
+    !shouldSuppressLoadingBoundaries(options.renderMode ?? APP_RSC_RENDER_MODE_NAVIGATION)
+  ) {
     const RouteLoadingComponent = routeLoadingComponent;
-    routeChildren = <Suspense fallback={<RouteLoadingComponent />}>{routeChildren}</Suspense>;
+    // Route-level wrappers cover the full page branch in vinext's flat element
+    // transport, so their reset key includes the visible segment-state path.
+    // Dynamic param changes reset the pending boundary, while search-only changes
+    // preserve it.
+    routeChildren = (
+      <Suspense key={routeResetKey} fallback={<RouteLoadingComponent />}>
+        {routeChildren}
+      </Suspense>
+    );
   }
 
   const lastLayoutErrorModule =
@@ -624,7 +616,9 @@ export function buildAppPageElements<
   if (notFoundComponent) {
     const NotFoundComponent = notFoundComponent;
     routeChildren = (
-      <NotFoundBoundary fallback={<NotFoundComponent />}>{routeChildren}</NotFoundBoundary>
+      <NotFoundBoundary resetKey={routeResetKey} fallback={<NotFoundComponent />}>
+        {routeChildren}
+      </NotFoundBoundary>
     );
   }
 
@@ -633,7 +627,9 @@ export function buildAppPageElements<
   if (forbiddenComponent) {
     const ForbiddenComponent = forbiddenComponent;
     routeChildren = (
-      <ForbiddenBoundary fallback={<ForbiddenComponent />}>{routeChildren}</ForbiddenBoundary>
+      <ForbiddenBoundary resetKey={routeResetKey} fallback={<ForbiddenComponent />}>
+        {routeChildren}
+      </ForbiddenBoundary>
     );
   }
 
@@ -643,7 +639,7 @@ export function buildAppPageElements<
   if (unauthorizedComponent) {
     const UnauthorizedComponent = unauthorizedComponent;
     routeChildren = (
-      <UnauthorizedBoundary fallback={<UnauthorizedComponent />}>
+      <UnauthorizedBoundary resetKey={routeResetKey} fallback={<UnauthorizedComponent />}>
         {routeChildren}
       </UnauthorizedBoundary>
     );
@@ -651,11 +647,20 @@ export function buildAppPageElements<
 
   const pageErrorComponent = getErrorBoundaryExport(options.route.error);
   if (pageErrorComponent && options.route.error !== lastLayoutErrorModule) {
-    routeChildren = <ErrorBoundary fallback={pageErrorComponent}>{routeChildren}</ErrorBoundary>;
+    routeChildren = (
+      <ErrorBoundary resetKey={routeResetKey} fallback={pageErrorComponent}>
+        {routeChildren}
+      </ErrorBoundary>
+    );
   }
 
   for (let index = orderedTreePositions.length - 1; index >= 0; index--) {
     const treePosition = orderedTreePositions[index];
+    const segmentResetKey = resolveAppPageSegmentStateKey(
+      routeSegments,
+      treePosition,
+      options.matchedParams,
+    );
     let segmentChildren: ReactNode = routeChildren;
     const layoutEntry = layoutEntriesByTreePosition.get(treePosition);
     const templateEntry = templateEntriesByTreePosition.get(treePosition);
@@ -669,7 +674,7 @@ export function buildAppPageElements<
       if (layoutNotFoundComponent) {
         const LayoutNotFoundComponent = layoutNotFoundComponent;
         segmentChildren = (
-          <NotFoundBoundary fallback={<LayoutNotFoundComponent />}>
+          <NotFoundBoundary resetKey={segmentResetKey} fallback={<LayoutNotFoundComponent />}>
             {segmentChildren}
           </NotFoundBoundary>
         );
@@ -679,7 +684,7 @@ export function buildAppPageElements<
       if (layoutForbiddenComponent) {
         const LayoutForbiddenComponent = layoutForbiddenComponent;
         segmentChildren = (
-          <ForbiddenBoundary fallback={<LayoutForbiddenComponent />}>
+          <ForbiddenBoundary resetKey={segmentResetKey} fallback={<LayoutForbiddenComponent />}>
             {segmentChildren}
           </ForbiddenBoundary>
         );
@@ -689,7 +694,10 @@ export function buildAppPageElements<
       if (layoutUnauthorizedComponent) {
         const LayoutUnauthorizedComponent = layoutUnauthorizedComponent;
         segmentChildren = (
-          <UnauthorizedBoundary fallback={<LayoutUnauthorizedComponent />}>
+          <UnauthorizedBoundary
+            resetKey={segmentResetKey}
+            fallback={<LayoutUnauthorizedComponent />}
+          >
             {segmentChildren}
           </UnauthorizedBoundary>
         );
@@ -701,20 +709,15 @@ export function buildAppPageElements<
     );
     if (segmentErrorComponent) {
       segmentChildren = (
-        <ErrorBoundary fallback={segmentErrorComponent}>{segmentChildren}</ErrorBoundary>
+        <ErrorBoundary resetKey={segmentResetKey} fallback={segmentErrorComponent}>
+          {segmentChildren}
+        </ErrorBoundary>
       );
     }
 
     if (templateEntry && getDefaultExport(templateEntry.templateModule)) {
       segmentChildren = (
-        <Slot
-          id={templateEntry.id}
-          key={resolveAppPageTemplateKey(
-            options.route.routeSegments ?? [],
-            templateEntry.treePosition,
-            options.matchedParams,
-          )}
-        >
+        <Slot id={templateEntry.id} key={segmentResetKey}>
           {segmentChildren}
         </Slot>
       );
@@ -728,7 +731,7 @@ export function buildAppPageElements<
     const layoutIndex = layoutIndicesByTreePosition.get(treePosition) ?? -1;
     const segmentMap: { children: string[] } & Record<string, string[]> = {
       children: resolveAppPageChildSegments(
-        options.route.routeSegments ?? [],
+        routeSegments,
         layoutEntry.treePosition,
         options.matchedParams,
       ),

@@ -1,4 +1,4 @@
-import { Fragment, createElement, isValidElement, type ReactNode } from "react";
+import { Fragment, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vite-plus/test";
 import { useSelectedLayoutSegments } from "../packages/vinext/src/shims/navigation.js";
 import type { AppElements } from "../packages/vinext/src/server/app-elements.js";
@@ -10,6 +10,7 @@ import {
   createAppPageLayoutEntries,
   resolveAppPageChildSegments,
 } from "../packages/vinext/src/server/app-page-route-wiring.js";
+import { APP_RSC_RENDER_MODE_REFRESH_PRESERVE_UI } from "../packages/vinext/src/server/app-rsc-render-mode.js";
 
 function readNode(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -35,6 +36,99 @@ function readChildren(value: unknown): ReactNode {
   }
 
   return null;
+}
+
+function containsElementType(node: unknown, type: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.some((child) => containsElementType(child, type));
+  }
+
+  if (!isValidElement<{ children?: unknown; fallback?: unknown }>(node)) {
+    return false;
+  }
+
+  return (
+    node.type === type ||
+    containsElementType(node.props.children, type) ||
+    containsElementType(node.props.fallback, type)
+  );
+}
+
+function getElementTypeName(type: unknown): string {
+  if (typeof type === "string") return type;
+  if (typeof type === "function") {
+    return (
+      (type as { displayName?: string; name?: string }).displayName ??
+      (type as { name?: string }).name ??
+      ""
+    );
+  }
+  return String(type);
+}
+
+type InspectableElementProps = Record<string, unknown> & {
+  children?: unknown;
+  fallback?: unknown;
+  id?: unknown;
+};
+
+function findElement(
+  node: unknown,
+  predicate: (element: ReactElement<InspectableElementProps>) => boolean,
+): ReactElement<InspectableElementProps> | null {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findElement(child, predicate);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  if (!isValidElement<InspectableElementProps>(node)) {
+    return null;
+  }
+
+  if (predicate(node)) return node;
+
+  for (const value of Object.values(node.props)) {
+    const match = findElement(value, predicate);
+    if (match) return match;
+  }
+
+  return null;
+}
+
+function findElementByTypeName(
+  node: unknown,
+  typeName: string,
+): ReactElement<Record<string, unknown>> | null {
+  const match = findElement(node, (element) => getElementTypeName(element.type) === typeName);
+  return match as ReactElement<Record<string, unknown>> | null;
+}
+
+function findSlotById(node: unknown, id: string): ReactElement<Record<string, unknown>> | null {
+  const match = findElement(
+    node,
+    (element) =>
+      getElementTypeName(element.type) === "Slot" &&
+      typeof element.props.id === "string" &&
+      element.props.id === id,
+  );
+  return match as ReactElement<Record<string, unknown>> | null;
+}
+
+function findSuspenseWithFallback(
+  node: unknown,
+  fallbackTypeName: string,
+): ReactElement<Record<string, unknown>> | null {
+  const match = findElement(node, (element) => {
+    if (getElementTypeName(element.type) !== "Symbol(react.suspense)") {
+      return false;
+    }
+    const fallback = element.props.fallback;
+    return isValidElement(fallback) && getElementTypeName(fallback.type) === fallbackTypeName;
+  });
+  return match as ReactElement<Record<string, unknown>> | null;
 }
 
 async function readStream(stream: ReadableStream<Uint8Array>): Promise<string> {
@@ -168,6 +262,14 @@ function PageProbe() {
   return createElement("main", { "data-page-segments": segments.join("|") }, "Page");
 }
 
+function RouteLoadingProbe() {
+  return createElement("p", null, "Route loading");
+}
+
+function SlotLoadingProbe() {
+  return createElement("p", null, "Slot loading");
+}
+
 function LayoutWithoutChildren() {
   return createElement("div", { "data-layout": "without-children" }, "Layout only");
 }
@@ -277,6 +379,7 @@ describe("app page route wiring helpers", () => {
     });
 
     expect(elements.__route).toBe("route:/blog/post");
+    expect(elements.__layoutIds).toEqual(["layout:/", "layout:/(marketing)"]);
     expect(elements.__rootLayout).toBe("/");
     expect(elements["layout:/"]).toBeDefined();
     expect(elements["layout:/(marketing)"]).toBeDefined();
@@ -298,6 +401,48 @@ describe("app page route wiring helpers", () => {
     expect(html).toContain('data-page-segments=""');
     expect(html).toContain('data-segments="(marketing)|blog|post"');
     expect(html).toContain('data-segments="blog|post"');
+  });
+
+  it("suppresses route and slot loading boundaries for refresh payloads", () => {
+    const elements = buildAppPageElements({
+      element: createElement(PageProbe),
+      makeThenableParams(params) {
+        return Promise.resolve(params);
+      },
+      matchedParams: {},
+      resolvedMetadata: null,
+      resolvedViewport: {},
+      route: {
+        error: null,
+        errors: [null],
+        layoutTreePositions: [0],
+        layouts: [{ default: RootLayout }],
+        loading: { default: RouteLoadingProbe },
+        notFound: null,
+        notFounds: [null],
+        routeSegments: ["dashboard"],
+        slots: {
+          sidebar: {
+            default: null,
+            error: null,
+            layout: null,
+            layoutIndex: 0,
+            loading: { default: SlotLoadingProbe },
+            name: "sidebar",
+            page: { default: SlotPage },
+            routeSegments: [],
+          },
+        },
+        templateTreePositions: [],
+        templates: [],
+      },
+      routePath: "/dashboard",
+      rootNotFoundModule: null,
+      renderMode: APP_RSC_RENDER_MODE_REFRESH_PRESERVE_UI,
+    });
+
+    expect(containsElementType(elements["route:/dashboard"], RouteLoadingProbe)).toBe(false);
+    expect(containsElementType(elements["slot:sidebar:/"], SlotLoadingProbe)).toBe(false);
   });
 
   it("uses override params for slot segment maps when an override page is active", async () => {
@@ -909,6 +1054,240 @@ describe("app page route wiring helpers", () => {
     expect(templateDepth).toBeDefined();
     expect(notFoundDepth).toBeDefined();
     expect(templateDepth).toBeLessThan(notFoundDepth!);
+  });
+
+  it("keys template slots with the semantic segment state key", () => {
+    function LeafTemplate(props: { children?: ReactNode }) {
+      return createElement("section", { "data-template": "leaf" }, readChildren(props.children));
+    }
+
+    const elements = buildAppPageElements({
+      element: createElement(PageProbe),
+      makeThenableParams(params) {
+        return Promise.resolve(params);
+      },
+      matchedParams: { slug: "launch" },
+      resolvedMetadata: null,
+      resolvedViewport: {},
+      route: {
+        error: null,
+        errors: [null, null],
+        layoutTreePositions: [0, 1],
+        layouts: [{ default: RootLayout }, { default: GroupLayout }],
+        loading: null,
+        notFound: null,
+        notFounds: [null, null],
+        routeSegments: ["docs", "[slug]"],
+        slots: {},
+        templateTreePositions: [1],
+        templates: [{ default: LeafTemplate }],
+      },
+      routePath: "/docs/launch",
+      rootNotFoundModule: null,
+    });
+
+    const templateSlot = findSlotById(elements["route:/docs/launch"], "template:/docs");
+
+    expect(templateSlot).not.toBeNull();
+    expect(templateSlot?.key).toBe("slug|launch|d");
+  });
+
+  it("threads route state reset keys into loading, error, and not-found boundaries", () => {
+    function RouteLoading() {
+      return createElement("p", null, "Loading");
+    }
+
+    function RouteError() {
+      return createElement("p", null, "Error");
+    }
+
+    function RouteNotFound() {
+      return createElement("p", null, "Not Found");
+    }
+
+    const elements = buildAppPageElements({
+      element: createElement(PageProbe),
+      makeThenableParams(params) {
+        return Promise.resolve(params);
+      },
+      matchedParams: { id: "alpha" },
+      resolvedMetadata: null,
+      resolvedViewport: {},
+      route: {
+        error: { default: RouteError },
+        errors: [null],
+        layoutTreePositions: [0],
+        layouts: [{ default: RootLayout }],
+        loading: { default: RouteLoading },
+        notFound: { default: RouteNotFound },
+        notFounds: [null],
+        routeSegments: ["products", "[id]"],
+        slots: {},
+        templateTreePositions: [],
+        templates: [],
+      },
+      routePath: "/products/alpha",
+      rootNotFoundModule: null,
+    });
+
+    const routeEntry = elements["route:/products/alpha"];
+    const loadingBoundary = findSuspenseWithFallback(routeEntry, "RouteLoading");
+    const errorBoundary = findElementByTypeName(routeEntry, "ErrorBoundary");
+    const notFoundBoundary = findElementByTypeName(routeEntry, "NotFoundBoundary");
+
+    expect(loadingBoundary?.key).toBe(JSON.stringify(["products", "id|alpha|d"]));
+    expect(errorBoundary?.props.resetKey).toBe(JSON.stringify(["products", "id|alpha|d"]));
+    expect(notFoundBoundary?.props.resetKey).toBe(JSON.stringify(["products", "id|alpha|d"]));
+  });
+
+  it("does not collide route reset keys across branches with the same dynamic leaf value", () => {
+    function RouteLoading() {
+      return createElement("p", null, "Loading");
+    }
+
+    function RouteError() {
+      return createElement("p", null, "Error");
+    }
+
+    function RouteNotFound() {
+      return createElement("p", null, "Not Found");
+    }
+
+    function buildBranchElements(branch: "posts" | "photos") {
+      return buildAppPageElements({
+        element: createElement(PageProbe),
+        makeThenableParams(params) {
+          return Promise.resolve(params);
+        },
+        matchedParams: { id: "123" },
+        resolvedMetadata: null,
+        resolvedViewport: {},
+        route: {
+          error: { default: RouteError },
+          errors: [null],
+          layoutTreePositions: [0],
+          layouts: [{ default: RootLayout }],
+          loading: { default: RouteLoading },
+          notFound: { default: RouteNotFound },
+          notFounds: [null],
+          routeSegments: ["reset-collision", branch, "[id]"],
+          slots: {},
+          templateTreePositions: [],
+          templates: [],
+        },
+        routePath: `/reset-collision/${branch}/123`,
+        rootNotFoundModule: null,
+      })[`route:/reset-collision/${branch}/123`];
+    }
+
+    const postsRoute = buildBranchElements("posts");
+    const photosRoute = buildBranchElements("photos");
+    const postsLoadingBoundary = findSuspenseWithFallback(postsRoute, "RouteLoading");
+    const photosLoadingBoundary = findSuspenseWithFallback(photosRoute, "RouteLoading");
+    const postsErrorBoundary = findElementByTypeName(postsRoute, "ErrorBoundary");
+    const photosErrorBoundary = findElementByTypeName(photosRoute, "ErrorBoundary");
+    const postsNotFoundBoundary = findElementByTypeName(postsRoute, "NotFoundBoundary");
+    const photosNotFoundBoundary = findElementByTypeName(photosRoute, "NotFoundBoundary");
+
+    expect(postsLoadingBoundary?.key).toBe(
+      JSON.stringify(["reset-collision", "posts", "id|123|d"]),
+    );
+    expect(photosLoadingBoundary?.key).toBe(
+      JSON.stringify(["reset-collision", "photos", "id|123|d"]),
+    );
+    expect(postsLoadingBoundary?.key).not.toBe(photosLoadingBoundary?.key);
+    expect(postsErrorBoundary?.props.resetKey).not.toBe(photosErrorBoundary?.props.resetKey);
+    expect(postsNotFoundBoundary?.props.resetKey).not.toBe(photosNotFoundBoundary?.props.resetKey);
+  });
+
+  it("does not collide route reset keys across static branches with the same leaf segment", () => {
+    function RouteLoading() {
+      return createElement("p", null, "Loading");
+    }
+
+    function RouteError() {
+      return createElement("p", null, "Error");
+    }
+
+    function buildStaticBranchElements(branch: "account" | "admin") {
+      return buildAppPageElements({
+        element: createElement(PageProbe),
+        makeThenableParams(params) {
+          return Promise.resolve(params);
+        },
+        matchedParams: {},
+        resolvedMetadata: null,
+        resolvedViewport: {},
+        route: {
+          error: { default: RouteError },
+          errors: [null],
+          layoutTreePositions: [0],
+          layouts: [{ default: RootLayout }],
+          loading: { default: RouteLoading },
+          notFound: null,
+          notFounds: [null],
+          routeSegments: ["reset-collision", branch, "settings"],
+          slots: {},
+          templateTreePositions: [],
+          templates: [],
+        },
+        routePath: `/reset-collision/${branch}/settings`,
+        rootNotFoundModule: null,
+      })[`route:/reset-collision/${branch}/settings`];
+    }
+
+    const accountRoute = buildStaticBranchElements("account");
+    const adminRoute = buildStaticBranchElements("admin");
+    const accountLoadingBoundary = findSuspenseWithFallback(accountRoute, "RouteLoading");
+    const adminLoadingBoundary = findSuspenseWithFallback(adminRoute, "RouteLoading");
+    const accountErrorBoundary = findElementByTypeName(accountRoute, "ErrorBoundary");
+    const adminErrorBoundary = findElementByTypeName(adminRoute, "ErrorBoundary");
+
+    expect(accountLoadingBoundary?.key).toBe(
+      JSON.stringify(["reset-collision", "account", "settings"]),
+    );
+    expect(adminLoadingBoundary?.key).toBe(
+      JSON.stringify(["reset-collision", "admin", "settings"]),
+    );
+    expect(accountLoadingBoundary?.key).not.toBe(adminLoadingBoundary?.key);
+    expect(accountErrorBoundary?.props.resetKey).not.toBe(adminErrorBoundary?.props.resetKey);
+  });
+
+  it("threads segment reset keys into boundaries even without template.tsx", () => {
+    function SegmentError() {
+      return createElement("p", null, "Segment Error");
+    }
+
+    const elements = buildAppPageElements({
+      element: createElement(PageProbe),
+      makeThenableParams(params) {
+        return Promise.resolve(params);
+      },
+      matchedParams: { slug: "intro" },
+      resolvedMetadata: null,
+      resolvedViewport: {},
+      route: {
+        error: null,
+        errorPaths: [{ default: SegmentError }],
+        errors: [null],
+        errorTreePositions: [1],
+        layoutTreePositions: [0],
+        layouts: [{ default: RootLayout }],
+        loading: null,
+        notFound: null,
+        notFounds: [null],
+        routeSegments: ["docs", "[slug]"],
+        slots: {},
+        templateTreePositions: [],
+        templates: [],
+      },
+      routePath: "/docs/intro",
+      rootNotFoundModule: null,
+    });
+
+    const errorBoundary = findElementByTypeName(elements["route:/docs/intro"], "ErrorBoundary");
+
+    expect(errorBoundary?.props.resetKey).toBe("slug|intro|d");
   });
 
   it("interleaves templates with their corresponding layouts", async () => {

@@ -13,6 +13,7 @@ import Head, {
   getSSRHeadHTML,
   escapeAttr,
   reduceHeadChildren,
+  _applyHeadPropsToElement,
 } from "../packages/vinext/src/shims/head.js";
 
 // ─── SSR rendering (mirrors Next.js test/unit/next-head-rendering.test.ts) ──
@@ -398,6 +399,22 @@ describe("Head escaping", () => {
     expect(headHtml).toContain('console.log("hello")');
   });
 
+  it("empty dangerouslySetInnerHTML.__html takes precedence over children on SSR", () => {
+    ReactDOMServer.renderToString(
+      React.createElement(
+        Head,
+        null,
+        React.createElement("style", {
+          dangerouslySetInnerHTML: { __html: "" },
+          children: "fallback",
+        }),
+      ),
+    );
+    const headHtml = getSSRHeadHTML();
+    expect(headHtml).not.toContain("fallback");
+    expect(headHtml).toMatch(/<style[^>]*><\/style>/);
+  });
+
   it("converts className to class attribute", () => {
     ReactDOMServer.renderToString(
       React.createElement(
@@ -422,6 +439,95 @@ describe("Head escaping", () => {
     const headHtml = getSSRHeadHTML();
     expect(headHtml).toContain(" async ");
     expect(headHtml).toContain(" defer ");
+  });
+});
+
+describe("Head client sync", () => {
+  function createElementDouble() {
+    const attributes = new Map<string, string>();
+    return {
+      attributes,
+      innerHTML: "",
+      textContent: "",
+      setAttribute(name: string, value: string) {
+        attributes.set(name, value);
+      },
+    };
+  }
+
+  it("applies dangerouslySetInnerHTML to client-managed head elements", () => {
+    // Next.js client reference:
+    // packages/next/src/client/head-manager.ts reactElementToDOM()
+    // sets el.innerHTML from dangerouslySetInnerHTML.__html.
+    const element = createElementDouble();
+
+    _applyHeadPropsToElement(element, {
+      dangerouslySetInnerHTML: { __html: "body { color: red; }" },
+    });
+
+    expect(element.innerHTML).toBe("body { color: red; }");
+  });
+
+  it("ignores malformed dangerouslySetInnerHTML without __html key", () => {
+    // dangerouslySetInnerHTML: {} has no __html key, so getDangerouslySetInnerHTML
+    // returns undefined. The client falls through to children (matching SSR behavior).
+    const element = createElementDouble();
+    element.innerHTML = "previous";
+
+    _applyHeadPropsToElement(element, {
+      dangerouslySetInnerHTML: {},
+    });
+
+    // No valid __html and no children — content is unchanged.
+    expect(element.innerHTML).toBe("previous");
+  });
+
+  it("falls through to children when dangerouslySetInnerHTML has no __html key", () => {
+    const element = createElementDouble();
+
+    _applyHeadPropsToElement(element, {
+      dangerouslySetInnerHTML: {},
+      children: "fallback",
+    });
+
+    // Malformed dangerouslySetInnerHTML is ignored, children win.
+    expect(element.textContent).toBe("fallback");
+  });
+
+  it("empty dangerouslySetInnerHTML.__html takes precedence over children on client", () => {
+    const element = createElementDouble();
+    _applyHeadPropsToElement(element, {
+      children: "fallback",
+      dangerouslySetInnerHTML: { __html: "" },
+    });
+    expect(element.innerHTML).toBe("");
+    expect(element.textContent).toBe("");
+  });
+
+  it("prefers dangerouslySetInnerHTML over children on client-managed head elements", () => {
+    const element = createElementDouble();
+
+    _applyHeadPropsToElement(element, {
+      children: "children content",
+      dangerouslySetInnerHTML: { __html: "raw content" },
+    });
+
+    expect(element.innerHTML).toBe("raw content");
+    expect(element.textContent).toBe("");
+  });
+
+  it("sets textContent from children when dangerouslySetInnerHTML is absent", () => {
+    const element = createElementDouble();
+    _applyHeadPropsToElement(element, { children: "hello" });
+    expect(element.textContent).toBe("hello");
+    expect(element.innerHTML).toBe("");
+  });
+
+  it("sets textContent from array children by joining them", () => {
+    const element = createElementDouble();
+    _applyHeadPropsToElement(element, { children: ["a", "b", "c"] });
+    expect(element.textContent).toBe("abc");
+    expect(element.innerHTML).toBe("");
   });
 });
 

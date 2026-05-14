@@ -4,7 +4,7 @@
  * Tests the ErrorBoundary, NotFoundBoundary, ForbiddenBoundary, and
  * UnauthorizedBoundary components that handle error.tsx, not-found.tsx,
  * forbidden.tsx, and unauthorized.tsx rendering in the App Router.
- * Verifies correct digest handling, error propagation, and pathname reset.
+ * Verifies correct digest handling, error propagation, and reset behavior.
  *
  * Ported from Next.js: test/e2e/app-dir/error-boundary/error-boundary.test.ts
  * https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/error-boundary/error-boundary.test.ts
@@ -23,9 +23,9 @@ vi.mock("next/navigation", () => ({
 // - packages/next/src/client/components/error-boundary.tsx
 // - packages/next/src/client/components/navigation.ts
 //
-// Next.js resets segment error boundaries on pathname changes using a
-// previousPathname field, and usePathname() is pathname-only rather than
-// query-aware. These tests lock our shim to that behavior.
+// Next.js keeps pathname reset fallback in the boundary implementation, while
+// segment remounts provide the App Router's preferred reset owner. These tests
+// lock both paths.
 
 type ErrorBoundaryInnerConstructor = {
   getDerivedStateFromError(error: unknown): Partial<{
@@ -37,14 +37,17 @@ type ErrorBoundaryInnerConstructor = {
       children: React.ReactNode;
       fallback: React.ComponentType<{ error: unknown; reset: () => void }>;
       pathname: string;
+      resetKey?: string | null;
     },
     state: {
       error: { thrownValue: unknown } | null;
       previousPathname: string;
+      previousResetKey?: string | null;
     },
   ): {
     error: { thrownValue: unknown } | null;
     previousPathname: string;
+    previousResetKey?: string | null;
   } | null;
 };
 
@@ -131,31 +134,34 @@ describe("ErrorBoundary digest classification (actual class)", () => {
   });
 
   it("rethrows NEXT_NOT_FOUND", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_NOT_FOUND" });
+    const e = createErrorWithDigest("NEXT_NOT_FOUND", "NEXT_NOT_FOUND");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     expect(() => ErrorBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("rethrows NEXT_HTTP_ERROR_FALLBACK;404", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;404", "NEXT_HTTP_ERROR_FALLBACK;404");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     expect(() => ErrorBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("rethrows NEXT_HTTP_ERROR_FALLBACK;403", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;403" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;403", "NEXT_HTTP_ERROR_FALLBACK;403");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     expect(() => ErrorBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("rethrows NEXT_HTTP_ERROR_FALLBACK;401", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;401" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;401", "NEXT_HTTP_ERROR_FALLBACK;401");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     expect(() => ErrorBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("rethrows NEXT_REDIRECT", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_REDIRECT;replace;/login;307;" });
+    const e = createErrorWithDigest(
+      "NEXT_REDIRECT;replace;/login;307;",
+      "NEXT_REDIRECT;replace;/login;307;",
+    );
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     expect(() => ErrorBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
@@ -168,14 +174,14 @@ describe("ErrorBoundary digest classification (actual class)", () => {
   });
 
   it("catches errors with unknown digest", () => {
-    const e = Object.assign(new Error(), { digest: "CUSTOM_ERROR" });
+    const e = createErrorWithDigest("CUSTOM_ERROR", "CUSTOM_ERROR");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     const state = ErrorBoundaryInnerClass?.getDerivedStateFromError(e);
     expect(state).toEqual({ error: { thrownValue: e } });
   });
 
   it("catches errors with empty digest", () => {
-    const e = Object.assign(new Error(), { digest: "" });
+    const e = createErrorWithDigest("Empty digest", "");
     expect(ErrorBoundaryInnerClass).not.toBeNull();
     const state = ErrorBoundaryInnerClass?.getDerivedStateFromError(e);
     expect(state).toEqual({ error: { thrownValue: e } });
@@ -212,12 +218,109 @@ describe("ErrorBoundary digest classification (actual class)", () => {
       {
         error: { thrownValue: new Error("stuck") },
         previousPathname: "/previous",
+        previousResetKey: null,
       },
     );
 
     expect(state).toEqual({
       error: null,
       previousPathname: "/next",
+      previousResetKey: null,
+    });
+  });
+
+  it("resets caught errors when the semantic reset key changes on the same pathname", () => {
+    expect(ErrorBoundaryInner).not.toBeNull();
+    if (!ErrorBoundaryInner) {
+      throw new Error("Expected ErrorBoundaryInner export");
+    }
+
+    function Fallback() {
+      return null;
+    }
+
+    const state = ErrorBoundaryInner.getDerivedStateFromProps(
+      {
+        children: null,
+        fallback: Fallback,
+        pathname: "/products/[id]",
+        resetKey: "product-b",
+      },
+      {
+        error: { thrownValue: new Error("stuck") },
+        previousPathname: "/products/[id]",
+        previousResetKey: "product-a",
+      },
+    );
+
+    expect(state).toEqual({
+      error: null,
+      previousPathname: "/products/[id]",
+      previousResetKey: "product-b",
+    });
+  });
+
+  it("treats an empty semantic reset key as absent for pathname fallback", () => {
+    expect(ErrorBoundaryInner).not.toBeNull();
+    if (!ErrorBoundaryInner) {
+      throw new Error("Expected ErrorBoundaryInner export");
+    }
+
+    function Fallback() {
+      return null;
+    }
+
+    const state = ErrorBoundaryInner.getDerivedStateFromProps(
+      {
+        children: null,
+        fallback: Fallback,
+        pathname: "/next",
+        resetKey: "",
+      },
+      {
+        error: { thrownValue: new Error("stuck") },
+        previousPathname: "/previous",
+        previousResetKey: "",
+      },
+    );
+
+    expect(state).toEqual({
+      error: null,
+      previousPathname: "/next",
+      previousResetKey: null,
+    });
+  });
+
+  it("keeps caught errors when the semantic reset key is unchanged", () => {
+    expect(ErrorBoundaryInner).not.toBeNull();
+    if (!ErrorBoundaryInner) {
+      throw new Error("Expected ErrorBoundaryInner export");
+    }
+
+    const error = new Error("stuck");
+
+    function Fallback() {
+      return null;
+    }
+
+    const state = ErrorBoundaryInner.getDerivedStateFromProps(
+      {
+        children: null,
+        fallback: Fallback,
+        pathname: "/products/next",
+        resetKey: "product-a",
+      },
+      {
+        error: { thrownValue: error },
+        previousPathname: "/products/previous",
+        previousResetKey: "product-a",
+      },
+    );
+
+    expect(state).toEqual({
+      error: { thrownValue: error },
+      previousPathname: "/products/next",
+      previousResetKey: "product-a",
     });
   });
 
@@ -231,6 +334,7 @@ describe("ErrorBoundary digest classification (actual class)", () => {
     const baseState = {
       error: null,
       previousPathname: "/error-test",
+      previousResetKey: null,
     };
     const stateAfterError = {
       ...baseState,
@@ -253,6 +357,74 @@ describe("ErrorBoundary digest classification (actual class)", () => {
     expect(stateAfterProps).toEqual({
       error: { thrownValue: error },
       previousPathname: "/error-test",
+      previousResetKey: null,
+    });
+  });
+});
+
+describe("RedirectBoundary digest classification", () => {
+  let RedirectErrorBoundaryClass: {
+    getDerivedStateFromError(error: unknown): {
+      redirect: string | null;
+      redirectType: "push" | "replace" | null;
+    };
+  } | null = null;
+
+  beforeAll(async () => {
+    const mod = await import("../packages/vinext/src/shims/error-boundary.js");
+    RedirectErrorBoundaryClass = Reflect.get(mod, "RedirectErrorBoundary") ?? null;
+  });
+
+  it("catches Vinext redirect digests and decodes the target", () => {
+    const e = Object.assign(new Error("NEXT_REDIRECT:/?auth=required"), {
+      digest: "NEXT_REDIRECT;;%2F%3Fauth%3Drequired",
+    });
+
+    expect(RedirectErrorBoundaryClass).not.toBeNull();
+    expect(RedirectErrorBoundaryClass?.getDerivedStateFromError(e)).toEqual({
+      redirect: "/?auth=required",
+      redirectType: "replace",
+    });
+  });
+
+  it("catches Next-style redirect digests and preserves push type", () => {
+    const e = Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;push;/login;307;",
+    });
+
+    expect(RedirectErrorBoundaryClass).not.toBeNull();
+    expect(RedirectErrorBoundaryClass?.getDerivedStateFromError(e)).toEqual({
+      redirect: "/login",
+      redirectType: "push",
+    });
+  });
+
+  it("re-throws non-redirect errors", () => {
+    const e = Object.assign(new Error("NEXT_NOT_FOUND"), { digest: "NEXT_NOT_FOUND" });
+
+    expect(RedirectErrorBoundaryClass).not.toBeNull();
+    expect(() => RedirectErrorBoundaryClass?.getDerivedStateFromError(e)).toThrow(e);
+  });
+
+  it("re-throws redirect errors with malformed/empty URL", () => {
+    const e = Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;push;",
+    });
+
+    expect(RedirectErrorBoundaryClass).not.toBeNull();
+    expect(() => RedirectErrorBoundaryClass?.getDerivedStateFromError(e)).toThrow(e);
+  });
+
+  it("returns null state for handled redirect errors (Next.js parity placeholder)", () => {
+    const e = Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: "NEXT_REDIRECT;;%2Flogin",
+      handled: true,
+    });
+
+    expect(RedirectErrorBoundaryClass).not.toBeNull();
+    expect(RedirectErrorBoundaryClass?.getDerivedStateFromError(e)).toEqual({
+      redirect: null,
+      redirectType: null,
     });
   });
 });
@@ -270,26 +442,29 @@ describe("ForbiddenBoundary digest classification", () => {
   });
 
   it("catches NEXT_HTTP_ERROR_FALLBACK;403", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;403" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;403", "NEXT_HTTP_ERROR_FALLBACK;403");
     expect(ForbiddenBoundaryInnerClass).not.toBeNull();
     const state = ForbiddenBoundaryInnerClass?.getDerivedStateFromError(e);
     expect(state).toMatchObject({ forbidden: true });
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;404 (notFound domain)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;404", "NEXT_HTTP_ERROR_FALLBACK;404");
     expect(ForbiddenBoundaryInnerClass).not.toBeNull();
     expect(() => ForbiddenBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;401 (unauthorized domain)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;401" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;401", "NEXT_HTTP_ERROR_FALLBACK;401");
     expect(ForbiddenBoundaryInnerClass).not.toBeNull();
     expect(() => ForbiddenBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;4030 (defensive: exact match, startsWith would be wrong)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;4030" });
+    const e = createErrorWithDigest(
+      "NEXT_HTTP_ERROR_FALLBACK;4030",
+      "NEXT_HTTP_ERROR_FALLBACK;4030",
+    );
     expect(ForbiddenBoundaryInnerClass).not.toBeNull();
     expect(() => ForbiddenBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
@@ -314,26 +489,29 @@ describe("UnauthorizedBoundary digest classification", () => {
   });
 
   it("catches NEXT_HTTP_ERROR_FALLBACK;401", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;401" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;401", "NEXT_HTTP_ERROR_FALLBACK;401");
     expect(UnauthorizedBoundaryInnerClass).not.toBeNull();
     const state = UnauthorizedBoundaryInnerClass?.getDerivedStateFromError(e);
     expect(state).toMatchObject({ unauthorized: true });
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;404 (notFound domain)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;404", "NEXT_HTTP_ERROR_FALLBACK;404");
     expect(UnauthorizedBoundaryInnerClass).not.toBeNull();
     expect(() => UnauthorizedBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;403 (forbidden domain)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;403" });
+    const e = createErrorWithDigest("NEXT_HTTP_ERROR_FALLBACK;403", "NEXT_HTTP_ERROR_FALLBACK;403");
     expect(UnauthorizedBoundaryInnerClass).not.toBeNull();
     expect(() => UnauthorizedBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });
 
   it("re-throws NEXT_HTTP_ERROR_FALLBACK;4010 (defensive: exact match, startsWith would be wrong)", () => {
-    const e = Object.assign(new Error(), { digest: "NEXT_HTTP_ERROR_FALLBACK;4010" });
+    const e = createErrorWithDigest(
+      "NEXT_HTTP_ERROR_FALLBACK;4010",
+      "NEXT_HTTP_ERROR_FALLBACK;4010",
+    );
     expect(UnauthorizedBoundaryInnerClass).not.toBeNull();
     expect(() => UnauthorizedBoundaryInnerClass?.getDerivedStateFromError(e)).toThrow(e);
   });

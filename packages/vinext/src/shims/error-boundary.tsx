@@ -3,15 +3,27 @@
 import React from "react";
 // Import the local shim, not the public next/navigation alias. The built
 // package may execute this file before the plugin's resolveId hook is active.
-import { usePathname } from "./navigation.js";
+import { usePathname, useRouter } from "./navigation.js";
+import { getErrorDigest, isNavigationSignalError } from "../utils/navigation-signal.js";
 
 export type ErrorBoundaryProps = {
   fallback: React.ComponentType<{ error: unknown; reset: () => void }>;
   children: React.ReactNode;
+  resetKey?: string | null;
 };
 
 type CapturedError = {
   thrownValue: unknown;
+};
+
+type RedirectBoundaryState = {
+  redirect: string | null;
+  redirectType: "push" | "replace" | null;
+};
+
+type RedirectError = Error & {
+  digest: string;
+  handled?: boolean;
 };
 
 type ErrorBoundaryInnerProps = {
@@ -21,7 +33,162 @@ type ErrorBoundaryInnerProps = {
 export type ErrorBoundaryState = {
   error: CapturedError | null;
   previousPathname: string;
+  previousResetKey: string | null;
 };
+
+type BoundaryResetProps = {
+  pathname: string;
+  resetKey?: string | null;
+};
+
+type BoundaryResetState = {
+  previousPathname: string;
+  previousResetKey: string | null;
+};
+
+function normalizeBoundaryResetKey(resetKey: string | null | undefined): string | null {
+  return resetKey === undefined || resetKey === null || resetKey === "" ? null : resetKey;
+}
+
+function readBoundaryResetState(props: BoundaryResetProps): BoundaryResetState {
+  return {
+    previousPathname: props.pathname,
+    previousResetKey: normalizeBoundaryResetKey(props.resetKey),
+  };
+}
+
+function shouldResetBoundary(
+  nextResetState: BoundaryResetState,
+  previousResetState: BoundaryResetState,
+): boolean {
+  const nextResetKey = normalizeBoundaryResetKey(nextResetState.previousResetKey);
+  const previousResetKey = normalizeBoundaryResetKey(previousResetState.previousResetKey);
+
+  if (nextResetKey !== null || previousResetKey !== null) {
+    return nextResetKey !== previousResetKey;
+  }
+
+  return nextResetState.previousPathname !== previousResetState.previousPathname;
+}
+
+function isRedirectError(error: unknown): error is RedirectError {
+  return getErrorDigest(error)?.startsWith("NEXT_REDIRECT;") ?? false;
+}
+
+function decodeRedirectTarget(target: string): string {
+  try {
+    return decodeURIComponent(target);
+  } catch {
+    return target;
+  }
+}
+
+function getURLFromRedirectError(error: RedirectError): string | null {
+  const parts = error.digest.split(";");
+  // vinext emits 3-part (redirect: `NEXT_REDIRECT;;<encoded>`) or 4-part
+  // (permanentRedirect: `NEXT_REDIRECT;<type>;<encoded>;308`) digests;
+  // Next.js emits 5-part digests (`NEXT_REDIRECT;<type>;<url>;<status>;<isClient>`).
+  // vinext's `isRedirectError` is more permissive (just `startsWith("NEXT_REDIRECT;")`)
+  // so we branch on length rather than always using `slice(2, -2)`.
+  const encodedTarget = parts.length >= 5 ? parts.slice(2, -2).join(";") : parts[2];
+  return encodedTarget ? decodeRedirectTarget(encodedTarget) : null;
+}
+
+function getRedirectTypeFromError(error: RedirectError): "push" | "replace" {
+  const type = error.digest.split(";", 2)[1];
+  return type === "push" ? "push" : "replace";
+}
+
+function HandleRedirect({
+  redirect,
+  redirectType,
+}: {
+  redirect: string;
+  redirectType: "push" | "replace";
+}) {
+  const router = useRouter();
+
+  React.useEffect(() => {
+    React.startTransition(() => {
+      if (redirectType === "push") {
+        router.push(redirect);
+      } else {
+        router.replace(redirect);
+      }
+      // Intentionally no reset() here. The boundary stays in its "redirect
+      // caught" state (rendering this component, which returns null) until
+      // router.push()/replace() triggers a new render at the destination
+      // route. That naturally unmounts this boundary and mounts a fresh one.
+      // Calling reset() would clear the boundary state, causing React to
+      // re-render children — which re-mounts the page component that threw
+      // redirect() in the first place. For deterministic redirects (e.g.
+      // auth guards), that creates an infinite redirect loop.
+      // Matches Next.js's HandleRedirect in redirect-boundary.tsx.
+    });
+  }, [redirect, redirectType, router]);
+
+  return null;
+}
+
+export class RedirectErrorBoundary extends React.Component<
+  { children?: React.ReactNode },
+  RedirectBoundaryState
+> {
+  constructor(props: { children?: React.ReactNode }) {
+    super(props);
+    this.state = {
+      redirect: null,
+      redirectType: null,
+    };
+  }
+
+  static getDerivedStateFromError(error: unknown): RedirectBoundaryState {
+    if (isRedirectError(error)) {
+      // Next.js parity: an outer RedirectBoundary that has already started
+      // handling a redirect marks the error as `handled` so that, if React
+      // re-throws the same error during a retry render, an inner boundary
+      // doesn't re-dispatch the same `router.replace()`. Vinext doesn't
+      // currently emit `handled` itself (we never assign it on the error
+      // object), but we keep the branch so behavior matches Next.js if a
+      // host or future change ever does.
+      if (error.handled) {
+        return {
+          redirect: null,
+          redirectType: null,
+        };
+      }
+
+      const url = getURLFromRedirectError(error);
+      if (url === null) {
+        // Malformed digest (e.g. `NEXT_REDIRECT;push;` with an empty URL
+        // segment). The server-side parser at next-error-digest.ts:51 also
+        // rejects this. Re-throw so the error reaches a regular error
+        // boundary instead of being silently swallowed.
+        throw error;
+      }
+
+      return {
+        redirect: url,
+        redirectType: getRedirectTypeFromError(error),
+      };
+    }
+
+    throw error;
+  }
+
+  render() {
+    const { redirect, redirectType } = this.state;
+    if (redirect !== null && redirectType !== null) {
+      return <HandleRedirect redirect={redirect} redirectType={redirectType} />;
+    }
+
+    return this.props.children;
+  }
+}
+
+export function RedirectBoundary({ children }: { children?: React.ReactNode }) {
+  return <RedirectErrorBoundary>{children}</RedirectErrorBoundary>;
+}
 
 /**
  * Generic ErrorBoundary used to wrap route segments with error.tsx.
@@ -34,32 +201,26 @@ export class ErrorBoundaryInner extends React.Component<
 > {
   constructor(props: ErrorBoundaryInnerProps) {
     super(props);
-    this.state = { error: null, previousPathname: props.pathname };
+    this.state = { error: null, ...readBoundaryResetState(props) };
   }
 
   static getDerivedStateFromProps(
     props: ErrorBoundaryInnerProps,
     state: ErrorBoundaryState,
   ): ErrorBoundaryState | null {
-    if (props.pathname !== state.previousPathname && state.error) {
-      return { error: null, previousPathname: props.pathname };
+    const nextResetState = readBoundaryResetState(props);
+    if (state.error && shouldResetBoundary(nextResetState, state)) {
+      return { error: null, ...nextResetState };
     }
-    return { error: state.error, previousPathname: props.pathname };
+    return { error: state.error, ...nextResetState };
   }
 
   static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
     // notFound(), forbidden(), unauthorized(), and redirect() must propagate
     // past error boundaries. Re-throw them so they bubble up to the
     // framework's HTTP access fallback / redirect handler.
-    if (error && typeof error === "object" && "digest" in error) {
-      const digest = String(error.digest);
-      if (
-        digest === "NEXT_NOT_FOUND" || // legacy compat
-        digest.startsWith("NEXT_HTTP_ERROR_FALLBACK;") ||
-        digest.startsWith("NEXT_REDIRECT;")
-      ) {
-        throw error;
-      }
+    if (isNavigationSignalError(error)) {
+      throw error;
     }
     return { error: { thrownValue: error } };
   }
@@ -77,10 +238,10 @@ export class ErrorBoundaryInner extends React.Component<
   }
 }
 
-export function ErrorBoundary({ fallback, children }: ErrorBoundaryProps) {
+export function ErrorBoundary({ fallback, children, resetKey }: ErrorBoundaryProps) {
   const pathname = usePathname();
   return (
-    <ErrorBoundaryInner pathname={pathname} fallback={fallback}>
+    <ErrorBoundaryInner pathname={pathname} resetKey={resetKey} fallback={fallback}>
       {children}
     </ErrorBoundaryInner>
   );
@@ -93,6 +254,7 @@ export function ErrorBoundary({ fallback, children }: ErrorBoundaryProps) {
 type NotFoundBoundaryProps = {
   fallback: React.ReactNode;
   children: React.ReactNode;
+  resetKey?: string | null;
 };
 
 type NotFoundBoundaryInnerProps = {
@@ -102,12 +264,13 @@ type NotFoundBoundaryInnerProps = {
 type NotFoundBoundaryState = {
   notFound: boolean;
   previousPathname: string;
+  previousResetKey: string | null;
 };
 
 /**
  * Inner class component that catches notFound() errors and renders the
- * not-found.tsx fallback. Resets when the pathname changes (client navigation)
- * so a previous notFound() doesn't permanently stick.
+ * not-found.tsx fallback. Resets on the caller's segment reset key when one is
+ * provided, otherwise falls back to pathname changes for legacy callers.
  *
  * The ErrorBoundary above re-throws notFound errors so they propagate up to this
  * boundary. This must be placed above the ErrorBoundary in the component tree.
@@ -118,19 +281,18 @@ class NotFoundBoundaryInner extends React.Component<
 > {
   constructor(props: NotFoundBoundaryInnerProps) {
     super(props);
-    this.state = { notFound: false, previousPathname: props.pathname };
+    this.state = { notFound: false, ...readBoundaryResetState(props) };
   }
 
   static getDerivedStateFromProps(
     props: NotFoundBoundaryInnerProps,
     state: NotFoundBoundaryState,
   ): NotFoundBoundaryState | null {
-    // Reset the boundary when the route changes so a previous notFound()
-    // doesn't permanently stick after client-side navigation.
-    if (props.pathname !== state.previousPathname && state.notFound) {
-      return { notFound: false, previousPathname: props.pathname };
+    const nextResetState = readBoundaryResetState(props);
+    if (state.notFound && shouldResetBoundary(nextResetState, state)) {
+      return { notFound: false, ...nextResetState };
     }
-    return { notFound: state.notFound, previousPathname: props.pathname };
+    return { notFound: state.notFound, ...nextResetState };
   }
 
   static getDerivedStateFromError(error: unknown): Partial<NotFoundBoundaryState> {
@@ -154,12 +316,12 @@ class NotFoundBoundaryInner extends React.Component<
 
 /**
  * Wrapper that reads the current pathname and passes it to the inner class
- * component. This enables automatic reset on client-side navigation.
+ * component. Segment reset keys own App Router remount semantics when present.
  */
-export function NotFoundBoundary({ fallback, children }: NotFoundBoundaryProps) {
+export function NotFoundBoundary({ fallback, children, resetKey }: NotFoundBoundaryProps) {
   const pathname = usePathname();
   return (
-    <NotFoundBoundaryInner pathname={pathname} fallback={fallback}>
+    <NotFoundBoundaryInner pathname={pathname} resetKey={resetKey} fallback={fallback}>
       {children}
     </NotFoundBoundaryInner>
   );
@@ -172,6 +334,7 @@ export function NotFoundBoundary({ fallback, children }: NotFoundBoundaryProps) 
 type ForbiddenBoundaryProps = {
   fallback: React.ReactNode;
   children: React.ReactNode;
+  resetKey?: string | null;
 };
 
 type ForbiddenBoundaryInnerProps = {
@@ -181,6 +344,7 @@ type ForbiddenBoundaryInnerProps = {
 type ForbiddenBoundaryState = {
   forbidden: boolean;
   previousPathname: string;
+  previousResetKey: string | null;
 };
 
 export class ForbiddenBoundaryInner extends React.Component<
@@ -189,17 +353,18 @@ export class ForbiddenBoundaryInner extends React.Component<
 > {
   constructor(props: ForbiddenBoundaryInnerProps) {
     super(props);
-    this.state = { forbidden: false, previousPathname: props.pathname };
+    this.state = { forbidden: false, ...readBoundaryResetState(props) };
   }
 
   static getDerivedStateFromProps(
     props: ForbiddenBoundaryInnerProps,
     state: ForbiddenBoundaryState,
   ): ForbiddenBoundaryState | null {
-    if (props.pathname !== state.previousPathname && state.forbidden) {
-      return { forbidden: false, previousPathname: props.pathname };
+    const nextResetState = readBoundaryResetState(props);
+    if (state.forbidden && shouldResetBoundary(nextResetState, state)) {
+      return { forbidden: false, ...nextResetState };
     }
-    return { forbidden: state.forbidden, previousPathname: props.pathname };
+    return { forbidden: state.forbidden, ...nextResetState };
   }
 
   static getDerivedStateFromError(error: unknown): Partial<ForbiddenBoundaryState> {
@@ -220,10 +385,10 @@ export class ForbiddenBoundaryInner extends React.Component<
   }
 }
 
-export function ForbiddenBoundary({ fallback, children }: ForbiddenBoundaryProps) {
+export function ForbiddenBoundary({ fallback, children, resetKey }: ForbiddenBoundaryProps) {
   const pathname = usePathname();
   return (
-    <ForbiddenBoundaryInner pathname={pathname} fallback={fallback}>
+    <ForbiddenBoundaryInner pathname={pathname} resetKey={resetKey} fallback={fallback}>
       {children}
     </ForbiddenBoundaryInner>
   );
@@ -236,6 +401,7 @@ export function ForbiddenBoundary({ fallback, children }: ForbiddenBoundaryProps
 type UnauthorizedBoundaryProps = {
   fallback: React.ReactNode;
   children: React.ReactNode;
+  resetKey?: string | null;
 };
 
 type UnauthorizedBoundaryInnerProps = {
@@ -245,6 +411,7 @@ type UnauthorizedBoundaryInnerProps = {
 type UnauthorizedBoundaryState = {
   unauthorized: boolean;
   previousPathname: string;
+  previousResetKey: string | null;
 };
 
 export class UnauthorizedBoundaryInner extends React.Component<
@@ -253,17 +420,18 @@ export class UnauthorizedBoundaryInner extends React.Component<
 > {
   constructor(props: UnauthorizedBoundaryInnerProps) {
     super(props);
-    this.state = { unauthorized: false, previousPathname: props.pathname };
+    this.state = { unauthorized: false, ...readBoundaryResetState(props) };
   }
 
   static getDerivedStateFromProps(
     props: UnauthorizedBoundaryInnerProps,
     state: UnauthorizedBoundaryState,
   ): UnauthorizedBoundaryState | null {
-    if (props.pathname !== state.previousPathname && state.unauthorized) {
-      return { unauthorized: false, previousPathname: props.pathname };
+    const nextResetState = readBoundaryResetState(props);
+    if (state.unauthorized && shouldResetBoundary(nextResetState, state)) {
+      return { unauthorized: false, ...nextResetState };
     }
-    return { unauthorized: state.unauthorized, previousPathname: props.pathname };
+    return { unauthorized: state.unauthorized, ...nextResetState };
   }
 
   static getDerivedStateFromError(error: unknown): Partial<UnauthorizedBoundaryState> {
@@ -284,10 +452,10 @@ export class UnauthorizedBoundaryInner extends React.Component<
   }
 }
 
-export function UnauthorizedBoundary({ fallback, children }: UnauthorizedBoundaryProps) {
+export function UnauthorizedBoundary({ fallback, children, resetKey }: UnauthorizedBoundaryProps) {
   const pathname = usePathname();
   return (
-    <UnauthorizedBoundaryInner pathname={pathname} fallback={fallback}>
+    <UnauthorizedBoundaryInner pathname={pathname} resetKey={resetKey} fallback={fallback}>
       {children}
     </UnauthorizedBoundaryInner>
   );
@@ -348,15 +516,10 @@ export class DevRecoveryBoundary extends React.Component<
   }
 
   static getDerivedStateFromError(error: unknown): Partial<DevRecoveryBoundaryState> {
-    if (error && typeof error === "object" && "digest" in error) {
-      const digest = String(error.digest);
-      if (
-        digest === "NEXT_NOT_FOUND" ||
-        digest.startsWith("NEXT_HTTP_ERROR_FALLBACK;") ||
-        digest.startsWith("NEXT_REDIRECT;")
-      ) {
-        throw error;
-      }
+    // Re-throw routing sentinels so they still reach NotFoundBoundary /
+    // RedirectBoundary / Forbidden / Unauthorized above.
+    if (isNavigationSignalError(error)) {
+      throw error;
     }
     return { error: { thrownValue: error } };
   }

@@ -100,6 +100,16 @@ declare global {
       | undefined;
 
     /**
+     * Invalidates the client-side RSC navigation caches (visited-response +
+     * prefetch). Installed by the browser RSC entry so that `router.refresh()`
+     * in the navigation shim can drop stale RSC payloads for routes other
+     * than the current one — required for Next.js parity, since refresh is
+     * specified to invalidate the entire segment cache (see
+     * Next.js refresh-reducer.ts).
+     */
+    __VINEXT_CLEAR_NAV_CACHES__: (() => void) | undefined;
+
+    /**
      * A Promise that resolves when the current in-flight popstate RSC navigation
      * finishes rendering.
      * Set by the popstate handler in the browser RSC entry; read by
@@ -362,6 +372,12 @@ declare global {
        * image optimizer (`next.config.js` → `images.dangerouslyAllowSVG`).
        */
       __VINEXT_IMAGE_DANGEROUSLY_ALLOW_SVG?: string;
+
+      /**
+       * `"true"` or `"false"` — whether hostnames resolving to private IPs
+       * are allowed (`next.config.js` → `images.dangerouslyAllowLocalIP`).
+       */
+      __VINEXT_IMAGE_DANGEROUSLY_ALLOW_LOCAL_IP?: string;
     }
   }
 }

@@ -123,6 +123,26 @@ test.describe("Server-side redirects", () => {
     expect(page.url()).toBe(`${BASE}/about`);
     await expect(page.locator("h1")).toHaveText("About");
   });
+
+  test("client navigation handles delayed redirect under loading boundary", async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.goto(`${BASE}/`);
+    await waitForAppRouterHydration(page);
+    await page.getByTestId("delayed-protected-loading-link").click();
+
+    // The fixture page awaits 500ms before throwing redirect(); the route has
+    // its own loading.tsx, so the Suspense fallback must paint during that
+    // window. This covers the second half of the cross-route-loading fix —
+    // without the keyed Suspense, React's transition reconciliation would
+    // hold the previous page visible and skip the fallback entirely.
+    await expect(page.getByText("delayed protected loading...")).toBeVisible();
+
+    await expect(page).toHaveURL(`${BASE}/about`);
+    await expect(page.locator("h1")).toHaveText("About");
+    expect(pageErrors.filter((message) => message.includes("NEXT_REDIRECT"))).toHaveLength(0);
+  });
 });
 
 test.describe("Dashboard nested not-found", () => {

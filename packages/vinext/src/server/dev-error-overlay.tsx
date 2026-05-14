@@ -12,6 +12,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
+import { isNavigationSignalError } from "../utils/navigation-signal.js";
 import {
   type OverlayState,
   type ReportedError,
@@ -54,6 +55,7 @@ export function installDevErrorOverlay(): void {
 
   window.addEventListener("error", (event: ErrorEvent) => {
     const err = event.error;
+    if (isNavigationSignalError(err)) return;
     if (err instanceof Error) {
       if (alreadyReported(err)) return;
       reportDevError(err, { source: "window-error" });
@@ -64,6 +66,7 @@ export function installDevErrorOverlay(): void {
 
   window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
     const reason = event.reason;
+    if (isNavigationSignalError(reason)) return;
     if (reason instanceof Error) {
       if (alreadyReported(reason)) return;
       reportDevError(reason, { source: "unhandledrejection" });
@@ -106,6 +109,8 @@ export function devOnCaughtError(
   error: unknown,
   errorInfo: { componentStack?: string; errorBoundary?: unknown },
 ): void {
+  if (isNavigationSignalError(error)) return;
+
   console.error(error);
   if (errorInfo?.componentStack) {
     console.error("The above error occurred in a React component:\n" + errorInfo.componentStack);
@@ -122,6 +127,8 @@ export function devOnUncaughtError(
   error: unknown,
   errorInfo: { componentStack?: string; errorBoundary?: unknown },
 ): void {
+  if (isNavigationSignalError(error)) return;
+
   console.error(error);
   if (errorInfo?.componentStack) {
     console.error("The above error occurred in a React component:\n" + errorInfo.componentStack);
