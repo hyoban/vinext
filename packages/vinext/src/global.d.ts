@@ -20,6 +20,10 @@ import type { Root } from "react-dom/client";
 import type { OnRequestErrorHandler } from "./server/instrumentation";
 import type { CachedRscResponse, PrefetchCacheEntry } from "vinext/shims/navigation";
 
+// `window.next` is declared inline in `./client/window-next.ts` (mirroring
+// Next.js's own pattern in `packages/next/src/client/next.ts`), not here, so
+// the type is co-located with the installer that owns the runtime shape.
+
 // ---------------------------------------------------------------------------
 // Window globals — browser-side state shared across module boundaries
 // ---------------------------------------------------------------------------
@@ -139,6 +143,9 @@ declare global {
     // re-declare it here to avoid type conflicts. vinext-specific extensions
     // (__vinext) are accessed via the `VinextNextData` type in
     // `client/vinext-next-data.ts`.
+    //
+    // `window.next` is declared in `./client/window-next.ts` so its type
+    // (`WindowNext`) lives next to the installer that owns the runtime shape.
   }
 
   // ── self globals used inside server-injected inline scripts ───────────────
@@ -378,6 +385,15 @@ declare global {
        * are allowed (`next.config.js` → `images.dangerouslyAllowLocalIP`).
        */
       __VINEXT_IMAGE_DANGEROUSLY_ALLOW_LOCAL_IP?: string;
+
+      /**
+       * Next.js-compatible version string. vinext mirrors Next.js's
+       * `process.env.__NEXT_VERSION` define (from
+       * `packages/next/src/client/next.ts` line 5) so library code that
+       * reads it works unmodified. Value is the vinext package version,
+       * injected by the plugin at build time.
+       */
+      __NEXT_VERSION?: string;
     }
   }
 }
