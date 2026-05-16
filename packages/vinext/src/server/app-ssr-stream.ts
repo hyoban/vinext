@@ -1,4 +1,10 @@
 import { createInlineScriptTag, safeJsonStringify } from "./html.js";
+import {
+  bytesToBase64,
+  concatUint8Arrays,
+  RSC_EMBEDDED_BINARY_CHUNK,
+  type RscEmbeddedChunk,
+} from "./app-rsc-embedded-chunks.js";
 
 type RscEmbedTransform = {
   flush(): string;
@@ -20,15 +26,14 @@ export function fixFlightHints(text: string): string {
 
 /**
  * Create a helper that progressively embeds RSC chunks as inline <script> tags.
- * The browser entry turns the embedded text chunks back into Uint8Array data.
+ * The browser entry turns the embedded chunks back into Uint8Array data.
  */
 export function createRscEmbedTransform(
   embedStream: ReadableStream<Uint8Array>,
   scriptNonce?: string,
 ): RscEmbedTransform {
   const reader = embedStream.getReader();
-  const decoder = new TextDecoder();
-  let pendingChunks: string[] = [];
+  let pendingChunks: RscEmbeddedChunk[] = [];
   const rawChunks: Uint8Array[] = [];
   let reading = false;
 
@@ -42,11 +47,16 @@ export function createRscEmbedTransform(
         // Accumulate raw bytes BEFORE fixFlightHints so the cache stores
         // unmodified RSC data. The embed script path below applies fixes.
         rawChunks.push(result.value);
-        const text = decoder.decode(result.value, { stream: true });
-        // The RSC entry already fixes HL hints at the source. Keep this second
-        // pass as defense in depth for any embed stream that bypasses that
-        // wrapper; the rewrite is idempotent, so double-application is safe.
-        pendingChunks.push(fixFlightHints(text));
+        try {
+          const decoder = new TextDecoder("utf-8", { fatal: true });
+          const text = decoder.decode(result.value);
+          // The RSC entry already fixes HL hints at the source. Keep this second
+          // pass as defense in depth for any embed stream that bypasses that
+          // wrapper; the rewrite is idempotent, so double-application is safe.
+          pendingChunks.push(fixFlightHints(text));
+        } catch {
+          pendingChunks.push([RSC_EMBEDDED_BINARY_CHUNK, bytesToBase64(result.value)]);
+        }
       }
     } catch (error) {
       if (process.env.NODE_ENV !== "production") {
@@ -88,16 +98,7 @@ export function createRscEmbedTransform(
 
     async getRawBuffer(): Promise<ArrayBuffer> {
       await pumpPromise;
-      let totalLength = 0;
-      for (const chunk of rawChunks) {
-        totalLength += chunk.byteLength;
-      }
-      const buffer = new Uint8Array(totalLength);
-      let offset = 0;
-      for (const chunk of rawChunks) {
-        buffer.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
+      const buffer = concatUint8Arrays(rawChunks);
       rawChunks.length = 0;
       return buffer.buffer;
     },

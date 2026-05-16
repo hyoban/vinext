@@ -39,6 +39,16 @@ async function readText(
   };
 }
 
+async function readBytes(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<{ done: boolean; bytes?: number[] }> {
+  const result = await reader.read();
+  return {
+    done: result.done,
+    bytes: result.value ? Array.from(result.value) : undefined,
+  };
+}
+
 describe("App browser stream helpers", () => {
   beforeEach(() => {
     resetBrowserGlobals();
@@ -56,6 +66,16 @@ describe("App browser stream helpers", () => {
     expect(await readText(reader)).toEqual({ done: false, text: "alpha" });
     expect(await readText(reader)).toEqual({ done: false, text: "beta" });
     expect(await readText(reader)).toEqual({ done: true, text: undefined });
+  });
+
+  it("turns embedded binary chunks into exact readable bytes", async () => {
+    // Ported from Next.js: test/e2e/app-dir/binary/rsc-binary.test.ts
+    // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/binary/rsc-binary.test.ts
+    const reader = chunksToReadableStream(["text", [3, "/wABAgM="]]).getReader();
+
+    expect(await readText(reader)).toEqual({ done: false, text: "text" });
+    expect(await readBytes(reader)).toEqual({ done: false, bytes: [255, 0, 1, 2, 3] });
+    expect(await readBytes(reader)).toEqual({ done: true, bytes: undefined });
   });
 
   it("replays existing chunks and streams future pushes immediately", async () => {
@@ -106,6 +126,29 @@ describe("App browser stream helpers", () => {
     vinext.__VINEXT_RSC_CHUNKS__!.push("omega");
     expect(await readText(reader)).toEqual({ done: false, text: "omega" });
     expect(await readText(reader)).toEqual({ done: true, text: undefined });
+  });
+
+  it("streams progressive binary chunks without UTF-8 replacement", async () => {
+    // Ported from Next.js: test/e2e/app-dir/binary/rsc-binary.test.ts
+    // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/binary/rsc-binary.test.ts
+    setGlobalDocument({
+      readyState: "loading",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as Document);
+
+    vinext.__VINEXT_RSC_CHUNKS__ = [];
+    vinext.__VINEXT_RSC_DONE__ = false;
+
+    const reader = createProgressiveRscStream().getReader();
+
+    vinext.__VINEXT_RSC_CHUNKS__!.push([3, "/wABAgM="]);
+    expect(await readBytes(reader)).toEqual({ done: false, bytes: [255, 0, 1, 2, 3] });
+
+    vinext.__VINEXT_RSC_DONE__ = true;
+    vinext.__VINEXT_RSC_CHUNKS__!.push("final");
+    expect(await readText(reader)).toEqual({ done: false, text: "final" });
+    expect(await readBytes(reader)).toEqual({ done: true, bytes: undefined });
   });
 
   it("errors truncated streams on DOMContentLoaded before the done marker", async () => {

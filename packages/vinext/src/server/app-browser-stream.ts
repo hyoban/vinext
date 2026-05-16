@@ -1,5 +1,6 @@
 import type { ReactFormState } from "react-dom/client";
 import { RSC_FORM_STATE_GLOBAL } from "./app-browser-hydration.js";
+import { decodeRscEmbeddedChunk, type RscEmbeddedChunk } from "./app-rsc-embedded-chunks.js";
 
 type NavigationSnapshot = {
   pathname: string;
@@ -7,14 +8,14 @@ type NavigationSnapshot = {
 };
 
 type LegacyRscEmbedData = {
-  rsc: string[];
+  rsc: RscEmbeddedChunk[];
   params?: Record<string, string | string[]>;
   nav?: NavigationSnapshot;
 };
 
 type VinextBrowserGlobals = {
   __VINEXT_RSC__?: LegacyRscEmbedData;
-  __VINEXT_RSC_CHUNKS__?: string[];
+  __VINEXT_RSC_CHUNKS__?: RscEmbeddedChunk[];
   __VINEXT_RSC_DONE__?: boolean;
   [RSC_FORM_STATE_GLOBAL]?: ReactFormState;
   __VINEXT_RSC_PARAMS__?: Record<string, string | string[]>;
@@ -32,14 +33,15 @@ function createUnexpectedRscStreamCloseError(): Error {
 }
 
 /**
- * Convert embedded text chunks back to a ReadableStream of Uint8Array chunks.
+ * Convert embedded chunks back to a ReadableStream of Uint8Array chunks.
  */
-export function chunksToReadableStream(chunks: readonly string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
+export function chunksToReadableStream(
+  chunks: readonly RscEmbeddedChunk[],
+): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       for (const chunk of chunks) {
-        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(decodeRscEmbeddedChunk(chunk));
       }
       controller.close();
     },
@@ -54,15 +56,13 @@ export function chunksToReadableStream(chunks: readonly string[]): ReadableStrea
  * instead of polling with setTimeout.
  */
 export function createProgressiveRscStream(): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-
   return new ReadableStream<Uint8Array>({
     start(controller) {
       const vinext = getVinextBrowserGlobal();
       const initialChunks = vinext.__VINEXT_RSC_CHUNKS__ ?? [];
 
       for (const chunk of initialChunks) {
-        controller.enqueue(encoder.encode(chunk));
+        controller.enqueue(decodeRscEmbeddedChunk(chunk));
       }
 
       if (vinext.__VINEXT_RSC_DONE__) {
@@ -93,13 +93,13 @@ export function createProgressiveRscStream(): ReadableStream<Uint8Array> {
       };
 
       const arr = (vinext.__VINEXT_RSC_CHUNKS__ ??= []);
-      arr.push = function (...chunks: string[]): number {
+      arr.push = function (...chunks: RscEmbeddedChunk[]): number {
         const length = Array.prototype.push.apply(this, chunks);
 
         if (closed) return length;
 
         for (const chunk of chunks) {
-          controller.enqueue(encoder.encode(chunk));
+          controller.enqueue(decodeRscEmbeddedChunk(chunk));
         }
 
         if (vinext.__VINEXT_RSC_DONE__) {

@@ -66,6 +66,11 @@ function closeServer(server: Server): Promise<void> {
 // ─── App Router RSC payload extraction ───────────────────────────────────────
 
 describe("extractRscPayloadFromPrerenderedHtml", () => {
+  function decodeExtractedPayload(html: string): string | null {
+    const payload = extractRscPayloadFromPrerenderedHtml(html);
+    return payload === null ? null : new TextDecoder().decode(payload);
+  }
+
   it("reconstructs streamed RSC chunks from inline bootstrap scripts", () => {
     const chunks = [
       '0:D{"name":"layout"}\n',
@@ -84,7 +89,24 @@ describe("extractRscPayloadFromPrerenderedHtml", () => {
       "<script>self.__VINEXT_RSC_DONE__=true</script>" +
       "</body></html>";
 
-    expect(extractRscPayloadFromPrerenderedHtml(html)).toBe(chunks.join(""));
+    expect(decodeExtractedPayload(html)).toBe(chunks.join(""));
+  });
+
+  it("reconstructs binary RSC chunks from inline bootstrap scripts", () => {
+    // Ported from Next.js: test/e2e/app-dir/binary/rsc-binary.test.ts
+    // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/binary/rsc-binary.test.ts
+    const html =
+      "<html><body>" +
+      `<script>self.__VINEXT_RSC_CHUNKS__=self.__VINEXT_RSC_CHUNKS__||[];self.__VINEXT_RSC_CHUNKS__.push(${safeJsonStringify("0:text\n")})</script>` +
+      '<script>self.__VINEXT_RSC_CHUNKS__=self.__VINEXT_RSC_CHUNKS__||[];self.__VINEXT_RSC_CHUNKS__.push([3,"/wABAgM="])</script>' +
+      "<script>self.__VINEXT_RSC_DONE__=true</script>" +
+      "</body></html>";
+
+    const payload = extractRscPayloadFromPrerenderedHtml(html);
+
+    expect(payload).toEqual(
+      new Uint8Array([...new TextEncoder().encode("0:text\n"), 255, 0, 1, 2, 3]),
+    );
   });
 
   it("throws when the done marker is missing", () => {
