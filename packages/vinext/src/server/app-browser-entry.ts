@@ -147,7 +147,9 @@ const MAX_VISITED_RESPONSE_CACHE_SIZE = 50;
 const VISITED_RESPONSE_CACHE_TTL = 5 * 60_000;
 const MAX_TRAVERSAL_CACHE_TTL = 30 * 60_000;
 const CLIENT_RSC_COMPATIBILITY_ID = getVinextRscCompatibilityId();
-const browserNavigationController = createAppBrowserNavigationController();
+const browserNavigationController = createAppBrowserNavigationController({
+  syncHistoryStatePreviousNextUrl: syncCurrentHistoryStatePreviousNextUrl,
+});
 const discardedServerActionRefreshScheduler = createDiscardedServerActionRefreshScheduler({
   runRefresh() {
     clearClientNavigationCaches();
@@ -234,6 +236,28 @@ function clearClientNavigationCaches(): void {
   clearPrefetchState();
 }
 
+function syncCurrentHistoryStatePreviousNextUrl(previousNextUrl: string | null): void {
+  if (readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl) {
+    return;
+  }
+
+  const nextHistoryState = createHistoryStateWithPreviousNextUrl(
+    window.history.state,
+    previousNextUrl,
+  );
+  // First attempt: use replaceHistoryStateWithoutNotify which fires no popstate
+  // or hashchange events. If the browser accepted the state update (checked via
+  // readHistoryStatePreviousNextUrl), we're done. The double-read is needed
+  // because some browsers (notably Safari) can silently coalesce or ignore
+  // replaceState calls when called in rapid succession (e.g. back-to-back
+  // navigation commits). The fallback fires only when the state didn't stick.
+  replaceHistoryStateWithoutNotify(nextHistoryState, "", window.location.href);
+  if (readHistoryStatePreviousNextUrl(window.history.state) === previousNextUrl) {
+    return;
+  }
+  window.history.replaceState(nextHistoryState, "", window.location.href);
+}
+
 function createActionInitiationSnapshot() {
   const routerState = getBrowserRouterState();
   return createServerActionInitiationSnapshot({
@@ -265,17 +289,26 @@ function createNavigationCommitEffect(options: {
     }
 
     const targetHref = new URL(href, window.location.origin).href;
-    stageClientParams(params);
     const preserveExistingState = historyUpdateMode === "replace";
     const historyState = createHistoryStateWithPreviousNextUrl(
       preserveExistingState ? window.history.state : null,
       previousNextUrl,
     );
 
+    let wroteHistoryState = false;
     if (historyUpdateMode === "replace" && window.location.href !== targetHref) {
+      stageClientParams(params);
       replaceHistoryStateWithoutNotify(historyState, "", href);
+      wroteHistoryState = true;
     } else if (historyUpdateMode === "push" && window.location.href !== targetHref) {
+      stageClientParams(params);
       pushHistoryStateWithoutNotify(historyState, "", href);
+      wroteHistoryState = true;
+    }
+
+    if (!wroteHistoryState) {
+      syncCurrentHistoryStatePreviousNextUrl(previousNextUrl);
+      stageClientParams(params);
     }
 
     // URL has been updated; the recovery hard-nav target is no longer needed.
@@ -435,12 +468,30 @@ function getRequestState(
     };
   }
 
+  // Two branches for "navigate":
+  // 1. previousNextUrl !== null → a committed intercepted navigation set this
+  //    in browser state (requires proof). This is the proven interception path.
+  // 2. previousNextUrl === null → fall through to legacy DOM-derived context.
+  //    This fires for non-intercepted navigations (direct loads, normal client
+  //    navs) where no proven interception state exists. The legacy path returns
+  //    whatever the current DOM/history context reflects.
   switch (navigationKind) {
-    case "navigate":
+    case "navigate": {
+      const currentPreviousNextUrl = getBrowserRouterState().previousNextUrl;
+      if (currentPreviousNextUrl !== null) {
+        return {
+          interceptionContext: resolveInterceptionContextFromPreviousNextUrl(
+            currentPreviousNextUrl,
+            __basePath,
+          ),
+          previousNextUrl: currentPreviousNextUrl,
+        };
+      }
       return {
         interceptionContext: getCurrentInterceptionContext(),
         previousNextUrl: getCurrentNextUrl(),
       };
+    }
     case "traverse": {
       const previousNextUrl = readHistoryStatePreviousNextUrl(window.history.state);
       return {
@@ -500,6 +551,7 @@ function BrowserRoot({
   const [treeStateValue, setTreeStateValue] = useState<AppRouterState | Promise<AppRouterState>>({
     activeOperation: null,
     elements: resolvedElements,
+    interception: initialMetadata.interception,
     interceptionContext: initialMetadata.interceptionContext,
     layoutIds: initialMetadata.layoutIds,
     layoutFlags: initialMetadata.layoutFlags,
@@ -830,6 +882,9 @@ function registerServerActionCallback(): void {
     // which sends `Next-URL` on action POSTs when the current tree contains
     // an interception route.
     const actionInitiation = createActionInitiationSnapshot();
+    // Keep history aligned with the captured snapshot. Action POST headers
+    // read from actionInitiation, not from history, after this point.
+    syncCurrentHistoryStatePreviousNextUrl(actionInitiation.routerState.previousNextUrl);
     const body = await encodeReply(args, { temporaryReferences });
     const { headers } = resolveServerActionRequestState({
       actionId: id,
@@ -1049,6 +1104,9 @@ function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
         const requestState = getRequestState(navigationKind, currentPrevNextUrl);
         const requestInterceptionContext = requestState.interceptionContext;
         const requestPreviousNextUrl = requestState.previousNextUrl;
+        if (navigationKind === "refresh") {
+          syncCurrentHistoryStatePreviousNextUrl(requestPreviousNextUrl);
+        }
 
         // Set this navigation as the pending pathname, overwriting any previous.
         // Pass navId so only this navigation (or a newer one) can clear it later.

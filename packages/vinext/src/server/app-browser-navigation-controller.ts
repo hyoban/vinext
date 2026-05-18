@@ -55,6 +55,7 @@ type SameUrlServerActionLifecycleOptions = {
 type BrowserNavigationControllerDeps = {
   commitClientNavigationState?: typeof commitClientNavigationState;
   performHardNavigation?: (href: string, mode?: HardNavigationMode) => boolean;
+  syncHistoryStatePreviousNextUrl?: (previousNextUrl: string | null) => void;
 };
 
 type BrowserNavigationController = {
@@ -190,6 +191,7 @@ export function createAppBrowserNavigationController(
   const commitClientNavigationStateImpl =
     deps.commitClientNavigationState ?? commitClientNavigationState;
   const performHardNavigation = deps.performHardNavigation ?? performHardNavigationWithLoopGuard;
+  const syncHistoryStatePreviousNextUrl = deps.syncHistoryStatePreviousNextUrl ?? (() => {});
 
   // These are plain module-level variables (inside the controller closure),
   // unlike ClientNavigationState which uses Symbol.for to survive multiple
@@ -624,6 +626,7 @@ export function createAppBrowserNavigationController(
 
       if (latestApproval.approvedCommit) {
         dispatchSynchronousVisibleCommit(latestApproval.approvedCommit);
+        syncHistoryStatePreviousNextUrl(latestApproval.approvedCommit.previousNextUrl);
       } else {
         notifyDiscardedServerActionRevalidation(lifecycleOptions);
       }

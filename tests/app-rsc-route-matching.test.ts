@@ -122,6 +122,26 @@ describe("App RSC route matching", () => {
     });
   });
 
+  it("does not treat a target match as an intercept without a matching source route", () => {
+    const matcher = createAppRscRouteMatcher([
+      route("/feed", ["feed"], {
+        modal: {
+          intercepts: [
+            {
+              targetPattern: "/photos/:id",
+              interceptLayouts: ["modal-layout"],
+              page: "photo-page",
+              params: ["id"],
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(matcher.findIntercept("/photos/42", null)).toBeNull();
+    expect(matcher.findIntercept("/photos/42", "/gallery")).toBeNull();
+  });
+
   it("canonicalizes encoded source path parts for interception params", () => {
     const matcher = createAppRscRouteMatcher([
       route("/_sites/:tenant", ["_sites", ":tenant"], {

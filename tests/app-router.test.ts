@@ -744,7 +744,10 @@ describe("App Router integration", () => {
     // to /team/[teamId]/settings. The source route has a dynamic :teamId segment.
     // The intercepting route handler must extract "42" from the URL, not ":teamId".
     const res = await fetch(`${baseUrl}/team/42/settings.rsc`, {
-      headers: { Accept: "text/x-component" },
+      headers: {
+        Accept: "text/x-component",
+        "X-Vinext-Interception-Context": "/team/42/members",
+      },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/x-component");
@@ -4317,13 +4320,19 @@ describe("App Router middleware with NextRequest", () => {
     // which must merge _mwCtx.headers into the Response — same as the normal
     // page path through buildAppPageRscResponse().
     const res = await fetch(`${baseUrl}/photos/42.rsc`, {
-      headers: { Accept: "text/x-component" },
+      headers: {
+        Accept: "text/x-component",
+        "X-Vinext-Interception-Context": "/feed",
+      },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/x-component");
     // Middleware sets x-mw-ran and x-mw-pathname on all matched paths
     expect(res.headers.get("x-mw-ran")).toBe("true");
     expect(res.headers.get("x-mw-pathname")).toBe("/photos/42");
+    const payload = await res.text();
+    expect(payload).toContain("Photo Modal");
+    expect(payload).toContain("Photo Feed");
   });
 });
 

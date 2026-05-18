@@ -736,7 +736,9 @@ export default __createAppRscHandler({
         return {
           interceptionContext,
           interceptLayouts: intercept.interceptLayouts,
+          interceptSlotId: intercept.slotId,
           interceptSlotKey: intercept.slotKey,
+          interceptSourceMatchedUrl: interceptionContext,
           interceptPage: intercept.page,
           interceptParams: intercept.matchedParams,
         };

@@ -12,6 +12,7 @@ type AppRscInterceptForMatching = {
 };
 
 type AppRscSlotForMatching = {
+  id?: string | null;
   intercepts?: readonly AppRscInterceptForMatching[];
 };
 
@@ -32,6 +33,7 @@ type AppRscInterceptLookupEntry = {
   interceptLayouts: readonly unknown[];
   page: unknown;
   params: readonly string[];
+  slotId: string | null;
 };
 
 function createRouteParams(): AppRscRouteParams {
@@ -58,21 +60,17 @@ export function createAppRscRouteMatcher<Route extends AppRscRouteForMatching>(
       return trieMatch(routeTrie, appRscPathnameParts(url));
     },
     findIntercept(pathname, sourcePathname = null) {
+      if (sourcePathname === null) return null;
       const urlParts = appRscPathnameParts(pathname);
+      const sourceParts = appRscPathnameParts(sourcePathname);
       for (const entry of interceptLookup) {
         const params = matchAppRscRoutePattern(urlParts, entry.targetPatternParts);
         if (params !== null) {
-          let sourceParams = createRouteParams();
-          if (sourcePathname !== null) {
-            const sourceRoute = routes[entry.sourceRouteIndex];
-            const sourceParts = appRscPathnameParts(sourcePathname);
-            const matchedSourceParams = sourceRoute
-              ? matchAppRscRoutePattern(sourceParts, sourceRoute.patternParts)
-              : null;
-            if (matchedSourceParams !== null) {
-              sourceParams = matchedSourceParams;
-            }
-          }
+          const sourceRoute = routes[entry.sourceRouteIndex];
+          const sourceParams = sourceRoute
+            ? matchAppRscRoutePattern(sourceParts, sourceRoute.patternParts)
+            : null;
+          if (sourceParams === null) continue;
           return { ...entry, matchedParams: mergeMatchedParams(sourceParams, params) };
         }
       }
@@ -94,6 +92,7 @@ function createInterceptLookup<Route extends AppRscRouteForMatching>(
         interceptLookup.push({
           sourceRouteIndex: routeIndex,
           slotKey,
+          slotId: typeof slotModule.id === "string" ? slotModule.id : null,
           targetPattern: intercept.targetPattern,
           targetPatternParts: intercept.targetPattern.split("/").filter(Boolean),
           interceptLayouts: intercept.interceptLayouts,
