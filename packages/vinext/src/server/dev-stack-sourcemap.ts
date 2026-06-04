@@ -60,7 +60,11 @@ async function handleOriginalStackTraceRequest(
       return;
     }
 
-    const stack = await resolveDevServerStackTrace(server, payload.stack, req.headers.host);
+    const stack = await resolveDevServerStackTrace(
+      server,
+      payload.stack,
+      getDevStackSourcemapRequestHost(req.headers),
+    );
     writeJson(res, 200, { stack });
   } catch {
     writeJson(res, 500, { error: "Internal Server Error" });
@@ -91,6 +95,15 @@ async function readRequestBody(req: IncomingMessage): Promise<string> {
 function writeJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
   res.end(JSON.stringify(payload));
+}
+
+function getDevStackSourcemapRequestHost(headers: IncomingMessage["headers"]): string | undefined {
+  return normalizeRequestHost(headers["x-forwarded-host"]) ?? normalizeRequestHost(headers.host);
+}
+
+function normalizeRequestHost(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw?.split(",")[0]?.trim().toLowerCase() || undefined;
 }
 
 async function resolveDevServerStackTrace(
