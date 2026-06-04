@@ -691,7 +691,11 @@ declare module "next/cache" {
     resetRequestCache(): void;
   }
 
+  export function setDataCacheHandler(handler: CacheHandler): void;
+  export function getDataCacheHandler(): CacheHandler;
+  /** @deprecated Use setDataCacheHandler. */
   export function setCacheHandler(handler: CacheHandler): void;
+  /** @deprecated Use getDataCacheHandler. */
   export function getCacheHandler(): CacheHandler;
   export function configureMemoryCacheHandler(options?: {
     cacheMaxMemorySize?: number;
