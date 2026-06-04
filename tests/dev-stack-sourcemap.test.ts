@@ -1,10 +1,14 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { PassThrough } from "node:stream";
 import type { ViteDevServer } from "vite";
 import { describe, expect, it } from "vite-plus/test";
 import {
   decodeVlqSegment,
+  installDevStackSourcemapMiddleware,
   mapStackLine,
   originalPositionFor,
   resolveSourceFile,
+  VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT,
   type SourceMapPayload,
 } from "../packages/vinext/src/server/dev-stack-sourcemap.js";
 
@@ -13,11 +17,15 @@ const SOURCE_MAP = {
   mappings: "AAAA,KASE",
 } satisfies SourceMapPayload;
 
+type DevStackMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
+
 function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
   server: ViteDevServer;
   transformRequests: string[];
+  middlewareHandlers: DevStackMiddleware[];
 } {
   const transformRequests: string[] = [];
+  const middlewareHandlers: DevStackMiddleware[] = [];
   const server = {
     environments: {
       client: {
@@ -27,10 +35,103 @@ function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
         },
       },
     },
+    middlewares: {
+      use(handler: DevStackMiddleware) {
+        middlewareHandlers.push(handler);
+      },
+    },
   } as unknown as ViteDevServer;
 
-  return { server, transformRequests };
+  return { server, transformRequests, middlewareHandlers };
 }
+
+function mockStackTraceRequest(body: string): IncomingMessage {
+  const stream = new PassThrough();
+  const req = Object.assign(stream, {
+    method: "POST",
+    url: VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT,
+    headers: { host: "localhost:5173" },
+  }) as unknown as IncomingMessage;
+
+  queueMicrotask(() => {
+    stream.end(body);
+  });
+
+  return req;
+}
+
+function mockResponse(): ServerResponse & {
+  _body: string;
+  _headers: Record<string, string>;
+  _statusCode: number;
+  done: Promise<void>;
+} {
+  let resolveDone!: () => void;
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  const headers: Record<string, string> = {};
+  let headersSent = false;
+  const res = {
+    statusCode: 200,
+    get headersSent() {
+      return headersSent;
+    },
+    _body: "",
+    _headers: headers,
+    _statusCode: 200,
+    done,
+    writeHead(status: number, hdrs?: Record<string, string>) {
+      res.statusCode = status;
+      res._statusCode = status;
+      headersSent = true;
+      if (hdrs) {
+        for (const [key, value] of Object.entries(hdrs)) {
+          headers[key.toLowerCase()] = value;
+        }
+      }
+      return res;
+    },
+    end(data?: string | Buffer) {
+      if (data !== undefined) {
+        res._body = Buffer.isBuffer(data) ? data.toString("utf8") : data;
+      }
+      resolveDone();
+      return res;
+    },
+  } as unknown as ServerResponse & {
+    _body: string;
+    _headers: Record<string, string>;
+    _statusCode: number;
+    done: Promise<void>;
+  };
+
+  return res;
+}
+
+describe("installDevStackSourcemapMiddleware", () => {
+  it("returns 413 when the stack trace request body exceeds 1 MB", async () => {
+    const { server, middlewareHandlers, transformRequests } = createServer();
+    installDevStackSourcemapMiddleware(server);
+    const middleware = middlewareHandlers[0];
+    expect(middleware).toBeDefined();
+
+    const req = mockStackTraceRequest(JSON.stringify({ stack: "x".repeat(1024 * 1024) }));
+    const res = mockResponse();
+    let nextCalled = false;
+
+    middleware!(req, res, () => {
+      nextCalled = true;
+    });
+
+    await res.done;
+
+    expect(nextCalled).toBe(false);
+    expect(res._statusCode).toBe(413);
+    expect(JSON.parse(res._body)).toEqual({ error: "Payload Too Large" });
+    expect(transformRequests).toEqual([]);
+  });
+});
 
 describe("decodeVlqSegment", () => {
   it("decodes base64 VLQ source-map segments", () => {

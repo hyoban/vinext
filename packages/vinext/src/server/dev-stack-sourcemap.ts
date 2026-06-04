@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 export const VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
 
+const MAX_ORIGINAL_STACK_TRACE_BODY_BYTES = 1024 * 1024;
+
 export type SourceMapPayload = {
   version?: number;
   sources: string[];
@@ -19,6 +21,8 @@ type SourceMapPosition = {
 const V8_PAREN_STACK_LINE = /^(\s*at\s+.*?\()(.+):(\d+):(\d+)(\)\s*)$/;
 const V8_BARE_STACK_LINE = /^(\s*at\s+)(.+):(\d+):(\d+)(\s*)$/;
 const MOZ_STACK_LINE = /^([^@\n]*@)(.+):(\d+):(\d+)(\s*)$/;
+
+class RequestBodyTooLargeError extends Error {}
 
 const BASE64_VLQ_VALUES: Record<string, number> = Object.create(null) as Record<string, number>;
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -68,7 +72,11 @@ async function handleOriginalStackTraceRequest(
       getDevStackSourcemapRequestHost(req.headers),
     );
     writeJson(res, 200, { stack });
-  } catch {
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      writeJson(res, 413, { error: "Payload Too Large" });
+      return;
+    }
     writeJson(res, 500, { error: "Internal Server Error" });
   }
 }
@@ -85,12 +93,29 @@ function parseStackTraceRequestBody(body: string): { stack: string } | null {
 async function readRequestBody(req: IncomingMessage): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     let body = "";
+    let bytes = 0;
+    let settled = false;
     req.setEncoding("utf8");
     req.on("data", (chunk: string) => {
+      bytes += Buffer.byteLength(chunk, "utf8");
+      if (bytes > MAX_ORIGINAL_STACK_TRACE_BODY_BYTES) {
+        settled = true;
+        reject(new RequestBodyTooLargeError());
+        req.destroy();
+        return;
+      }
       body += chunk;
     });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(body);
+    });
+    req.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    });
   });
 }
 
