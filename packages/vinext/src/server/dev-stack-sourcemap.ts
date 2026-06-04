@@ -1,7 +1,7 @@
 import type { ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-export const VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
+const VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
 
 type SourceMapPayload = {
   version?: number;
