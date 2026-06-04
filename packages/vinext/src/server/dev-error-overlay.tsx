@@ -26,13 +26,13 @@ import {
   subscribeOverlay,
   updateOverlayErrorStack,
 } from "./dev-error-overlay-store.js";
+import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap.js";
 
 // Re-export so callers (e.g. the HMR rsc:update handler) can clear the
 // overlay when a new payload lands.
 export { dismissOverlay } from "./dev-error-overlay-store.js";
 
 const MOUNT_NODE_ID = "__vinext_dev_error_overlay_root";
-const ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
 
 let reactRoot: Root | null = null;
 let installed = false;
@@ -451,7 +451,7 @@ async function resolveBrowserStackTrace(stack: string | undefined): Promise<stri
   }
 
   try {
-    const response = await fetch(ORIGINAL_STACK_TRACE_ENDPOINT, {
+    const response = await fetch(VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stack }),
