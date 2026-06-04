@@ -21,15 +21,7 @@ test("maps browser runtime error stack frames back to original TSX source lines"
     "client-runtime-sourcemap: original TSX throw line",
   );
 
-  const frames = await page
-    .getByTestId("vinext-dev-error-stack")
-    .locator("li")
-    .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
-  const sourceFrame = frames.find((frame) =>
-    frame.includes("client-runtime-sourcemap/source-mapped-runtime-error.tsx"),
-  );
-
-  expect(sourceFrame ?? "").toContain(
+  await expect(page.getByTestId("vinext-dev-error-stack")).toContainText(
     `client-runtime-sourcemap/source-mapped-runtime-error.tsx:${EXPECTED_THROW_LINE}:`,
   );
 });

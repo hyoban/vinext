@@ -24,6 +24,7 @@ import {
   reportToOverlay,
   setOverlayIndex,
   subscribeOverlay,
+  updateOverlayErrorStack,
 } from "./dev-error-overlay-store.js";
 
 // Re-export so callers (e.g. the HMR rsc:update handler) can clear the
@@ -93,11 +94,17 @@ function reportDevError(
   const stack = error instanceof Error ? error.stack : undefined;
 
   ensureMounted();
-  reportToOverlay({
+  const id = reportToOverlay({
     source: options.source,
     message,
     stack,
     componentStack: options.componentStack,
+  });
+
+  void resolveBrowserStackTrace(stack).then((mappedStack) => {
+    if (mappedStack !== stack) {
+      updateOverlayErrorStack(id, mappedStack);
+    }
   });
 }
 
@@ -387,6 +394,30 @@ type Frame = { key: string; fn: string; file?: string; line?: string; col?: stri
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;
 const V8_BARE_FRAME = /^(.+):(\d+):(\d+)$/;
 const MOZ_FRAME = /^(.*?)@(.+):(\d+):(\d+)$/;
+const V8_PAREN_STACK_LINE = /^(\s*at\s+.*?\()(.+):(\d+):(\d+)(\)\s*)$/;
+const V8_BARE_STACK_LINE = /^(\s*at\s+)(.+):(\d+):(\d+)(\s*)$/;
+const MOZ_STACK_LINE = /^([^@\n]*@)(.+):(\d+):(\d+)(\s*)$/;
+const SOURCE_MAPPING_URL_RE = /(?:\/\/|\/\*)# sourceMappingURL=([^\s*]+)(?:\s*\*\/)?/g;
+
+type SourceMapPayload = {
+  version?: number;
+  sources: string[];
+  sourceRoot?: string;
+  mappings: string;
+};
+
+type SourceMapPosition = {
+  source: string;
+  line: number;
+  column: number;
+};
+
+const BASE64_VLQ_VALUES: Record<string, number> = Object.create(null) as Record<string, number>;
+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  .split("")
+  .forEach((char, index) => {
+    BASE64_VLQ_VALUES[char] = index;
+  });
 
 function parseStack(stack: string): Frame[] {
   const frames: Frame[] = [];
@@ -435,6 +466,241 @@ function parseStack(stack: string): Frame[] {
     pushFrame(line);
   }
   return frames;
+}
+
+async function resolveBrowserStackTrace(stack: string | undefined): Promise<string | undefined> {
+  if (!stack || typeof window === "undefined" || typeof fetch !== "function") {
+    return stack;
+  }
+
+  // Browsers expose raw generated locations in Error.stack. Vite dev modules
+  // carry inline source maps, so map same-origin frames before rendering.
+  const sourceMapCache = new Map<string, Promise<SourceMapPayload | null>>();
+  const mapped = await Promise.all(
+    stack.split("\n").map((line) => mapStackLine(line, sourceMapCache)),
+  );
+  return mapped.join("\n");
+}
+
+async function mapStackLine(
+  line: string,
+  sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
+): Promise<string> {
+  const v8Paren = line.match(V8_PAREN_STACK_LINE);
+  if (v8Paren) {
+    const mapped = await mapGeneratedFrame(v8Paren[2], v8Paren[3], v8Paren[4], sourceMapCache);
+    return mapped
+      ? `${v8Paren[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Paren[5]}`
+      : line;
+  }
+
+  const v8Bare = line.match(V8_BARE_STACK_LINE);
+  if (v8Bare) {
+    const mapped = await mapGeneratedFrame(v8Bare[2], v8Bare[3], v8Bare[4], sourceMapCache);
+    return mapped ? `${v8Bare[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Bare[5]}` : line;
+  }
+
+  const moz = line.match(MOZ_STACK_LINE);
+  if (moz) {
+    const mapped = await mapGeneratedFrame(moz[2], moz[3], moz[4], sourceMapCache);
+    return mapped ? `${moz[1]}${mapped.file}:${mapped.line}:${mapped.column}${moz[5]}` : line;
+  }
+
+  return line;
+}
+
+async function mapGeneratedFrame(
+  file: string,
+  line: string,
+  column: string,
+  sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
+): Promise<{ file: string; line: number; column: number } | null> {
+  const generatedUrl = getMappableGeneratedUrl(file);
+  if (!generatedUrl) return null;
+
+  const generatedLine = Number(line);
+  const generatedColumn = Number(column);
+  if (!Number.isFinite(generatedLine) || !Number.isFinite(generatedColumn)) return null;
+
+  const sourceMap = await getSourceMapForGeneratedUrl(generatedUrl, sourceMapCache);
+  if (!sourceMap) return null;
+
+  const original = originalPositionFor(sourceMap, generatedLine, generatedColumn);
+  if (!original) return null;
+
+  const originalFile = resolveSourceFile(original.source, sourceMap, generatedUrl);
+  return {
+    file: originalFile,
+    line: original.line,
+    column: original.column,
+  };
+}
+
+function getMappableGeneratedUrl(file: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(file, window.location.href);
+  } catch {
+    return null;
+  }
+
+  if (url.origin !== window.location.origin) return null;
+  if (url.pathname.includes("/node_modules/")) return null;
+  return url;
+}
+
+async function getSourceMapForGeneratedUrl(
+  generatedUrl: URL,
+  cache: Map<string, Promise<SourceMapPayload | null>>,
+): Promise<SourceMapPayload | null> {
+  const cacheKey = generatedUrl.href;
+  let sourceMap = cache.get(cacheKey);
+  if (!sourceMap) {
+    sourceMap = loadSourceMapForGeneratedUrl(generatedUrl);
+    cache.set(cacheKey, sourceMap);
+  }
+  return sourceMap;
+}
+
+async function loadSourceMapForGeneratedUrl(generatedUrl: URL): Promise<SourceMapPayload | null> {
+  try {
+    const response = await fetch(generatedUrl.href);
+    if (!response.ok) return null;
+
+    const code = await response.text();
+    const sourceMapUrl = findLastSourceMappingUrl(code);
+    if (!sourceMapUrl) return null;
+
+    const resolvedSourceMapUrl = new URL(sourceMapUrl, generatedUrl.href);
+    if (
+      resolvedSourceMapUrl.protocol !== "data:" &&
+      resolvedSourceMapUrl.origin !== window.location.origin
+    ) {
+      return null;
+    }
+
+    const sourceMapResponse = await fetch(resolvedSourceMapUrl.href);
+    if (!sourceMapResponse.ok) return null;
+
+    return normalizeSourceMapPayload(await sourceMapResponse.json());
+  } catch {
+    return null;
+  }
+}
+
+function findLastSourceMappingUrl(code: string): string | null {
+  let match: RegExpExecArray | null;
+  let last: string | null = null;
+  SOURCE_MAPPING_URL_RE.lastIndex = 0;
+  while ((match = SOURCE_MAPPING_URL_RE.exec(code))) {
+    last = match[1] ?? null;
+  }
+  return last;
+}
+
+function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const map = payload as {
+    version?: unknown;
+    sources?: unknown;
+    sourceRoot?: unknown;
+    mappings?: unknown;
+  };
+  if (!Array.isArray(map.sources) || typeof map.mappings !== "string") return null;
+  if (!map.sources.every((source): source is string => typeof source === "string")) return null;
+  return {
+    version: typeof map.version === "number" ? map.version : undefined,
+    sources: map.sources,
+    sourceRoot: typeof map.sourceRoot === "string" ? map.sourceRoot : undefined,
+    mappings: map.mappings,
+  };
+}
+
+function originalPositionFor(
+  sourceMap: SourceMapPayload,
+  generatedLine: number,
+  generatedColumn: number,
+): SourceMapPosition | null {
+  const targetLineIndex = generatedLine - 1;
+  const targetColumn = Math.max(0, generatedColumn - 1);
+  if (targetLineIndex < 0) return null;
+
+  let sourceIndex = 0;
+  let originalLine = 0;
+  let originalColumn = 0;
+  const generatedLines = sourceMap.mappings.split(";");
+
+  for (let generatedLineIndex = 0; generatedLineIndex <= targetLineIndex; generatedLineIndex++) {
+    const generatedSegments = generatedLines[generatedLineIndex];
+    if (generatedSegments === undefined) return null;
+
+    let generatedSegmentColumn = 0;
+    let bestMatch: SourceMapPosition | null = null;
+
+    for (const segment of generatedSegments.split(",")) {
+      if (!segment) continue;
+
+      const decoded = decodeVlqSegment(segment);
+      if (decoded.length === 0) continue;
+
+      generatedSegmentColumn += decoded[0] ?? 0;
+      if (decoded.length >= 4) {
+        sourceIndex += decoded[1] ?? 0;
+        originalLine += decoded[2] ?? 0;
+        originalColumn += decoded[3] ?? 0;
+      }
+
+      if (generatedLineIndex !== targetLineIndex) continue;
+      if (generatedSegmentColumn > targetColumn) break;
+
+      bestMatch =
+        decoded.length >= 4 && sourceMap.sources[sourceIndex]
+          ? {
+              source: sourceMap.sources[sourceIndex]!,
+              line: originalLine + 1,
+              column: originalColumn + 1,
+            }
+          : null;
+    }
+
+    if (generatedLineIndex === targetLineIndex) return bestMatch;
+  }
+
+  return null;
+}
+
+function decodeVlqSegment(segment: string): number[] {
+  const values: number[] = [];
+  let value = 0;
+  let shift = 0;
+
+  for (const char of segment) {
+    const integer = BASE64_VLQ_VALUES[char];
+    if (integer === undefined) return [];
+
+    value += (integer & 31) << shift;
+    if (integer & 32) {
+      shift += 5;
+      continue;
+    }
+
+    values.push(value & 1 ? -(value >> 1) : value >> 1);
+    value = 0;
+    shift = 0;
+  }
+
+  return values;
+}
+
+function resolveSourceFile(source: string, sourceMap: SourceMapPayload, generatedUrl: URL): string {
+  const rootedSource = sourceMap.sourceRoot
+    ? `${sourceMap.sourceRoot.replace(/\/?$/, "/")}${source}`
+    : source;
+  try {
+    return new URL(rootedSource, generatedUrl.href).href;
+  } catch {
+    return source;
+  }
 }
 
 // ---------------------------------------------------------------------------
