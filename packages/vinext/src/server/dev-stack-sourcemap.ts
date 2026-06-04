@@ -10,7 +10,7 @@ export type SourceMapPayload = {
   mappings: string;
 };
 
-export type SourceMapPosition = {
+type SourceMapPosition = {
   source: string;
   line: number;
   column: number;
