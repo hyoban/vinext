@@ -74,6 +74,7 @@ import { PHASE_PRODUCTION_BUILD, PHASE_DEVELOPMENT_SERVER } from "vinext/shims/c
 import { precompressAssets } from "./build/precompress.js";
 import { collectInlineCssManifest, injectInlineCssManifestGlobal } from "./build/inline-css.js";
 import { validateDevRequest } from "./server/dev-origin-check.js";
+import { installDevStackSourcemapMiddleware } from "./server/dev-stack-sourcemap.js";
 import {
   isExternalUrl,
   proxyExternalRequest,
@@ -2856,6 +2857,8 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
           }
           next();
         });
+
+        installDevStackSourcemapMiddleware(server);
 
         // Return a function to register middleware AFTER Vite's built-in middleware
         return () => {

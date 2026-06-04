@@ -5,9 +5,9 @@ const EXPECTED_THROW_LINE = 33;
 
 // Regression for https://github.com/langgenius/dify/issues/37031.
 // Next.js reference: dev client bundles remain source-map aware, and App Router
-// dev errors can request source maps through the dev server.
-// https://github.com/vercel/next.js/blob/canary/packages/next/src/build/webpack/config/blocks/base.ts
-// https://github.com/vercel/next.js/blob/canary/packages/next/src/client/app-find-source-map-url.ts
+// dev errors request original stack frames through the dev server.
+// https://github.com/vercel/next.js/blob/canary/packages/next/src/next-devtools/shared/stack-frame.ts
+// https://github.com/vercel/next.js/blob/canary/packages/next/src/server/dev/middleware-webpack.ts
 test("maps browser runtime error stack frames back to original TSX source lines", async ({
   page,
 }) => {
@@ -15,7 +15,14 @@ test("maps browser runtime error stack frames back to original TSX source lines"
   await page.waitForFunction(
     () => (window as Window & { __VINEXT_HYDRATED_AT?: number }).__VINEXT_HYDRATED_AT !== undefined,
   );
+
+  const originalStackTraceRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/__vinext_original-stack-trace" && request.method() === "POST";
+  });
+
   await page.getByTestId("trigger-client-runtime-sourcemap-error").click();
+  await originalStackTraceRequest;
 
   await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
     "client-runtime-sourcemap: original TSX throw line",
