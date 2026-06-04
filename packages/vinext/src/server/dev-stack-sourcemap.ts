@@ -3,14 +3,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 const VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
 
-type SourceMapPayload = {
+export type SourceMapPayload = {
   version?: number;
   sources: string[];
   sourceRoot?: string;
   mappings: string;
 };
 
-type SourceMapPosition = {
+export type SourceMapPosition = {
   source: string;
   line: number;
   column: number;
@@ -34,7 +34,9 @@ export function installDevStackSourcemapMiddleware(server: ViteDevServer): void 
       return;
     }
 
-    void handleOriginalStackTraceRequest(server, req, res);
+    handleOriginalStackTraceRequest(server, req, res).catch(() => {
+      if (!res.headersSent) writeJson(res, 500, { error: "Internal Server Error" });
+    });
   });
 }
 
@@ -118,7 +120,7 @@ async function resolveDevServerStackTrace(
   return mapped.join("\n");
 }
 
-async function mapStackLine(
+export async function mapStackLine(
   server: ViteDevServer,
   line: string,
   requestHost: string | undefined,
@@ -260,7 +262,7 @@ function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {
   };
 }
 
-function originalPositionFor(
+export function originalPositionFor(
   sourceMap: SourceMapPayload,
   generatedLine: number,
   generatedColumn: number,
@@ -313,7 +315,7 @@ function originalPositionFor(
   return null;
 }
 
-function decodeVlqSegment(segment: string): number[] {
+export function decodeVlqSegment(segment: string): number[] {
   const values: number[] = [];
   let value = 0;
   let shift = 0;
@@ -336,7 +338,11 @@ function decodeVlqSegment(segment: string): number[] {
   return values;
 }
 
-function resolveSourceFile(source: string, sourceMap: SourceMapPayload, generatedUrl: URL): string {
+export function resolveSourceFile(
+  source: string,
+  sourceMap: SourceMapPayload,
+  generatedUrl: URL,
+): string {
   const rootedSource = sourceMap.sourceRoot
     ? `${sourceMap.sourceRoot.replace(/\/?$/, "/")}${source}`
     : source;

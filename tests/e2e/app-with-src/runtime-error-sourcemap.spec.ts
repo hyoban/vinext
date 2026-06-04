@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 const BASE = "http://localhost:4181";
+// Keep in sync with the throw in source-mapped-runtime-error.tsx.
 const EXPECTED_THROW_LINE = 33;
 
 // Regression for https://github.com/langgenius/dify/issues/37031.
