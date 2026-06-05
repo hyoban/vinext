@@ -9,12 +9,13 @@
 // hydrateRoot(document, ...) tree — necessary because most of the errors we
 // want to surface are exactly the ones that take that tree down.
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { isNavigationSignalError } from "../utils/navigation-signal.js";
 import {
   type OverlayState,
+  type OverlayCodeFrame,
   type ReportedError,
   type Source,
   dismissOverlay,
@@ -120,12 +121,25 @@ function reportDevError(
     message,
     stack,
     ignoredStackFrames: undefined,
+    projectRoot: undefined,
+    codeFrame: undefined,
     componentStack: options.componentStack,
   });
 
   void resolveBrowserStackTrace(stack).then((mappedStackTrace) => {
-    if (mappedStackTrace.stack !== stack || mappedStackTrace.ignoredFrames !== undefined) {
-      updateOverlayErrorStack(id, mappedStackTrace.stack, mappedStackTrace.ignoredFrames);
+    if (
+      mappedStackTrace.stack !== stack ||
+      mappedStackTrace.ignoredFrames !== undefined ||
+      mappedStackTrace.codeFrame ||
+      mappedStackTrace.projectRoot
+    ) {
+      updateOverlayErrorStack(
+        id,
+        mappedStackTrace.stack,
+        mappedStackTrace.ignoredFrames,
+        mappedStackTrace.codeFrame,
+        mappedStackTrace.projectRoot,
+      );
     }
   });
 }
@@ -286,10 +300,14 @@ function DevErrorOverlay({
     () =>
       error.stack
         ? parseStack(error.stack).map((frame, frameIndex) =>
-            createDisplayStackFrame(frame, error.ignoredStackFrames?.[frameIndex] ?? false),
+            createDisplayStackFrame(
+              frame,
+              error.ignoredStackFrames?.[frameIndex] ?? false,
+              error.projectRoot,
+            ),
           )
         : [],
-    [error.stack, error.ignoredStackFrames],
+    [error.stack, error.ignoredStackFrames, error.projectRoot],
   );
   const [showIgnoredFrames, setShowIgnoredFrames] = useState(false);
   const hasVisibleFrame = frames.some((frame) => !frame.ignored);
@@ -383,6 +401,10 @@ function DevErrorOverlay({
             {error.message}
           </h2>
 
+          {error.codeFrame ? (
+            <CodeFrame codeFrame={error.codeFrame} projectRoot={error.projectRoot} />
+          ) : null}
+
           {frames.length > 0 ? (
             <div data-testid="vinext-dev-error-stack-container" style={stackContainerStyle}>
               <div style={stackHeaderStyle}>
@@ -427,14 +449,77 @@ function DevErrorOverlay({
   );
 }
 
+function CodeFrame({
+  codeFrame,
+  projectRoot,
+}: {
+  codeFrame: OverlayCodeFrame;
+  projectRoot: string | undefined;
+}): React.ReactNode {
+  const location = formatCodeFrameLocation(codeFrame, projectRoot);
+  const openInEditorFile = `${fileUrlToPath(codeFrame.file)}:${codeFrame.line}:${codeFrame.column}`;
+
+  return (
+    <section data-testid="vinext-dev-error-code-frame" style={codeFrameContainerStyle}>
+      <header style={codeFrameHeaderStyle}>
+        <span style={codeFrameLocationStyle}>{location}</span>
+        <button
+          type="button"
+          data-vinext-open-in-editor
+          className="vinext-overlay-code-frame-open"
+          title={`Open ${openInEditorFile} in editor`}
+          aria-label={`Open ${openInEditorFile} in editor`}
+          onClick={(event) => {
+            event.stopPropagation();
+            openViteEditor(openInEditorFile);
+          }}
+        >
+          ↗
+        </button>
+      </header>
+      <pre className="vinext-overlay-code-frame-pre" style={codeFramePreStyle}>
+        {codeFrame.lines.map((line) => (
+          <Fragment key={line.line}>
+            <span className="vinext-overlay-code-frame-line">
+              <span style={codeFrameGutterStyle}>
+                <span style={line.isErrorLine ? codeFrameErrorMarkerStyle : undefined}>
+                  {line.isErrorLine ? ">" : " "}
+                </span>
+                {String(line.line).padStart(3, " ")} |
+              </span>
+              <span>{line.text || " "}</span>
+            </span>
+            {line.isErrorLine ? (
+              <span style={codeFrameCaretLineStyle}>
+                <span style={codeFrameGutterStyle}>{"     |"}</span>
+                <span>{" ".repeat(Math.max(0, codeFrame.column - 1))}^</span>
+              </span>
+            ) : null}
+          </Fragment>
+        ))}
+      </pre>
+    </section>
+  );
+}
+
+function formatCodeFrameLocation(
+  codeFrame: OverlayCodeFrame,
+  projectRoot: string | undefined,
+): string {
+  const file = formatOverlayDisplayFile(codeFrame.file, projectRoot);
+  const methodName = codeFrame.methodName ? ` @ ${codeFrame.methodName}` : "";
+  return `${file}:${codeFrame.line}:${codeFrame.column}${methodName}`;
+}
+
 function StackFrameRow({ frame }: { frame: DisplayFrame }): React.ReactNode {
   const openInEditorFile = formatStackFrameLocation(frame);
+  const displayFile = frame.displayFile ?? frame.file;
   const content = (
     <>
       <span style={frameFnStyle}>{frame.fn}</span>
-      {frame.file ? (
+      {displayFile ? (
         <span style={frameLocStyle}>
-          {frame.file}
+          {displayFile}
           {frame.line ? `:${frame.line}` : ""}
           {frame.col ? `:${frame.col}` : ""}
         </span>
@@ -487,7 +572,7 @@ function StackFrameRow({ frame }: { frame: DisplayFrame }): React.ReactNode {
 
 type Frame = { key: string; fn: string; file?: string; line?: string; col?: string };
 type FrameLocation = { file?: string; line?: string; col?: string };
-type DisplayFrame = Frame & { ignored: boolean };
+type DisplayFrame = Frame & { displayFile?: string; ignored: boolean };
 
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;
 const V8_BARE_FRAME = /^(.+):(\d+):(\d+)$/;
@@ -551,11 +636,18 @@ function isStackFrameLine(line: string): boolean {
   return line.startsWith("at ") || MOZ_FRAME.test(line);
 }
 
-function createDisplayStackFrame(frame: Frame, ignored: boolean): DisplayFrame {
+function createDisplayStackFrame(
+  frame: Frame,
+  ignored: boolean,
+  projectRoot: string | undefined,
+): DisplayFrame {
   const normalizedFrame = normalizeStackFrameLocation(frame);
   return {
     ...frame,
     ...normalizedFrame,
+    ...(normalizedFrame.file
+      ? { displayFile: formatOverlayDisplayFile(normalizedFrame.file, projectRoot) }
+      : {}),
     ignored,
   };
 }
@@ -598,6 +690,36 @@ function fileUrlToPath(sourceUrl: string): string {
   }
 }
 
+export function formatOverlayDisplayFile(file: string, projectRoot?: string): string {
+  const normalizedFile = normalizeDisplayPath(fileUrlToPath(devirtualizeReactServerUrl(file)));
+  const normalizedRoot = projectRoot
+    ? stripTrailingDisplaySlash(normalizeDisplayPath(fileUrlToPath(projectRoot)))
+    : undefined;
+  if (!normalizedRoot) return normalizedFile;
+
+  const fileForCompare = normalizeCaseForPathCompare(normalizedFile);
+  const rootForCompare = normalizeCaseForPathCompare(normalizedRoot);
+  if (fileForCompare === rootForCompare) return ".";
+
+  const rootPrefix = `${rootForCompare}/`;
+  if (!fileForCompare.startsWith(rootPrefix)) return normalizedFile;
+
+  return normalizedFile.slice(normalizedRoot.length + 1);
+}
+
+function normalizeDisplayPath(file: string): string {
+  return file.replaceAll("\\", "/");
+}
+
+function stripTrailingDisplaySlash(file: string): string {
+  const stripped = file.replace(/\/+$/, "");
+  return stripped || (file.startsWith("/") ? "/" : "");
+}
+
+function normalizeCaseForPathCompare(file: string): string {
+  return /^[A-Za-z]:\//.test(file) ? file.toLowerCase() : file;
+}
+
 function formatStackFrameLocation(frame: FrameLocation): string | null {
   if (!frame.file) return null;
 
@@ -623,9 +745,12 @@ function openViteEditor(file: string): void {
   void fetch(createViteOpenInEditorUrl(file)).catch(() => {});
 }
 
-async function resolveBrowserStackTrace(
-  stack: string | undefined,
-): Promise<{ stack: string | undefined; ignoredFrames?: boolean[] }> {
+async function resolveBrowserStackTrace(stack: string | undefined): Promise<{
+  stack: string | undefined;
+  ignoredFrames?: boolean[];
+  projectRoot?: string;
+  codeFrame?: OverlayCodeFrame;
+}> {
   if (!stack || typeof window === "undefined" || typeof fetch !== "function") {
     return { stack };
   }
@@ -637,17 +762,80 @@ async function resolveBrowserStackTrace(
       body: JSON.stringify({ stack }),
     });
     if (!response.ok) return { stack };
-    const payload = (await response.json()) as { stack?: unknown; ignoredFrames?: unknown };
+    const payload = (await response.json()) as {
+      stack?: unknown;
+      ignoredFrames?: unknown;
+      projectRoot?: unknown;
+      codeFrame?: unknown;
+    };
     const ignoredFrames = Array.isArray(payload.ignoredFrames)
       ? payload.ignoredFrames.filter((value): value is boolean => typeof value === "boolean")
       : undefined;
+    const codeFrame = parseOverlayCodeFrame(payload.codeFrame);
     return {
       stack: typeof payload.stack === "string" ? payload.stack : stack,
       ignoredFrames,
+      ...(typeof payload.projectRoot === "string" && payload.projectRoot
+        ? { projectRoot: payload.projectRoot }
+        : {}),
+      ...(codeFrame ? { codeFrame } : {}),
     };
   } catch {
     return { stack };
   }
+}
+
+function parseOverlayCodeFrame(value: unknown): OverlayCodeFrame | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const payload = value as {
+    file?: unknown;
+    line?: unknown;
+    column?: unknown;
+    methodName?: unknown;
+    lines?: unknown;
+  };
+  const file = typeof payload.file === "string" ? payload.file : undefined;
+  const line =
+    typeof payload.line === "number" && Number.isInteger(payload.line) ? payload.line : undefined;
+  const column =
+    typeof payload.column === "number" && Number.isInteger(payload.column)
+      ? payload.column
+      : undefined;
+  const rawLines = Array.isArray(payload.lines) ? payload.lines : undefined;
+  if (!file || line === undefined || column === undefined || !rawLines) {
+    return undefined;
+  }
+
+  const lines = rawLines
+    .map((rawLine): OverlayCodeFrame["lines"][number] | null => {
+      if (!rawLine || typeof rawLine !== "object") return null;
+      const item = rawLine as { line?: unknown; text?: unknown; isErrorLine?: unknown };
+      if (
+        typeof item.line !== "number" ||
+        !Number.isInteger(item.line) ||
+        typeof item.text !== "string"
+      ) {
+        return null;
+      }
+      const line = item.line;
+      return {
+        line,
+        text: item.text,
+        isErrorLine: item.isErrorLine === true,
+      };
+    })
+    .filter((line): line is OverlayCodeFrame["lines"][number] => line !== null);
+  if (lines.length === 0) return undefined;
+
+  return {
+    file,
+    line,
+    column,
+    ...(typeof payload.methodName === "string" && payload.methodName
+      ? { methodName: payload.methodName }
+      : {}),
+    lines,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -683,6 +871,8 @@ const overlayStylesheet = `
   --vinext-overlay-danger-strong-border-hover: rgba(239, 68, 68, 0.7);
   --vinext-overlay-count-bg: rgba(255, 255, 255, 0.1);
   --vinext-overlay-count-fg: #d4d4d8;
+  --vinext-overlay-code-bg: rgba(255, 255, 255, 0.03);
+  --vinext-overlay-code-gutter: #71717a;
   --vinext-overlay-indicator-bg: #18181b;
   --vinext-overlay-indicator-bg-hover: #1f1f23;
   --vinext-overlay-scrollbar-thumb: rgba(161, 161, 170, 0.5);
@@ -712,6 +902,8 @@ const overlayStylesheet = `
     --vinext-overlay-danger-strong-border-hover: rgba(220, 38, 38, 0.45);
     --vinext-overlay-count-bg: rgba(24, 24, 27, 0.08);
     --vinext-overlay-count-fg: #52525b;
+    --vinext-overlay-code-bg: rgba(24, 24, 27, 0.025);
+    --vinext-overlay-code-gutter: #71717a;
     --vinext-overlay-indicator-bg: #ffffff;
     --vinext-overlay-indicator-bg-hover: #f4f4f5;
     --vinext-overlay-scrollbar-thumb: rgba(113, 113, 122, 0.45);
@@ -789,27 +981,56 @@ const overlayStylesheet = `
   outline: 2px solid var(--vinext-overlay-focus);
   outline-offset: 3px;
 }
-.vinext-overlay-body {
+.vinext-overlay-code-frame-line {
+  display: flex;
+  gap: 10px;
+  min-width: max-content;
+  padding: 0 12px;
+}
+.vinext-overlay-code-frame-open {
+  all: unset;
+  color: var(--vinext-overlay-muted);
+  cursor: pointer;
+  font: 600 13px ${FONT_STACK};
+  line-height: 1;
+  padding: 4px;
+  border-radius: 6px;
+}
+.vinext-overlay-code-frame-open:hover {
+  background: var(--vinext-overlay-hover);
+  color: var(--vinext-overlay-fg);
+}
+.vinext-overlay-code-frame-open:focus-visible {
+  outline: 2px solid var(--vinext-overlay-focus);
+  outline-offset: 2px;
+}
+.vinext-overlay-body,
+.vinext-overlay-code-frame-pre {
   scrollbar-width: thin;
   scrollbar-color: var(--vinext-overlay-scrollbar-thumb) transparent;
 }
-.vinext-overlay-body::-webkit-scrollbar {
+.vinext-overlay-body::-webkit-scrollbar,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.vinext-overlay-body::-webkit-scrollbar-track {
+.vinext-overlay-body::-webkit-scrollbar-track,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar-track {
   background: transparent;
 }
-.vinext-overlay-body::-webkit-scrollbar-thumb {
+.vinext-overlay-body::-webkit-scrollbar-thumb,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar-thumb {
   min-height: 44px;
   background: var(--vinext-overlay-scrollbar-thumb);
   border: 2px solid var(--vinext-overlay-scrollbar-border);
   border-radius: 999px;
 }
-.vinext-overlay-body::-webkit-scrollbar-thumb:hover {
+.vinext-overlay-body::-webkit-scrollbar-thumb:hover,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar-thumb:hover {
   background: var(--vinext-overlay-scrollbar-thumb-hover);
 }
-.vinext-overlay-body::-webkit-scrollbar-corner {
+.vinext-overlay-body::-webkit-scrollbar-corner,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar-corner {
   background: transparent;
 }
 .vinext-overlay-ignored-frames-toggle {
@@ -977,6 +1198,60 @@ const messageStyle: React.CSSProperties = {
   color: "var(--vinext-overlay-fg)",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
+};
+
+const codeFrameContainerStyle: React.CSSProperties = {
+  margin: "0 12px 18px",
+  border: "1px solid var(--vinext-overlay-border)",
+  borderRadius: 8,
+  overflow: "hidden",
+  background: "var(--vinext-overlay-code-bg)",
+};
+
+const codeFrameHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "8px 10px 8px 12px",
+  borderBottom: "1px solid var(--vinext-overlay-divider)",
+  fontFamily: MONO_STACK,
+  fontSize: 12,
+};
+
+const codeFrameLocationStyle: React.CSSProperties = {
+  color: "var(--vinext-overlay-fg)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const codeFramePreStyle: React.CSSProperties = {
+  margin: 0,
+  padding: "10px 0",
+  overflow: "auto",
+  fontFamily: MONO_STACK,
+  fontSize: 12,
+  lineHeight: 1.6,
+  color: "var(--vinext-overlay-muted)",
+};
+
+const codeFrameGutterStyle: React.CSSProperties = {
+  flex: "0 0 auto",
+  color: "var(--vinext-overlay-code-gutter)",
+  userSelect: "none",
+};
+
+const codeFrameErrorMarkerStyle: React.CSSProperties = {
+  color: "var(--vinext-overlay-danger)",
+};
+
+const codeFrameCaretLineStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 10,
+  minWidth: "max-content",
+  padding: "0 12px",
+  color: "var(--vinext-overlay-danger)",
 };
 
 const stackContainerStyle: React.CSSProperties = {

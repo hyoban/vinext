@@ -1,4 +1,5 @@
 import type { ViteDevServer } from "vite";
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -11,6 +12,7 @@ const MAX_ORIGINAL_STACK_TRACE_BODY_BYTES = 1024 * 1024;
 export type SourceMapPayload = {
   version?: number;
   sources: string[];
+  sourcesContent?: (string | null)[];
   sourceRoot?: string;
   mappings: string;
   ignoreList?: number[];
@@ -29,6 +31,22 @@ type SourceMapTracePosition = SourceMapPosition & {
 export type ResolvedStackTracePayload = {
   stack: string;
   ignoredFrames: boolean[];
+  projectRoot?: string;
+  codeFrame?: StackCodeFramePayload;
+};
+
+export type StackCodeFramePayload = {
+  file: string;
+  line: number;
+  column: number;
+  methodName?: string;
+  lines: StackCodeFrameLine[];
+};
+
+export type StackCodeFrameLine = {
+  line: number;
+  text: string;
+  isErrorLine: boolean;
 };
 
 type GeneratedFrame = {
@@ -163,9 +181,15 @@ async function resolveDevServerStackTrace(
       .split("\n")
       .map((line) => mapStackLineWithMetadata(server, line, requestHost, sourceMapCache)),
   );
+  const codeFrame = mapped.find(
+    (line) => line.isFrame && !line.ignored && line.codeFrame,
+  )?.codeFrame;
+  const projectRoot = normalizeProjectRoot(server.config?.root);
   return {
     stack: mapped.map((line) => line.line).join("\n"),
     ignoredFrames: mapped.flatMap((line) => (line.isFrame ? [line.ignored] : [])),
+    ...(projectRoot ? { projectRoot } : {}),
+    ...(codeFrame ? { codeFrame } : {}),
   };
 }
 
@@ -183,14 +207,21 @@ export async function mapStackLineWithMetadata(
   line: string,
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
-): Promise<{ line: string; isFrame: boolean; ignored: boolean }> {
+): Promise<{
+  line: string;
+  isFrame: boolean;
+  ignored: boolean;
+  codeFrame?: StackCodeFramePayload;
+}> {
   const v8Paren = line.match(V8_PAREN_STACK_LINE);
   if (v8Paren) {
+    const methodName = extractV8ParenMethodName(v8Paren[1]);
     const mapped = await mapGeneratedFrame(
       server,
       v8Paren[2],
       v8Paren[3],
       v8Paren[4],
+      methodName,
       requestHost,
       sourceMapCache,
     );
@@ -200,6 +231,7 @@ export async function mapStackLineWithMetadata(
         : line,
       isFrame: true,
       ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(v8Paren[2], requestHost),
+      ...(mapped?.codeFrame ? { codeFrame: mapped.codeFrame } : {}),
     };
   }
 
@@ -210,6 +242,7 @@ export async function mapStackLineWithMetadata(
       v8Bare[2],
       v8Bare[3],
       v8Bare[4],
+      undefined,
       requestHost,
       sourceMapCache,
     );
@@ -219,6 +252,7 @@ export async function mapStackLineWithMetadata(
         : line,
       isFrame: true,
       ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(v8Bare[2], requestHost),
+      ...(mapped?.codeFrame ? { codeFrame: mapped.codeFrame } : {}),
     };
   }
 
@@ -229,6 +263,7 @@ export async function mapStackLineWithMetadata(
       moz[2],
       moz[3],
       moz[4],
+      moz[1].replace(/@$/, "") || undefined,
       requestHost,
       sourceMapCache,
     );
@@ -236,6 +271,7 @@ export async function mapStackLineWithMetadata(
       line: mapped ? `${moz[1]}${mapped.file}:${mapped.line}:${mapped.column}${moz[5]}` : line,
       isFrame: true,
       ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(moz[2], requestHost),
+      ...(mapped?.codeFrame ? { codeFrame: mapped.codeFrame } : {}),
     };
   }
 
@@ -247,9 +283,16 @@ async function mapGeneratedFrame(
   file: string,
   line: string,
   column: string,
+  methodName: string | undefined,
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
-): Promise<{ file: string; line: number; column: number; ignored: boolean } | null> {
+): Promise<{
+  file: string;
+  line: number;
+  column: number;
+  ignored: boolean;
+  codeFrame?: StackCodeFramePayload;
+} | null> {
   const generatedFrame = getMappableGeneratedFrame(server, file, requestHost);
   if (!generatedFrame) return null;
 
@@ -268,6 +311,13 @@ async function mapGeneratedFrame(
     sourceMap,
     generatedFrame.sourceMapBaseUrl,
   );
+  const codeFrame = await createStackCodeFrame({
+    file: originalFile,
+    line: original.line,
+    column: original.column,
+    methodName,
+    sourceContent: sourceMap.sourcesContent?.[original.sourceIndex] ?? null,
+  });
   return {
     file: originalFile,
     line: original.line,
@@ -277,7 +327,22 @@ async function mapGeneratedFrame(
       isIgnoreListedOriginalFrame(original.source) ||
       isIgnoreListedOriginalFrame(originalFile) ||
       isIgnoreListedGeneratedFrame(file, requestHost),
+    ...(codeFrame ? { codeFrame } : {}),
   };
+}
+
+function extractV8ParenMethodName(prefix: string): string | undefined {
+  const methodName = prefix
+    .replace(/^\s*at\s+/, "")
+    .replace(/\($/, "")
+    .trim();
+  return methodName || undefined;
+}
+
+function normalizeProjectRoot(root: string | undefined): string | undefined {
+  if (!root) return undefined;
+  const normalized = root.replaceAll("\\", "/").replace(/\/+$/, "");
+  return normalized || (root.startsWith("/") ? "/" : undefined);
 }
 
 function stripTrailingSlash(value: string | undefined): string | undefined {
@@ -413,6 +478,54 @@ function isSourceMapIgnored(sourceMap: SourceMapPayload, sourceIndex: number): b
   return sourceMap.ignoreList?.includes(sourceIndex) ?? false;
 }
 
+async function createStackCodeFrame({
+  file,
+  line,
+  column,
+  methodName,
+  sourceContent,
+}: {
+  file: string;
+  line: number;
+  column: number;
+  methodName: string | undefined;
+  sourceContent: string | null;
+}): Promise<StackCodeFramePayload | null> {
+  const source = sourceContent ?? (await readSourceFileForCodeFrame(file));
+  if (!source) return null;
+
+  const sourceLines = source.split(/\r\n|\r|\n/);
+  if (line < 1 || line > sourceLines.length) return null;
+
+  const start = Math.max(1, line - 2);
+  const end = Math.min(sourceLines.length, line + 3);
+  const lines: StackCodeFrameLine[] = [];
+  for (let currentLine = start; currentLine <= end; currentLine++) {
+    lines.push({
+      line: currentLine,
+      text: sourceLines[currentLine - 1] ?? "",
+      isErrorLine: currentLine === line,
+    });
+  }
+
+  return {
+    file,
+    line,
+    column,
+    ...(methodName ? { methodName } : {}),
+    lines,
+  };
+}
+
+async function readSourceFileForCodeFrame(file: string): Promise<string | null> {
+  if (!file.startsWith("file://")) return null;
+  try {
+    return await readFile(fileURLToPath(file), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 function getMappableClientGeneratedUrl(file: string, requestHost: string | undefined): URL | null {
   const isAbsoluteHttpUrl = /^https?:\/\//i.test(file);
   let url: URL;
@@ -476,6 +589,7 @@ function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {
   const map = payload as {
     version?: unknown;
     sources?: unknown;
+    sourcesContent?: unknown;
     sourceRoot?: unknown;
     mappings?: unknown;
     ignoreList?: unknown;
@@ -490,10 +604,17 @@ function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {
   return {
     version: typeof map.version === "number" ? map.version : undefined,
     sources: map.sources,
+    sourcesContent: normalizeSourcesContent(map.sourcesContent),
     sourceRoot: typeof map.sourceRoot === "string" ? map.sourceRoot : undefined,
     mappings: map.mappings,
     ignoreList,
   };
+}
+
+function normalizeSourcesContent(value: unknown): (string | null)[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const sourcesContent = value.map((source) => (typeof source === "string" ? source : null));
+  return sourcesContent.length > 0 ? sourcesContent : undefined;
 }
 
 function normalizeIgnoreList(value: unknown): number[] | undefined {

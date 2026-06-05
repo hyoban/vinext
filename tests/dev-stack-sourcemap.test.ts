@@ -18,6 +18,19 @@ const SOURCE_MAP = {
   mappings: "AAAA,KASE",
 } satisfies SourceMapPayload;
 
+const SITE_FOOTER_SOURCE = [
+  "line 1",
+  "line 2",
+  "line 3",
+  "const before = true;",
+  "export function SiteFooter() {",
+  '  throw new Error("vinext is not ready yet. Stay tuned!");',
+  "  return (",
+  '    <footer className="mt-auto">',
+  "      <div />",
+  "    </footer>",
+].join("\n");
+
 type DevStackMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 
 function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
@@ -145,6 +158,7 @@ describe("installDevStackSourcemapMiddleware", () => {
   it("returns ignored frame metadata from the middleware response", async () => {
     const { server, middlewareHandlers } = createServer({
       sources: ["site-footer.tsx"],
+      sourcesContent: [SITE_FOOTER_SOURCE],
       mappings: ";;;;;;;;AAKQ",
     });
     installDevStackSourcemapMiddleware(server);
@@ -173,6 +187,25 @@ describe("installDevStackSourcemapMiddleware", () => {
         "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)",
       ].join("\n"),
       ignoredFrames: [false, true],
+      projectRoot: "/repo/app",
+      codeFrame: {
+        file: "file:///repo/app/app/_components/site-footer.tsx",
+        line: 6,
+        column: 9,
+        methodName: "SiteFooter",
+        lines: [
+          { line: 4, text: "const before = true;", isErrorLine: false },
+          { line: 5, text: "export function SiteFooter() {", isErrorLine: false },
+          {
+            line: 6,
+            text: '  throw new Error("vinext is not ready yet. Stay tuned!");',
+            isErrorLine: true,
+          },
+          { line: 7, text: "  return (", isErrorLine: false },
+          { line: 8, text: '    <footer className="mt-auto">', isErrorLine: false },
+          { line: 9, text: "      <div />", isErrorLine: false },
+        ],
+      },
     });
   });
 });
@@ -351,6 +384,47 @@ describe("mapStackLine", () => {
       line: "    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)",
       isFrame: true,
       ignored: false,
+    });
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
+  });
+
+  it("returns a code frame for the mapped app frame when source content is available", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["site-footer.tsx"],
+      sourcesContent: [SITE_FOOTER_SOURCE],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    const line = "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)";
+
+    await expect(
+      mapStackLineWithMetadata(
+        server,
+        line,
+        undefined,
+        new Map<string, Promise<SourceMapPayload | null>>(),
+      ),
+    ).resolves.toEqual({
+      line: "    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)",
+      isFrame: true,
+      ignored: false,
+      codeFrame: {
+        file: "file:///repo/app/app/_components/site-footer.tsx",
+        line: 6,
+        column: 9,
+        methodName: "SiteFooter",
+        lines: [
+          { line: 4, text: "const before = true;", isErrorLine: false },
+          { line: 5, text: "export function SiteFooter() {", isErrorLine: false },
+          {
+            line: 6,
+            text: '  throw new Error("vinext is not ready yet. Stay tuned!");',
+            isErrorLine: true,
+          },
+          { line: 7, text: "  return (", isErrorLine: false },
+          { line: 8, text: '    <footer className="mt-auto">', isErrorLine: false },
+          { line: 9, text: "      <div />", isErrorLine: false },
+        ],
+      },
     });
     expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
   });

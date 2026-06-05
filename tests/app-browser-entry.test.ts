@@ -32,6 +32,7 @@ import {
   createViteOpenInEditorUrl,
   devOnCaughtError,
   devOnUncaughtError,
+  formatOverlayDisplayFile,
   formatViteOpenInEditorFile,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
 import {
@@ -5210,6 +5211,36 @@ describe("devOnUncaughtError (hydrateRoot dev handler)", () => {
 });
 
 describe("dev overlay open-in-editor helpers", () => {
+  it("formats overlay display files relative to the project root", () => {
+    expect(
+      formatOverlayDisplayFile(
+        "file:///Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx",
+        "/Users/hyoban/f/vinext/apps/web",
+      ),
+    ).toBe("app/_components/site-footer.tsx");
+
+    expect(
+      formatOverlayDisplayFile(
+        "/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx",
+        "/Users/hyoban/f/vinext/apps/web",
+      ),
+    ).toBe("app/_components/site-footer.tsx");
+
+    expect(
+      formatOverlayDisplayFile(
+        "/Users/hyoban/f/vinext/packages/vinext/src/server/dev-error-overlay.tsx",
+        "/Users/hyoban/f/vinext/apps/web",
+      ),
+    ).toBe("/Users/hyoban/f/vinext/packages/vinext/src/server/dev-error-overlay.tsx");
+
+    expect(
+      formatOverlayDisplayFile(
+        "about://React/Server/file:///Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx?9",
+        "/Users/hyoban/f/vinext/apps/web/",
+      ),
+    ).toBe("app/_components/site-footer.tsx");
+  });
+
   it("formats stack frames as Vite open-in-editor file payloads", () => {
     expect(
       formatViteOpenInEditorFile({

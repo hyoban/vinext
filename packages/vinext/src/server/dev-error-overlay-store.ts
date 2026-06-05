@@ -10,7 +10,23 @@ export type ReportedError = {
   message: string;
   stack: string | undefined;
   ignoredStackFrames: boolean[] | undefined;
+  projectRoot: string | undefined;
+  codeFrame: OverlayCodeFrame | undefined;
   componentStack: string | undefined;
+};
+
+export type OverlayCodeFrame = {
+  file: string;
+  line: number;
+  column: number;
+  methodName?: string;
+  lines: OverlayCodeFrameLine[];
+};
+
+export type OverlayCodeFrameLine = {
+  line: number;
+  text: string;
+  isErrorLine: boolean;
 };
 
 export type OverlayState = {
@@ -64,12 +80,14 @@ export function updateOverlayErrorStack(
   id: number,
   stack: string | undefined,
   ignoredStackFrames?: boolean[],
+  codeFrame?: OverlayCodeFrame,
+  projectRoot?: string,
 ): void {
   if (!snapshot.errors.some((error) => error.id === id)) return;
   snapshot = {
     ...snapshot,
     errors: snapshot.errors.map((error) =>
-      error.id === id ? { ...error, stack, ignoredStackFrames } : error,
+      error.id === id ? { ...error, stack, ignoredStackFrames, codeFrame, projectRoot } : error,
     ),
   };
   emit();
