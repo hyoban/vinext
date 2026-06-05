@@ -55,6 +55,13 @@ type GeneratedFrame = {
   transform: () => Promise<SourceMapPayload | null>;
 };
 
+type MappedStackLine = {
+  line: string;
+  isFrame: boolean;
+  ignored: boolean;
+  codeFrame?: StackCodeFramePayload;
+};
+
 const V8_PAREN_STACK_LINE = /^(\s*at\s+.*?\()(.+):(\d+):(\d+)(\)\s*)$/;
 const V8_BARE_STACK_LINE = /^(\s*at\s+)(.+):(\d+):(\d+)(\s*)$/;
 const MOZ_STACK_LINE = /^([^@\n]*@)(.+):(\d+):(\d+)(\s*)$/;
@@ -187,7 +194,7 @@ async function resolveDevServerStackTrace(
   const projectRoot = normalizeProjectRoot(server.config?.root);
   return {
     stack: mapped.map((line) => line.line).join("\n"),
-    ignoredFrames: mapped.flatMap((line) => (line.isFrame ? [line.ignored] : [])),
+    ignoredFrames: createIgnoredFramesForOverlay(mapped),
     ...(projectRoot ? { projectRoot } : {}),
     ...(codeFrame ? { codeFrame } : {}),
   };
@@ -207,12 +214,7 @@ export async function mapStackLineWithMetadata(
   line: string,
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
-): Promise<{
-  line: string;
-  isFrame: boolean;
-  ignored: boolean;
-  codeFrame?: StackCodeFramePayload;
-}> {
+): Promise<MappedStackLine> {
   const v8Paren = line.match(V8_PAREN_STACK_LINE);
   if (v8Paren) {
     const methodName = extractV8ParenMethodName(v8Paren[1]);
@@ -276,6 +278,24 @@ export async function mapStackLineWithMetadata(
   }
 
   return { line, isFrame: false, ignored: false };
+}
+
+function createIgnoredFramesForOverlay(mapped: readonly MappedStackLine[]): boolean[] {
+  const firstNonEmptyLineIndex = mapped.findIndex((line) => line.line.trim() !== "");
+  const nonEmptyLineCount = mapped.reduce(
+    (count, line) => count + (line.line.trim() !== "" ? 1 : 0),
+    0,
+  );
+  const firstLineIsMessage =
+    nonEmptyLineCount > 1 &&
+    firstNonEmptyLineIndex !== -1 &&
+    !mapped[firstNonEmptyLineIndex]?.isFrame;
+
+  return mapped.flatMap((line, index) => {
+    if (line.line.trim() === "") return [];
+    if (firstLineIsMessage && index === firstNonEmptyLineIndex) return [];
+    return [line.isFrame ? line.ignored : false];
+  });
 }
 
 async function mapGeneratedFrame(
@@ -346,7 +366,7 @@ function normalizeProjectRoot(root: string | undefined): string | undefined {
 }
 
 function stripTrailingSlash(value: string | undefined): string | undefined {
-  return value?.replace(/\/+$/, "");
+  return value?.replace(/[\\/]+$/, "");
 }
 
 function stripQuery(value: string): string {
@@ -367,6 +387,7 @@ function getMappableGeneratedFrame(
       transform: () => loadServerSourceMapForLocalPath(server, localPath),
     };
   }
+  if (isWindowsAbsolutePath(normalizedFile)) return null;
 
   const generatedUrl = getMappableClientGeneratedUrl(normalizedFile, requestHost);
   if (!generatedUrl) return null;
@@ -398,15 +419,29 @@ function getLocalSourcePath(server: ViteDevServer, file: string): string | null 
 
   localPath = stripQuery(localPath);
   if (!isAbsolutePath(localPath)) return null;
-  if (localPath.includes("/node_modules/")) return null;
+  const localPathForCompare = normalizeLocalPathForCompare(localPath);
+  if (localPathForCompare.includes("/node_modules/")) return null;
 
-  const root = stripTrailingSlash(server.config?.root);
+  const root = server.config?.root;
   if (!root) return null;
-  return localPath === root || localPath.startsWith(`${root}/`) ? localPath : null;
+  const rootForCompare = normalizeLocalPathForCompare(root);
+  return localPathForCompare === rootForCompare ||
+    localPathForCompare.startsWith(`${rootForCompare}/`)
+    ? localPath
+    : null;
 }
 
 function isAbsolutePath(value: string): boolean {
-  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+  return value.startsWith("/") || isWindowsAbsolutePath(value);
+}
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function normalizeLocalPathForCompare(value: string): string {
+  const normalized = (stripTrailingSlash(value.replaceAll("\\", "/")) ?? "").replace(/\/+/g, "/");
+  return /^[A-Za-z]:\//.test(normalized) ? normalized.toLowerCase() : normalized;
 }
 
 function normalizeIgnoreListPath(value: string): string {

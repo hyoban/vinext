@@ -33,7 +33,10 @@ const SITE_FOOTER_SOURCE = [
 
 type DevStackMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 
-function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
+function createServer(
+  sourceMap: SourceMapPayload | null = SOURCE_MAP,
+  options: { root?: string } = {},
+): {
   server: ViteDevServer;
   transformRequests: string[];
   middlewareHandlers: DevStackMiddleware[];
@@ -56,7 +59,7 @@ function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
       },
     },
     config: {
-      root: "/repo/app",
+      root: options.root ?? "/repo/app",
     },
     middlewares: {
       use(handler: DevStackMiddleware) {
@@ -206,6 +209,43 @@ describe("installDevStackSourcemapMiddleware", () => {
           { line: 9, text: "      <div />", isErrorLine: false },
         ],
       },
+    });
+  });
+
+  it("keeps ignored frame metadata aligned with unknown stack lines rendered by the overlay", async () => {
+    const { server, middlewareHandlers } = createServer({
+      sources: ["site-footer.tsx"],
+      sourcesContent: [SITE_FOOTER_SOURCE],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    installDevStackSourcemapMiddleware(server);
+    const middleware = middlewareHandlers[0];
+    expect(middleware).toBeDefined();
+
+    const req = mockStackTraceRequest(
+      JSON.stringify({
+        stack: [
+          "Error: boom",
+          "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)",
+          "Caused by: Error: nested",
+          "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)",
+        ].join("\n"),
+      }),
+    );
+    const res = mockResponse();
+
+    middleware!(req, res, () => {});
+    await res.done;
+
+    expect(res._statusCode).toBe(200);
+    expect(JSON.parse(res._body)).toMatchObject({
+      stack: [
+        "Error: boom",
+        "    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)",
+        "Caused by: Error: nested",
+        "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)",
+      ].join("\n"),
+      ignoredFrames: [false, false, true],
     });
   });
 });
@@ -366,6 +406,25 @@ describe("mapStackLine", () => {
     expect(transformRequests).toEqual([]);
   });
 
+  it("reports ignore-list metadata for unmapped Windows dependency frames", async () => {
+    const { server, transformRequests } = createServer(undefined, { root: "C:\\repo\\app" });
+    const line = "    at render (C:\\repo\\app\\node_modules\\react\\index.js:1:2)";
+
+    await expect(
+      mapStackLineWithMetadata(
+        server,
+        line,
+        undefined,
+        new Map<string, Promise<SourceMapPayload | null>>(),
+      ),
+    ).resolves.toEqual({
+      line,
+      isFrame: true,
+      ignored: true,
+    });
+    expect(transformRequests).toEqual([]);
+  });
+
   it("does not ignore-list app frames by default", async () => {
     const { server, transformRequests } = createServer({
       sources: ["site-footer.tsx"],
@@ -440,6 +499,16 @@ describe("mapStackLine", () => {
       mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
     ).resolves.toBe("    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)");
     expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
+  });
+
+  it("recognizes Windows local filesystem frames under the project root", async () => {
+    const { server, transformRequests } = createServer(null, { root: "C:\\repo\\app" });
+    const line = "    at SiteFooter (C:\\repo\\app\\app\\_components\\site-footer.tsx:9:8)";
+
+    await expect(
+      mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
+    ).resolves.toBe(line);
+    expect(transformRequests).toEqual(["rsc:C:\\repo\\app\\app\\_components\\site-footer.tsx"]);
   });
 
   it("leaves local filesystem frames unchanged when no server source map is available", async () => {

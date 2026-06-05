@@ -138,6 +138,17 @@ async function hydrate() {
     return;
   }
 
+  let hydrateRootOptions;
+  if (import.meta.env.DEV) {
+    const overlay = await import("vinext/dev-error-overlay");
+    overlay.installDevErrorOverlay();
+    overlay.reportInitialDevServerErrors();
+    hydrateRootOptions = {
+      onCaughtError: overlay.devOnCaughtError,
+      onUncaughtError: overlay.devOnUncaughtError,
+    };
+  }
+
   const { pageProps } = nextData.props;
   const loader = pageLoaders[nextData.page];
   if (!loader) {
@@ -179,7 +190,7 @@ async function hydrate() {
     return;
   }
 
-  const root = hydrateRoot(container, element);
+  const root = hydrateRoot(container, element, hydrateRootOptions);
   window.__VINEXT_ROOT__ = root;
   installPagesRouterRuntime();
   const hydratedAt = performance.now();
