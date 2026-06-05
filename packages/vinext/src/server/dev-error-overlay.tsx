@@ -149,7 +149,7 @@ function isViteHmrHotContext(value: unknown): value is ViteHmrHotContext {
   return typeof hot.on === "function" && !!hot.data && typeof hot.data === "object";
 }
 
-export function reportViteHmrError(payload: ViteHmrErrorPayload): void {
+function reportViteHmrError(payload: ViteHmrErrorPayload): void {
   const normalized = normalizeViteHmrError(payload);
   reportDevError(normalized.message, { source: "vite" });
 }
