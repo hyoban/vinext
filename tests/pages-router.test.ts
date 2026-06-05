@@ -759,6 +759,7 @@ describe("Pages Router integration", () => {
     );
     expect(hydrationProxy).toContain("dev-error-overlay");
     expect(hydrationProxy).toContain("overlay.installDevErrorOverlay()");
+    expect(hydrationProxy).toContain("overlay.installViteHmrErrorHandler(import.meta.hot)");
     expect(hydrationProxy).toContain("overlay.reportInitialDevServerErrors()");
     expect(hydrationProxy).toContain(
       'hydrateRoot(document.getElementById("__next"), element, hydrateRootOptions)',

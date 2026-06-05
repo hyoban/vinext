@@ -22,6 +22,10 @@ const SERVER_HMR_TOGGLE_BROKEN = `export function ServerHmrToggle() {
   return <p data-testid="server-hmr-toggle">server hmr clean</p>;
 }
 `;
+const SERVER_HMR_TOGGLE_BUILD_ERROR = `export function ServerHmrToggle() {
+  return <p data-testid="server-hmr-toggle" className="broken>server hmr clean</p>;
+}
+`;
 const LAYOUT_HMR_TOGGLE_CLEAN = `export function LayoutHmrToggle() {
   return <p data-testid="layout-hmr-toggle">layout hmr clean</p>;
 }
@@ -311,6 +315,38 @@ test.describe("Dev error overlay", () => {
         "server hmr toggle failure",
         { timeout: 10_000 },
       );
+
+      const waitForCleanRsc = page.waitForResponse(
+        (response) => isAppRouterRscRequestForPath(response.request(), "/dev-overlay-hmr-toggle"),
+        { timeout: 10_000 },
+      );
+      await writeFile(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_CLEAN);
+      await waitForCleanRsc;
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden({ timeout: 10_000 });
+    });
+
+    test("server component HMR surfaces Vite build errors after a clean load", async ({ page }) => {
+      // Next.js dev redbox labels build-time failures as "Build Error":
+      // https://github.com/vercel/next.js/blob/canary/test/e2e/swc-plugins/index.test.ts
+      await page.goto(`${BASE}/dev-overlay-hmr-toggle`);
+      await expect(page.getByTestId("server-hmr-toggle")).toHaveText("server hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      await writeFile(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_BUILD_ERROR);
+      await expect(page.getByTestId("vinext-dev-error-title")).toHaveText("Build Error", {
+        timeout: 10_000,
+      });
+      await expect(page.getByTestId("vinext-dev-error-build-message")).toBeVisible();
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "Transform failed with 1 error",
+      );
+      await expect(page.getByTestId("vinext-dev-error-build-message")).toContainText(
+        "server-hmr-toggle.tsx",
+      );
+      await expect(page.getByTestId("vinext-dev-error-code-frame")).toBeHidden();
+      await expect(page.getByTestId("vinext-dev-error-stack-container")).toBeHidden();
+      await expect(page.locator("vite-error-overlay")).toHaveCount(0);
 
       const waitForCleanRsc = page.waitForResponse(
         (response) => isAppRouterRscRequestForPath(response.request(), "/dev-overlay-hmr-toggle"),

@@ -2,7 +2,13 @@
 // overlay React component (dev-error-overlay.tsx) can subscribe via
 // useSyncExternalStore without circular imports.
 
-export type Source = "server" | "uncaught" | "caught" | "window-error" | "unhandledrejection";
+export type Source =
+  | "server"
+  | "vite"
+  | "uncaught"
+  | "caught"
+  | "window-error"
+  | "unhandledrejection";
 
 export type ReportedError = {
   id: number;

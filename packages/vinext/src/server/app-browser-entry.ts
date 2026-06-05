@@ -138,6 +138,7 @@ import {
   devOnUncaughtError,
   dismissOverlay,
   installDevErrorOverlay,
+  installViteHmrErrorHandler,
   reportInitialDevServerErrors,
 } from "./dev-error-overlay.js";
 import { DANGEROUS_URL_BLOCK_MESSAGE, isDangerousScheme } from "vinext/shims/url-safety";
@@ -1639,6 +1640,7 @@ async function main(): Promise<void> {
 
   if (import.meta.env.DEV) {
     installDevErrorOverlay();
+    installViteHmrErrorHandler(import.meta.hot);
     reportInitialDevServerErrors();
   }
 

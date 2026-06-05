@@ -35,6 +35,7 @@ import {
   formatErrorInfoForClipboard,
   formatOverlayDisplayFile,
   formatViteOpenInEditorFile,
+  normalizeViteHmrError,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
 import {
   APP_CACHE_ENTRY_REUSE_PROOF_KEY,
@@ -5347,6 +5348,98 @@ describe("dev overlay open-in-editor helpers", () => {
         "    7 |   return (",
       ].join("\n"),
     );
+  });
+
+  it("formats copied build errors without Vite internal stack frames", () => {
+    expect(
+      formatErrorInfoForClipboard(
+        {
+          source: "vite",
+          message:
+            "[plugin:vite:oxc] Transform failed with 1 error:\n\n[PARSE_ERROR] Error: Unterminated string",
+          codeFrame: {
+            file: "app/_components/site-footer.tsx",
+            line: 7,
+            column: 90,
+            lines: [
+              {
+                line: 7,
+                text: '<div className="broken>',
+                isErrorLine: true,
+              },
+            ],
+          },
+        },
+        [
+          {
+            fn: "transformWithOxc",
+            displayFile: "node_modules/@voidzero-dev/vite-plus-core/dist/vite/node.js",
+            line: "5987",
+            col: "19",
+            ignored: false,
+          },
+        ],
+      ),
+    ).toBe(
+      [
+        "## Error Type",
+        "",
+        "Build Error",
+        "",
+        "## Error Message",
+        "",
+        "[plugin:vite:oxc] Transform failed with 1 error:",
+        "",
+        "[PARSE_ERROR] Error: Unterminated string",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("dev overlay Vite HMR errors", () => {
+  it("normalizes Vite transform errors into build-error overlay data", () => {
+    const normalized = normalizeViteHmrError({
+      err: {
+        message:
+          "Transform failed with 1 error:\napp/_components/site-footer.tsx:7:90: ERROR: Unterminated string",
+        plugin: "vite:esbuild",
+        frame: [
+          "  5 |    return (",
+          '  6 |      <footer className="mt-auto border-t">',
+          '> 7 |        <div className="mx-auto flex w-full max-w-6xl items-center justify-center px-6 py-6">',
+          "    |                                                                                          ^",
+          "  8 |          <Text>vinext</Text>",
+        ].join("\n"),
+      },
+    });
+
+    expect(normalized.message).toContain("[plugin:vite:esbuild] Transform failed with 1 error");
+    expect(normalized.message).toContain(
+      '> 7 |        <div className="mx-auto flex w-full max-w-6xl items-center justify-center px-6 py-6">',
+    );
+  });
+
+  it("normalizes OXC build error frames from Vite+", () => {
+    const message = [
+      "Transform failed with 1 error:",
+      "",
+      "[PARSE_ERROR] Error: Unterminated string",
+      "   ╭─[ app/dev-overlay-hmr-toggle/server-hmr-toggle.tsx:2:55 ]",
+      "   │",
+      ' 2 │ ╭─▶   return <p data-testid="server-hmr-toggle" className="broken>server hmr clean</p>;',
+      " 3 │ ├─▶ }",
+      "   │ │       ",
+      "   │ ╰─────── ",
+      "───╯",
+    ].join("\n");
+
+    const normalized = normalizeViteHmrError({
+      err: {
+        message,
+      },
+    });
+
+    expect(normalized.message).toBe(message);
   });
 });
 

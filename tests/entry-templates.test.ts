@@ -948,6 +948,7 @@ describe("Pages Router entry template", () => {
       expect(pageLoadIndex).toBeGreaterThanOrEqual(0);
       expect(hydrateRootIndex).toBeGreaterThanOrEqual(0);
       expect(code).toContain("overlay.installDevErrorOverlay()");
+      expect(code).toContain("overlay.installViteHmrErrorHandler(import.meta.hot)");
       expect(code).toContain("overlay.reportInitialDevServerErrors()");
       expect(code).toContain("onCaughtError: overlay.devOnCaughtError");
       expect(code).toContain("onUncaughtError: overlay.devOnUncaughtError");

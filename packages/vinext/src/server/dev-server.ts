@@ -1199,6 +1199,7 @@ async function hydrate() {
   if (import.meta.env.DEV) {
     const overlay = await import("vinext/dev-error-overlay");
     overlay.installDevErrorOverlay();
+    overlay.installViteHmrErrorHandler(import.meta.hot);
     overlay.reportInitialDevServerErrors();
     hydrateRootOptions = {
       onCaughtError: overlay.devOnCaughtError,

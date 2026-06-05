@@ -1,8 +1,9 @@
-// Dev-only runtime error overlay. Surfaces three error sources that
+// Dev-only runtime error overlay. Surfaces four error sources that
 // otherwise only reach the console:
 //   1. React render errors caught by an error.tsx boundary (onCaughtError)
 //   2. React render errors with no boundary above them (onUncaughtError)
 //   3. Plain script errors / unhandled promise rejections (window listeners)
+//   4. Vite build/transform errors reported over HMR (vite:error)
 //
 // Rendered via a separate React root mounted on a detached <div> appended to
 // the body. That isolation means the overlay survives an unmount of the main
@@ -34,6 +35,7 @@ import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap-endp
 export { dismissOverlay } from "./dev-error-overlay-store.js";
 
 const MOUNT_NODE_ID = "__vinext_dev_error_overlay_root";
+const VITE_ERROR_HANDLER_DATA_KEY = "__vinext_vite_error_handler__";
 
 let reactRoot: Root | null = null;
 let installed = false;
@@ -97,6 +99,73 @@ export function reportInitialDevServerErrors(): void {
     }
     reportDevError(error, { source: "server" });
   }
+}
+
+type ViteHmrHotContext = {
+  data: Record<string, unknown>;
+  on(event: string, cb: (payload: ViteHmrErrorPayload) => void): void;
+  off?(event: string, cb: (payload: ViteHmrErrorPayload) => void): void;
+  dispose?(cb: (data: Record<string, unknown>) => void): void;
+};
+
+type ViteHmrErrorPayload = {
+  err?: ViteHmrError;
+};
+
+type ViteHmrError = {
+  [name: string]: unknown;
+  message?: unknown;
+  frame?: unknown;
+  plugin?: unknown;
+};
+
+type NormalizedViteHmrError = {
+  message: string;
+};
+
+export function installViteHmrErrorHandler(hot: unknown): void {
+  if (!isViteHmrHotContext(hot) || typeof window === "undefined") return;
+
+  const previousHandler = hot.data[VITE_ERROR_HANDLER_DATA_KEY];
+  if (typeof previousHandler === "function" && hot.off) {
+    hot.off("vite:error", previousHandler as (payload: ViteHmrErrorPayload) => void);
+  }
+
+  const handler = (payload: ViteHmrErrorPayload): void => {
+    reportViteHmrError(payload);
+  };
+  hot.on("vite:error", handler);
+  hot.data[VITE_ERROR_HANDLER_DATA_KEY] = handler;
+  hot.dispose?.((data) => {
+    if (data[VITE_ERROR_HANDLER_DATA_KEY] === handler) {
+      delete data[VITE_ERROR_HANDLER_DATA_KEY];
+    }
+  });
+}
+
+function isViteHmrHotContext(value: unknown): value is ViteHmrHotContext {
+  if (!value || typeof value !== "object") return false;
+  const hot = value as Partial<ViteHmrHotContext>;
+  return typeof hot.on === "function" && !!hot.data && typeof hot.data === "object";
+}
+
+export function reportViteHmrError(payload: ViteHmrErrorPayload): void {
+  const normalized = normalizeViteHmrError(payload);
+  reportDevError(normalized.message, { source: "vite" });
+}
+
+export function normalizeViteHmrError(payload: ViteHmrErrorPayload): NormalizedViteHmrError {
+  const err = payload?.err;
+  if (!err || typeof err !== "object") {
+    return { message: "Vite build error" };
+  }
+
+  const plugin = stringValue(err.plugin);
+  const rawMessage = stringValue(err.message) ?? "Vite build error";
+  const message = formatViteErrorMessage(rawMessage, plugin, stringValue(err.frame));
+  return {
+    message,
+  };
 }
 
 function reportDevError(
@@ -187,6 +256,24 @@ function safeStringify(value: unknown): string {
   }
 }
 
+function formatViteErrorMessage(
+  message: string,
+  plugin: string | undefined,
+  frame: string | undefined,
+): string {
+  const trimmedMessage = message.trim();
+  const trimmedFrame = frame?.trim();
+  const body =
+    trimmedFrame && !trimmedMessage.includes(trimmedFrame)
+      ? `${trimmedMessage}\n\n${trimmedFrame}`
+      : trimmedMessage;
+  return `${plugin ? `[plugin:${plugin}] ` : ""}${body || "Vite build error"}`;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 function ensureMounted(): void {
   if (reactRoot) return;
   const node = document.createElement("div");
@@ -206,6 +293,7 @@ function ensureMounted(): void {
 
 const SOURCE_LABEL: Record<Source, string> = {
   server: "Server Error",
+  vite: "Build Error",
   uncaught: "Unhandled Runtime Error",
   caught: "Runtime Error",
   "window-error": "Unhandled Script Error",
@@ -296,9 +384,10 @@ function DevErrorOverlay({
   onMinimize: () => void;
   onDismiss: () => void;
 }): React.ReactNode {
+  const isBuildError = error.source === "vite";
   const frames = useMemo(
     () =>
-      error.stack
+      error.stack && !isBuildError
         ? parseStack(error.stack).map((frame, frameIndex) =>
             createDisplayStackFrame(
               frame,
@@ -307,7 +396,7 @@ function DevErrorOverlay({
             ),
           )
         : [],
-    [error.stack, error.ignoredStackFrames, error.projectRoot],
+    [error.stack, error.ignoredStackFrames, error.projectRoot, isBuildError],
   );
   const [showIgnoredFrames, setShowIgnoredFrames] = useState(false);
   const hasVisibleFrame = frames.some((frame) => !frame.ignored);
@@ -400,11 +489,15 @@ function DevErrorOverlay({
         </header>
 
         <div className="vinext-overlay-body" style={bodyStyle}>
-          <h2 data-testid="vinext-dev-error-message" style={messageStyle}>
-            {error.message}
-          </h2>
+          {isBuildError ? (
+            <BuildErrorBlock message={error.message} />
+          ) : (
+            <h2 data-testid="vinext-dev-error-message" style={messageStyle}>
+              {error.message}
+            </h2>
+          )}
 
-          {error.codeFrame ? (
+          {error.codeFrame && !isBuildError ? (
             <CodeFrame codeFrame={error.codeFrame} projectRoot={error.projectRoot} />
           ) : null}
 
@@ -449,6 +542,16 @@ function DevErrorOverlay({
         </div>
       </div>
     </div>
+  );
+}
+
+function BuildErrorBlock({ message }: { message: string }): React.ReactNode {
+  return (
+    <section data-testid="vinext-dev-error-build-message" style={buildErrorBlockStyle}>
+      <pre data-testid="vinext-dev-error-message" style={buildErrorPreStyle}>
+        {message}
+      </pre>
+    </section>
   );
 }
 
@@ -830,10 +933,10 @@ export function formatErrorInfoForClipboard(
   ];
   const stackFrames = getClipboardStackFrames(frames);
 
-  if (stackFrames.length > 0) {
+  if (error.source !== "vite" && stackFrames.length > 0) {
     sections.push(`## Stack\n\n${stackFrames.map(formatClipboardStackFrame).join("\n")}`);
   }
-  if (error.codeFrame) {
+  if (error.source !== "vite" && error.codeFrame) {
     sections.push(
       `## Code Frame\n\n${formatClipboardCodeFrame(error.codeFrame, error.projectRoot)}`,
     );
@@ -1426,6 +1529,26 @@ const messageStyle: React.CSSProperties = {
   fontSize: 16,
   fontWeight: 500,
   lineHeight: 1.45,
+  color: "var(--vinext-overlay-fg)",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+};
+
+const buildErrorBlockStyle: React.CSSProperties = {
+  margin: "0 -5px 18px",
+  border: "1px solid var(--vinext-overlay-border)",
+  borderRadius: 8,
+  overflow: "hidden",
+  background: "var(--vinext-overlay-code-bg)",
+};
+
+const buildErrorPreStyle: React.CSSProperties = {
+  margin: 0,
+  padding: "12px 14px",
+  overflow: "auto",
+  fontFamily: MONO_STACK,
+  fontSize: 13,
+  lineHeight: 1.6,
   color: "var(--vinext-overlay-fg)",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
