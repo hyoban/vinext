@@ -1184,7 +1184,7 @@ const counterStyle: React.CSSProperties = {
 };
 
 const bodyStyle: React.CSSProperties = {
-  padding: "16px 8px 20px",
+  padding: "0 8px 20px",
   overflow: "auto",
   flex: 1,
 };
