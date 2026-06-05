@@ -13,12 +13,22 @@ export type SourceMapPayload = {
   sources: string[];
   sourceRoot?: string;
   mappings: string;
+  ignoreList?: number[];
 };
 
 type SourceMapPosition = {
   source: string;
   line: number;
   column: number;
+};
+
+type SourceMapTracePosition = SourceMapPosition & {
+  sourceIndex: number;
+};
+
+export type ResolvedStackTracePayload = {
+  stack: string;
+  ignoredFrames: boolean[];
 };
 
 type GeneratedFrame = {
@@ -75,12 +85,12 @@ async function handleOriginalStackTraceRequest(
       return;
     }
 
-    const stack = await resolveDevServerStackTrace(
+    const stackTrace = await resolveDevServerStackTrace(
       server,
       payload.stack,
       getDevStackSourcemapRequestHost(req.headers),
     );
-    writeJson(res, 200, { stack });
+    writeJson(res, 200, stackTrace);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       writeJson(res, 413, { error: "Payload Too Large" });
@@ -146,12 +156,17 @@ async function resolveDevServerStackTrace(
   server: ViteDevServer,
   stack: string,
   requestHost: string | undefined,
-): Promise<string> {
+): Promise<ResolvedStackTracePayload> {
   const sourceMapCache = new Map<string, Promise<SourceMapPayload | null>>();
   const mapped = await Promise.all(
-    stack.split("\n").map((line) => mapStackLine(server, line, requestHost, sourceMapCache)),
+    stack
+      .split("\n")
+      .map((line) => mapStackLineWithMetadata(server, line, requestHost, sourceMapCache)),
   );
-  return mapped.join("\n");
+  return {
+    stack: mapped.map((line) => line.line).join("\n"),
+    ignoredFrames: mapped.flatMap((line) => (line.isFrame ? [line.ignored] : [])),
+  };
 }
 
 export async function mapStackLine(
@@ -160,6 +175,15 @@ export async function mapStackLine(
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
 ): Promise<string> {
+  return (await mapStackLineWithMetadata(server, line, requestHost, sourceMapCache)).line;
+}
+
+export async function mapStackLineWithMetadata(
+  server: ViteDevServer,
+  line: string,
+  requestHost: string | undefined,
+  sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
+): Promise<{ line: string; isFrame: boolean; ignored: boolean }> {
   const v8Paren = line.match(V8_PAREN_STACK_LINE);
   if (v8Paren) {
     const mapped = await mapGeneratedFrame(
@@ -170,9 +194,13 @@ export async function mapStackLine(
       requestHost,
       sourceMapCache,
     );
-    return mapped
-      ? `${v8Paren[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Paren[5]}`
-      : line;
+    return {
+      line: mapped
+        ? `${v8Paren[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Paren[5]}`
+        : line,
+      isFrame: true,
+      ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(v8Paren[2], requestHost),
+    };
   }
 
   const v8Bare = line.match(V8_BARE_STACK_LINE);
@@ -185,7 +213,13 @@ export async function mapStackLine(
       requestHost,
       sourceMapCache,
     );
-    return mapped ? `${v8Bare[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Bare[5]}` : line;
+    return {
+      line: mapped
+        ? `${v8Bare[1]}${mapped.file}:${mapped.line}:${mapped.column}${v8Bare[5]}`
+        : line,
+      isFrame: true,
+      ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(v8Bare[2], requestHost),
+    };
   }
 
   const moz = line.match(MOZ_STACK_LINE);
@@ -198,10 +232,14 @@ export async function mapStackLine(
       requestHost,
       sourceMapCache,
     );
-    return mapped ? `${moz[1]}${mapped.file}:${mapped.line}:${mapped.column}${moz[5]}` : line;
+    return {
+      line: mapped ? `${moz[1]}${mapped.file}:${mapped.line}:${mapped.column}${moz[5]}` : line,
+      isFrame: true,
+      ignored: mapped?.ignored ?? isIgnoreListedGeneratedFrame(moz[2], requestHost),
+    };
   }
 
-  return line;
+  return { line, isFrame: false, ignored: false };
 }
 
 async function mapGeneratedFrame(
@@ -211,7 +249,7 @@ async function mapGeneratedFrame(
   column: string,
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
-): Promise<{ file: string; line: number; column: number } | null> {
+): Promise<{ file: string; line: number; column: number; ignored: boolean } | null> {
   const generatedFrame = getMappableGeneratedFrame(server, file, requestHost);
   if (!generatedFrame) return null;
 
@@ -222,7 +260,7 @@ async function mapGeneratedFrame(
   const sourceMap = await getSourceMapForGeneratedFrame(generatedFrame, sourceMapCache);
   if (!sourceMap) return null;
 
-  const original = originalPositionFor(sourceMap, generatedLine, generatedColumn);
+  const original = traceOriginalPositionFor(sourceMap, generatedLine, generatedColumn);
   if (!original) return null;
 
   const originalFile = resolveSourceFile(
@@ -234,6 +272,11 @@ async function mapGeneratedFrame(
     file: originalFile,
     line: original.line,
     column: original.column,
+    ignored:
+      isSourceMapIgnored(sourceMap, original.sourceIndex) ||
+      isIgnoreListedOriginalFrame(original.source) ||
+      isIgnoreListedOriginalFrame(originalFile) ||
+      isIgnoreListedGeneratedFrame(file, requestHost),
   };
 }
 
@@ -301,6 +344,75 @@ function isAbsolutePath(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
+function normalizeIgnoreListPath(value: string): string {
+  let path = devirtualizeReactServerFrame(value);
+  if (path.startsWith("file://")) {
+    try {
+      path = fileURLToPath(path);
+    } catch {
+      // Keep malformed file URLs comparable instead of dropping the frame.
+    }
+  } else {
+    try {
+      const url = new URL(path);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        path = `${url.pathname}${url.search}`;
+      }
+    } catch {
+      // Plain filesystem paths and virtual module ids are expected here.
+    }
+  }
+
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Keep malformed paths comparable instead of dropping the frame.
+  }
+
+  return path.replaceAll("\\", "/").toLowerCase();
+}
+
+function isExternalHttpFrame(file: string, requestHost: string | undefined): boolean {
+  if (!/^https?:\/\//i.test(file) || !requestHost) return false;
+  try {
+    return new URL(file).host.toLowerCase() !== requestHost;
+  } catch {
+    return false;
+  }
+}
+
+function isIgnoreListedGeneratedFrame(file: string, requestHost?: string): boolean {
+  const normalized = normalizeIgnoreListPath(file);
+  return (
+    isExternalHttpFrame(file, requestHost) ||
+    normalized.startsWith("node:") ||
+    normalized.includes("/node_modules/") ||
+    normalized.includes("/.vite/") ||
+    normalized.includes("/@vite/") ||
+    normalized.includes("/@react-refresh") ||
+    normalized.includes("/__vite") ||
+    normalized.includes("virtual:vinext") ||
+    normalized.includes("/packages/vinext/src/") ||
+    normalized.includes("/packages/vinext/dist/") ||
+    normalized.includes("/vinext/server/")
+  );
+}
+
+function isIgnoreListedOriginalFrame(file: string): boolean {
+  const normalized = normalizeIgnoreListPath(file);
+  return (
+    normalized.startsWith("node:") ||
+    normalized.includes("/node_modules/") ||
+    normalized.includes("/packages/vinext/src/") ||
+    normalized.includes("/packages/vinext/dist/") ||
+    normalized.includes("/vinext/server/")
+  );
+}
+
+function isSourceMapIgnored(sourceMap: SourceMapPayload, sourceIndex: number): boolean {
+  return sourceMap.ignoreList?.includes(sourceIndex) ?? false;
+}
+
 function getMappableClientGeneratedUrl(file: string, requestHost: string | undefined): URL | null {
   const isAbsoluteHttpUrl = /^https?:\/\//i.test(file);
   let url: URL;
@@ -366,17 +478,30 @@ function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {
     sources?: unknown;
     sourceRoot?: unknown;
     mappings?: unknown;
+    ignoreList?: unknown;
+    x_google_ignoreList?: unknown;
   };
   if (!Array.isArray(map.sources) || typeof map.mappings !== "string" || map.mappings === "") {
     return null;
   }
   if (!map.sources.every((source): source is string => typeof source === "string")) return null;
+  const ignoreList =
+    normalizeIgnoreList(map.ignoreList) ?? normalizeIgnoreList(map.x_google_ignoreList);
   return {
     version: typeof map.version === "number" ? map.version : undefined,
     sources: map.sources,
     sourceRoot: typeof map.sourceRoot === "string" ? map.sourceRoot : undefined,
     mappings: map.mappings,
+    ignoreList,
   };
+}
+
+function normalizeIgnoreList(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ignoreList = value.filter(
+    (index): index is number => Number.isInteger(index) && index >= 0,
+  );
+  return ignoreList.length > 0 ? ignoreList : undefined;
 }
 
 export function originalPositionFor(
@@ -384,6 +509,20 @@ export function originalPositionFor(
   generatedLine: number,
   generatedColumn: number,
 ): SourceMapPosition | null {
+  const original = traceOriginalPositionFor(sourceMap, generatedLine, generatedColumn);
+  if (!original) return null;
+  return {
+    source: original.source,
+    line: original.line,
+    column: original.column,
+  };
+}
+
+function traceOriginalPositionFor(
+  sourceMap: SourceMapPayload,
+  generatedLine: number,
+  generatedColumn: number,
+): SourceMapTracePosition | null {
   const targetLineIndex = generatedLine - 1;
   const targetColumn = Math.max(0, generatedColumn - 1);
   if (targetLineIndex < 0) return null;
@@ -398,7 +537,7 @@ export function originalPositionFor(
     if (generatedSegments === undefined) return null;
 
     let generatedSegmentColumn = 0;
-    let bestMatch: SourceMapPosition | null = null;
+    let bestMatch: SourceMapTracePosition | null = null;
 
     for (const segment of generatedSegments.split(",")) {
       if (!segment) continue;
@@ -420,6 +559,7 @@ export function originalPositionFor(
         decoded.length >= 4 && sourceMap.sources[sourceIndex]
           ? {
               source: sourceMap.sources[sourceIndex]!,
+              sourceIndex,
               line: originalLine + 1,
               column: originalColumn + 1,
             }

@@ -9,7 +9,7 @@
 // hydrateRoot(document, ...) tree — necessary because most of the errors we
 // want to surface are exactly the ones that take that tree down.
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { isNavigationSignalError } from "../utils/navigation-signal.js";
@@ -119,12 +119,13 @@ function reportDevError(
     source: options.source,
     message,
     stack,
+    ignoredStackFrames: undefined,
     componentStack: options.componentStack,
   });
 
-  void resolveBrowserStackTrace(stack).then((mappedStack) => {
-    if (mappedStack !== stack) {
-      updateOverlayErrorStack(id, mappedStack);
+  void resolveBrowserStackTrace(stack).then((mappedStackTrace) => {
+    if (mappedStackTrace.stack !== stack || mappedStackTrace.ignoredFrames !== undefined) {
+      updateOverlayErrorStack(id, mappedStackTrace.stack, mappedStackTrace.ignoredFrames);
     }
   });
 }
@@ -281,7 +282,28 @@ function DevErrorOverlay({
   onMinimize: () => void;
   onDismiss: () => void;
 }): React.ReactNode {
-  const frames = error.stack ? parseStack(error.stack) : [];
+  const frames = useMemo(
+    () =>
+      error.stack
+        ? parseStack(error.stack).map((frame, frameIndex) =>
+            createDisplayStackFrame(frame, error.ignoredStackFrames?.[frameIndex] ?? false),
+          )
+        : [],
+    [error.stack, error.ignoredStackFrames],
+  );
+  const [showIgnoredFrames, setShowIgnoredFrames] = useState(false);
+  const hasVisibleFrame = frames.some((frame) => !frame.ignored);
+  const ignoredFramesTally = hasVisibleFrame
+    ? frames.reduce((tally, frame) => tally + (frame.ignored ? 1 : 0), 0)
+    : 0;
+  const visibleFrames =
+    showIgnoredFrames || ignoredFramesTally === 0
+      ? frames
+      : frames.filter((frame) => !frame.ignored);
+
+  useEffect(() => {
+    setShowIgnoredFrames(false);
+  }, [error.id]);
 
   // Esc minimizes, ←/→ navigate between errors. Esc no longer dismisses
   // outright — once a developer wants the overlay gone they can hit the ×
@@ -311,8 +333,6 @@ function DevErrorOverlay({
         style={dialogStyle}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={accentBarStyle} />
-
         <header style={headerStyle}>
           <div style={headerLeftStyle}>
             <span data-testid="vinext-dev-error-title" style={badgeStyle}>
@@ -348,16 +368,6 @@ function DevErrorOverlay({
           </div>
           <button
             type="button"
-            data-testid="vinext-dev-error-minimize"
-            onClick={onMinimize}
-            className="vinext-overlay-minimize"
-            aria-label="Minimize"
-            title="Minimize (Esc)"
-          >
-            –
-          </button>
-          <button
-            type="button"
             data-testid="vinext-dev-error-close"
             onClick={onDismiss}
             className="vinext-overlay-close"
@@ -368,17 +378,39 @@ function DevErrorOverlay({
           </button>
         </header>
 
-        <div style={bodyStyle}>
+        <div className="vinext-overlay-body" style={bodyStyle}>
           <h2 data-testid="vinext-dev-error-message" style={messageStyle}>
             {error.message}
           </h2>
 
           {frames.length > 0 ? (
-            <ol data-testid="vinext-dev-error-stack" style={stackListStyle}>
-              {frames.map((frame) => (
-                <StackFrameRow key={frame.key} frame={frame} />
-              ))}
-            </ol>
+            <div data-testid="vinext-dev-error-stack-container" style={stackContainerStyle}>
+              <div style={stackHeaderStyle}>
+                <p style={stackTitleStyle}>
+                  Call Stack
+                  <span style={stackCountStyle}>{frames.length}</span>
+                </p>
+                {ignoredFramesTally > 0 ? (
+                  <button
+                    type="button"
+                    data-testid="vinext-dev-error-ignored-frames-toggle"
+                    data-vinext-ignored-frames-open={showIgnoredFrames}
+                    className="vinext-overlay-ignored-frames-toggle"
+                    onClick={() => setShowIgnoredFrames((open) => !open)}
+                  >
+                    {`${showIgnoredFrames ? "Hide" : "Show"} ${ignoredFramesTally} ignore-listed frame(s)`}
+                    <span aria-hidden="true" style={ignoredFramesToggleIconStyle}>
+                      ↕
+                    </span>
+                  </button>
+                ) : null}
+              </div>
+              <ol data-testid="vinext-dev-error-stack" style={stackListStyle}>
+                {visibleFrames.map((frame) => (
+                  <StackFrameRow key={frame.key} frame={frame} />
+                ))}
+              </ol>
+            </div>
           ) : null}
 
           {error.componentStack ? (
@@ -395,17 +427,16 @@ function DevErrorOverlay({
   );
 }
 
-function StackFrameRow({ frame }: { frame: Frame }): React.ReactNode {
-  const displayFrame = normalizeStackFrameLocation(frame);
-  const openInEditorFile = formatStackFrameLocation(displayFrame);
+function StackFrameRow({ frame }: { frame: DisplayFrame }): React.ReactNode {
+  const openInEditorFile = formatStackFrameLocation(frame);
   const content = (
     <>
       <span style={frameFnStyle}>{frame.fn}</span>
-      {displayFrame.file ? (
+      {frame.file ? (
         <span style={frameLocStyle}>
-          {displayFrame.file}
-          {displayFrame.line ? `:${displayFrame.line}` : ""}
-          {displayFrame.col ? `:${displayFrame.col}` : ""}
+          {frame.file}
+          {frame.line ? `:${frame.line}` : ""}
+          {frame.col ? `:${frame.col}` : ""}
         </span>
       ) : null}
     </>
@@ -413,14 +444,22 @@ function StackFrameRow({ frame }: { frame: Frame }): React.ReactNode {
 
   if (!openInEditorFile) {
     return (
-      <li className="vinext-overlay-frame" style={stackItemStyle}>
+      <li
+        className="vinext-overlay-frame"
+        data-vinext-ignored-frame={frame.ignored || undefined}
+        style={stackItemStyle}
+      >
         {content}
       </li>
     );
   }
 
   return (
-    <li className="vinext-overlay-frame" style={stackItemStyle}>
+    <li
+      className="vinext-overlay-frame"
+      data-vinext-ignored-frame={frame.ignored || undefined}
+      style={stackItemStyle}
+    >
       <button
         type="button"
         data-vinext-open-in-editor
@@ -448,6 +487,7 @@ function StackFrameRow({ frame }: { frame: Frame }): React.ReactNode {
 
 type Frame = { key: string; fn: string; file?: string; line?: string; col?: string };
 type FrameLocation = { file?: string; line?: string; col?: string };
+type DisplayFrame = Frame & { ignored: boolean };
 
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;
 const V8_BARE_FRAME = /^(.+):(\d+):(\d+)$/;
@@ -455,6 +495,11 @@ const MOZ_FRAME = /^(.*?)@(.+):(\d+):(\d+)$/;
 
 function parseStack(stack: string): Frame[] {
   const frames: Frame[] = [];
+  const lines = stack
+    .split("\n")
+    .map((raw) => raw.trim())
+    .filter(Boolean);
+  const firstLineIsMessage = lines.length > 1 && !isStackFrameLine(lines[0]!);
   // Suffix repeat occurrences with #2, #3 so React keys stay unique even when
   // the same frame appears multiple times in a recursive stack.
   const seen = new Map<string, number>();
@@ -465,9 +510,9 @@ function parseStack(stack: string): Frame[] {
     const key = count === 1 ? base : `${base}#${count}`;
     frames.push({ key, fn, file, line, col });
   };
-  for (const raw of stack.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (index === 0 && firstLineIsMessage) continue;
 
     // V8 / Chromium: "    at fn (file:line:col)" or "    at file:line:col"
     if (line.startsWith("at ")) {
@@ -500,6 +545,19 @@ function parseStack(stack: string): Frame[] {
     pushFrame(line);
   }
   return frames;
+}
+
+function isStackFrameLine(line: string): boolean {
+  return line.startsWith("at ") || MOZ_FRAME.test(line);
+}
+
+function createDisplayStackFrame(frame: Frame, ignored: boolean): DisplayFrame {
+  const normalizedFrame = normalizeStackFrameLocation(frame);
+  return {
+    ...frame,
+    ...normalizedFrame,
+    ignored,
+  };
 }
 
 function normalizeStackFrameLocation(frame: FrameLocation): FrameLocation {
@@ -565,9 +623,11 @@ function openViteEditor(file: string): void {
   void fetch(createViteOpenInEditorUrl(file)).catch(() => {});
 }
 
-async function resolveBrowserStackTrace(stack: string | undefined): Promise<string | undefined> {
+async function resolveBrowserStackTrace(
+  stack: string | undefined,
+): Promise<{ stack: string | undefined; ignoredFrames?: boolean[] }> {
   if (!stack || typeof window === "undefined" || typeof fetch !== "function") {
-    return stack;
+    return { stack };
   }
 
   try {
@@ -576,11 +636,17 @@ async function resolveBrowserStackTrace(stack: string | undefined): Promise<stri
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ stack }),
     });
-    if (!response.ok) return stack;
-    const payload = (await response.json()) as { stack?: unknown };
-    return typeof payload.stack === "string" ? payload.stack : stack;
+    if (!response.ok) return { stack };
+    const payload = (await response.json()) as { stack?: unknown; ignoredFrames?: unknown };
+    const ignoredFrames = Array.isArray(payload.ignoredFrames)
+      ? payload.ignoredFrames.filter((value): value is boolean => typeof value === "boolean")
+      : undefined;
+    return {
+      stack: typeof payload.stack === "string" ? payload.stack : stack,
+      ignoredFrames,
+    };
   } catch {
-    return stack;
+    return { stack };
   }
 }
 
@@ -595,6 +661,64 @@ const FONT_STACK =
 const MONO_STACK = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const overlayStylesheet = `
+#${MOUNT_NODE_ID} {
+  color-scheme: dark;
+  --vinext-overlay-backdrop: rgba(10, 10, 12, 0.55);
+  --vinext-overlay-dialog-bg: #0a0a0a;
+  --vinext-overlay-fg: #fafafa;
+  --vinext-overlay-muted: #a1a1aa;
+  --vinext-overlay-subtle: #71717a;
+  --vinext-overlay-border: rgba(255, 255, 255, 0.08);
+  --vinext-overlay-divider: rgba(255, 255, 255, 0.06);
+  --vinext-overlay-hover: rgba(255, 255, 255, 0.08);
+  --vinext-overlay-frame-hover: rgba(255, 255, 255, 0.04);
+  --vinext-overlay-toggle-hover: rgba(255, 255, 255, 0.06);
+  --vinext-overlay-focus: rgba(250, 250, 250, 0.65);
+  --vinext-overlay-danger: #ef4444;
+  --vinext-overlay-danger-fg: #fca5a5;
+  --vinext-overlay-danger-bg: rgba(239, 68, 68, 0.12);
+  --vinext-overlay-danger-muted-bg: rgba(239, 68, 68, 0.18);
+  --vinext-overlay-danger-border: rgba(239, 68, 68, 0.25);
+  --vinext-overlay-danger-strong-border: rgba(239, 68, 68, 0.45);
+  --vinext-overlay-danger-strong-border-hover: rgba(239, 68, 68, 0.7);
+  --vinext-overlay-count-bg: rgba(255, 255, 255, 0.1);
+  --vinext-overlay-count-fg: #d4d4d8;
+  --vinext-overlay-indicator-bg: #18181b;
+  --vinext-overlay-indicator-bg-hover: #1f1f23;
+  --vinext-overlay-scrollbar-thumb: rgba(161, 161, 170, 0.5);
+  --vinext-overlay-scrollbar-thumb-hover: rgba(212, 212, 216, 0.65);
+  --vinext-overlay-scrollbar-border: #0a0a0a;
+}
+@media (prefers-color-scheme: light) {
+  #${MOUNT_NODE_ID} {
+    color-scheme: light;
+    --vinext-overlay-backdrop: rgba(39, 39, 42, 0.42);
+    --vinext-overlay-dialog-bg: #ffffff;
+    --vinext-overlay-fg: #18181b;
+    --vinext-overlay-muted: #71717a;
+    --vinext-overlay-subtle: #52525b;
+    --vinext-overlay-border: rgba(24, 24, 27, 0.12);
+    --vinext-overlay-divider: rgba(24, 24, 27, 0.08);
+    --vinext-overlay-hover: rgba(24, 24, 27, 0.07);
+    --vinext-overlay-frame-hover: rgba(24, 24, 27, 0.045);
+    --vinext-overlay-toggle-hover: rgba(24, 24, 27, 0.055);
+    --vinext-overlay-focus: rgba(24, 24, 27, 0.45);
+    --vinext-overlay-danger: #dc2626;
+    --vinext-overlay-danger-fg: #b91c1c;
+    --vinext-overlay-danger-bg: rgba(220, 38, 38, 0.1);
+    --vinext-overlay-danger-muted-bg: rgba(220, 38, 38, 0.1);
+    --vinext-overlay-danger-border: rgba(220, 38, 38, 0.22);
+    --vinext-overlay-danger-strong-border: rgba(220, 38, 38, 0.3);
+    --vinext-overlay-danger-strong-border-hover: rgba(220, 38, 38, 0.45);
+    --vinext-overlay-count-bg: rgba(24, 24, 27, 0.08);
+    --vinext-overlay-count-fg: #52525b;
+    --vinext-overlay-indicator-bg: #ffffff;
+    --vinext-overlay-indicator-bg-hover: #f4f4f5;
+    --vinext-overlay-scrollbar-thumb: rgba(113, 113, 122, 0.45);
+    --vinext-overlay-scrollbar-thumb-hover: rgba(82, 82, 91, 0.62);
+    --vinext-overlay-scrollbar-border: #ffffff;
+  }
+}
 @keyframes vinextOverlayBackdropIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -619,17 +743,16 @@ const overlayStylesheet = `
   transition: background 0.12s ease;
 }
 .vinext-overlay-nav:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--vinext-overlay-hover);
 }
 .vinext-overlay-nav:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
-.vinext-overlay-minimize,
 .vinext-overlay-close {
   background: transparent;
   border: none;
-  color: #a1a1aa;
+  color: var(--vinext-overlay-muted);
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
@@ -637,10 +760,9 @@ const overlayStylesheet = `
   border-radius: 6px;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.vinext-overlay-minimize:hover,
 .vinext-overlay-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fafafa;
+  background: var(--vinext-overlay-hover);
+  color: var(--vinext-overlay-fg);
 }
 .vinext-overlay-close { font-size: 20px; }
 .vinext-overlay-frame {
@@ -649,7 +771,10 @@ const overlayStylesheet = `
   transition: background 0.12s ease;
 }
 .vinext-overlay-frame:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--vinext-overlay-frame-hover);
+}
+.vinext-overlay-frame[data-vinext-ignored-frame="true"] {
+  opacity: 0.58;
 }
 .vinext-overlay-frame-button {
   all: unset;
@@ -661,8 +786,51 @@ const overlayStylesheet = `
   cursor: pointer;
 }
 .vinext-overlay-frame-button:focus-visible {
-  outline: 2px solid rgba(250, 250, 250, 0.65);
+  outline: 2px solid var(--vinext-overlay-focus);
   outline-offset: 3px;
+}
+.vinext-overlay-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vinext-overlay-scrollbar-thumb) transparent;
+}
+.vinext-overlay-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.vinext-overlay-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.vinext-overlay-body::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  background: var(--vinext-overlay-scrollbar-thumb);
+  border: 2px solid var(--vinext-overlay-scrollbar-border);
+  border-radius: 999px;
+}
+.vinext-overlay-body::-webkit-scrollbar-thumb:hover {
+  background: var(--vinext-overlay-scrollbar-thumb-hover);
+}
+.vinext-overlay-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.vinext-overlay-ignored-frames-toggle {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--vinext-overlay-muted);
+  font: 500 13px ${FONT_STACK};
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.vinext-overlay-ignored-frames-toggle:hover {
+  background: var(--vinext-overlay-toggle-hover);
+  color: var(--vinext-overlay-fg);
+}
+.vinext-overlay-ignored-frames-toggle:focus-visible {
+  outline: 2px solid var(--vinext-overlay-focus);
+  outline-offset: 2px;
 }
 .vinext-overlay-indicator {
   display: inline-flex;
@@ -670,17 +838,17 @@ const overlayStylesheet = `
   gap: 8px;
   padding: 8px 14px;
   border-radius: 999px;
-  background: #18181b;
-  color: #fafafa;
-  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: var(--vinext-overlay-indicator-bg);
+  color: var(--vinext-overlay-fg);
+  border: 1px solid var(--vinext-overlay-danger-strong-border);
   font: 600 13px ${FONT_STACK};
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
   animation: vinextOverlayIndicatorIn 0.18s ease-out;
 }
 .vinext-overlay-indicator:hover {
-  background: #1f1f23;
-  border-color: rgba(239, 68, 68, 0.7);
+  background: var(--vinext-overlay-indicator-bg-hover);
+  border-color: var(--vinext-overlay-danger-strong-border-hover);
   transform: translateY(-1px);
 }
 `;
@@ -692,7 +860,7 @@ const backdropStyle: React.CSSProperties = {
   // dialogStyle.
   position: "fixed",
   inset: 0,
-  background: "rgba(10, 10, 12, 0.55)",
+  background: "var(--vinext-overlay-backdrop)",
   backdropFilter: "blur(3px)",
   WebkitBackdropFilter: "blur(3px)",
   display: "flex",
@@ -710,9 +878,9 @@ const dialogStyle: React.CSSProperties = {
   maxHeight: "min(80vh, 720px)",
   display: "flex",
   flexDirection: "column",
-  background: "#0a0a0a",
-  color: "#fafafa",
-  border: "1px solid rgba(255, 255, 255, 0.08)",
+  background: "var(--vinext-overlay-dialog-bg)",
+  color: "var(--vinext-overlay-fg)",
+  border: "1px solid var(--vinext-overlay-border)",
   borderRadius: 12,
   fontFamily: FONT_STACK,
   fontSize: 14,
@@ -732,7 +900,7 @@ const indicatorIconStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  color: "#ef4444",
+  color: "var(--vinext-overlay-danger)",
   fontSize: 14,
 };
 
@@ -744,16 +912,11 @@ const indicatorCountStyle: React.CSSProperties = {
   padding: "0 6px",
   height: 18,
   borderRadius: 999,
-  background: "rgba(239, 68, 68, 0.18)",
-  color: "#fca5a5",
+  background: "var(--vinext-overlay-danger-muted-bg)",
+  color: "var(--vinext-overlay-danger-fg)",
   fontSize: 11,
   fontWeight: 600,
   fontVariantNumeric: "tabular-nums",
-};
-
-const accentBarStyle: React.CSSProperties = {
-  height: 3,
-  background: "linear-gradient(90deg, #ef4444 0%, #f97316 100%)",
 };
 
 const headerStyle: React.CSSProperties = {
@@ -762,7 +925,6 @@ const headerStyle: React.CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   padding: "14px 16px",
-  borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
 };
 
 const headerLeftStyle: React.CSSProperties = {
@@ -775,9 +937,9 @@ const headerLeftStyle: React.CSSProperties = {
 const badgeStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
-  background: "rgba(239, 68, 68, 0.12)",
-  color: "#fca5a5",
-  border: "1px solid rgba(239, 68, 68, 0.25)",
+  background: "var(--vinext-overlay-danger-bg)",
+  color: "var(--vinext-overlay-danger-fg)",
+  border: "1px solid var(--vinext-overlay-danger-border)",
   padding: "3px 10px",
   borderRadius: 999,
   fontSize: 11,
@@ -791,7 +953,7 @@ const paginationStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 2,
-  color: "#a1a1aa",
+  color: "var(--vinext-overlay-muted)",
   fontSize: 12,
 };
 
@@ -801,20 +963,70 @@ const counterStyle: React.CSSProperties = {
 };
 
 const bodyStyle: React.CSSProperties = {
-  padding: "16px 20px 20px",
+  padding: "16px 8px 20px",
   overflow: "auto",
   flex: 1,
 };
 
 const messageStyle: React.CSSProperties = {
-  margin: "0 0 16px 0",
+  margin: "0 12px 16px",
   fontFamily: MONO_STACK,
   fontSize: 16,
   fontWeight: 500,
   lineHeight: 1.45,
-  color: "#fafafa",
+  color: "var(--vinext-overlay-fg)",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
+};
+
+const stackContainerStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+
+const stackHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  minHeight: 28,
+  padding: "0 12px 4px",
+  gap: 12,
+};
+
+const stackTitleStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  margin: 0,
+  color: "var(--vinext-overlay-fg)",
+  fontFamily: FONT_STACK,
+  fontSize: 15,
+  fontWeight: 600,
+  lineHeight: 1.4,
+};
+
+const stackCountStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 20,
+  height: 20,
+  padding: "0 6px",
+  borderRadius: 999,
+  background: "var(--vinext-overlay-count-bg)",
+  color: "var(--vinext-overlay-count-fg)",
+  fontSize: 11,
+  fontWeight: 600,
+  fontVariantNumeric: "tabular-nums",
+};
+
+const ignoredFramesToggleIconStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 14,
+  lineHeight: 1,
 };
 
 const stackListStyle: React.CSSProperties = {
@@ -841,20 +1053,20 @@ const stackFrameButtonStyle: React.CSSProperties = {
 };
 
 const frameFnStyle: React.CSSProperties = {
-  color: "#fafafa",
+  color: "var(--vinext-overlay-fg)",
   fontWeight: 500,
 };
 
 const frameLocStyle: React.CSSProperties = {
-  color: "#71717a",
+  color: "var(--vinext-overlay-subtle)",
   fontSize: 11,
 };
 
 const detailsStyle: React.CSSProperties = {
   marginTop: 16,
   paddingTop: 12,
-  borderTop: "1px solid rgba(255, 255, 255, 0.06)",
-  color: "#a1a1aa",
+  borderTop: "1px solid var(--vinext-overlay-divider)",
+  color: "var(--vinext-overlay-muted)",
   fontSize: 12,
 };
 
@@ -862,7 +1074,7 @@ const summaryStyle: React.CSSProperties = {
   cursor: "pointer",
   userSelect: "none",
   padding: "4px 0",
-  color: "#a1a1aa",
+  color: "var(--vinext-overlay-muted)",
   fontWeight: 500,
 };
 
@@ -871,5 +1083,5 @@ const componentStackStyle: React.CSSProperties = {
   fontFamily: MONO_STACK,
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
-  color: "#a1a1aa",
+  color: "var(--vinext-overlay-muted)",
 };

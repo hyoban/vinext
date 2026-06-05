@@ -85,7 +85,7 @@ test.describe("Dev error overlay", () => {
     await expect(page.getByTestId("vinext-dev-error-pagination")).toBeHidden();
 
     // The dialog covers the page; minimize so the next trigger is reachable.
-    await page.getByTestId("vinext-dev-error-minimize").click();
+    await page.keyboard.press("Escape");
     await page.getByTestId("trigger-unhandled-rejection").click();
     // A non-caught error re-expands the dialog automatically.
     await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
@@ -97,7 +97,7 @@ test.describe("Dev error overlay", () => {
   test("prev/next pagination switches between reported errors", async ({ page }) => {
     await page.goto(`${BASE}/dev-overlay-test`);
     await clickUntilOverlay(page, "trigger-window-error");
-    await page.getByTestId("vinext-dev-error-minimize").click();
+    await page.keyboard.press("Escape");
     await page.getByTestId("trigger-unhandled-rejection").click();
     await expect(page.getByTestId("vinext-dev-error-counter")).toHaveText("2 of 2");
 

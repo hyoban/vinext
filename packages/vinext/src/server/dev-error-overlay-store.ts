@@ -9,6 +9,7 @@ export type ReportedError = {
   source: Source;
   message: string;
   stack: string | undefined;
+  ignoredStackFrames: boolean[] | undefined;
   componentStack: string | undefined;
 };
 
@@ -59,11 +60,17 @@ export function reportToOverlay(error: Omit<ReportedError, "id">): number {
   return id;
 }
 
-export function updateOverlayErrorStack(id: number, stack: string | undefined): void {
+export function updateOverlayErrorStack(
+  id: number,
+  stack: string | undefined,
+  ignoredStackFrames?: boolean[],
+): void {
   if (!snapshot.errors.some((error) => error.id === id)) return;
   snapshot = {
     ...snapshot,
-    errors: snapshot.errors.map((error) => (error.id === id ? { ...error, stack } : error)),
+    errors: snapshot.errors.map((error) =>
+      error.id === id ? { ...error, stack, ignoredStackFrames } : error,
+    ),
   };
   emit();
 }

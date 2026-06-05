@@ -6,6 +6,7 @@ import {
   decodeVlqSegment,
   installDevStackSourcemapMiddleware,
   mapStackLine,
+  mapStackLineWithMetadata,
   originalPositionFor,
   resolveSourceFile,
   VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT,
@@ -140,6 +141,40 @@ describe("installDevStackSourcemapMiddleware", () => {
     expect(JSON.parse(res._body)).toEqual({ error: "Payload Too Large" });
     expect(transformRequests).toEqual([]);
   });
+
+  it("returns ignored frame metadata from the middleware response", async () => {
+    const { server, middlewareHandlers } = createServer({
+      sources: ["site-footer.tsx"],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    installDevStackSourcemapMiddleware(server);
+    const middleware = middlewareHandlers[0];
+    expect(middleware).toBeDefined();
+
+    const req = mockStackTraceRequest(
+      JSON.stringify({
+        stack: [
+          "Error: boom",
+          "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)",
+          "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)",
+        ].join("\n"),
+      }),
+    );
+    const res = mockResponse();
+
+    middleware!(req, res, () => {});
+    await res.done;
+
+    expect(res._statusCode).toBe(200);
+    expect(JSON.parse(res._body)).toEqual({
+      stack: [
+        "Error: boom",
+        "    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)",
+        "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)",
+      ].join("\n"),
+      ignoredFrames: [false, true],
+    });
+  });
 });
 
 describe("decodeVlqSegment", () => {
@@ -254,6 +289,70 @@ describe("mapStackLine", () => {
       ),
     ).resolves.toBe(line);
     expect(transformRequests).toEqual([]);
+  });
+
+  it("reports ignore-list metadata for source-map ignored sources", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["./original.tsx"],
+      mappings: "AAAA,KASE",
+      ignoreList: [0],
+    });
+    const line = "    at onClick (http://localhost:5173/src/App.tsx?t=1:1:6)";
+
+    await expect(
+      mapStackLineWithMetadata(
+        server,
+        line,
+        "localhost:5173",
+        new Map<string, Promise<SourceMapPayload | null>>(),
+      ),
+    ).resolves.toEqual({
+      line: "    at onClick (http://localhost:5173/src/original.tsx:10:3)",
+      isFrame: true,
+      ignored: true,
+    });
+    expect(transformRequests).toEqual(["client:/src/App.tsx?t=1"]);
+  });
+
+  it("reports ignore-list metadata for unmapped dependency frames", async () => {
+    const { server, transformRequests } = createServer();
+    const line = "    at render (/repo/app/node_modules/.vite/deps_ssr/react.js:1:2)";
+
+    await expect(
+      mapStackLineWithMetadata(
+        server,
+        line,
+        undefined,
+        new Map<string, Promise<SourceMapPayload | null>>(),
+      ),
+    ).resolves.toEqual({
+      line,
+      isFrame: true,
+      ignored: true,
+    });
+    expect(transformRequests).toEqual([]);
+  });
+
+  it("does not ignore-list app frames by default", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["site-footer.tsx"],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    const line = "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)";
+
+    await expect(
+      mapStackLineWithMetadata(
+        server,
+        line,
+        undefined,
+        new Map<string, Promise<SourceMapPayload | null>>(),
+      ),
+    ).resolves.toEqual({
+      line: "    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)",
+      isFrame: true,
+      ignored: false,
+    });
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
   });
 
   it("maps local filesystem frames through the RSC environment source map", async () => {
