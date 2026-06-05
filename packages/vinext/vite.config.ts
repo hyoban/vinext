@@ -10,7 +10,6 @@ export default defineConfig({
     dts: true,
     fixedExtension: false,
     format: "esm",
-    sourcemap: true,
     unbundle: true,
   },
 });
