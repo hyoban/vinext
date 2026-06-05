@@ -384,16 +384,19 @@ function DevErrorOverlay({
               </div>
             ) : null}
           </div>
-          <button
-            type="button"
-            data-testid="vinext-dev-error-close"
-            onClick={onDismiss}
-            className="vinext-overlay-close"
-            aria-label="Dismiss"
-            title="Dismiss all errors"
-          >
-            ×
-          </button>
+          <div style={headerActionsStyle}>
+            <CopyErrorButton error={error} frames={frames} />
+            <button
+              type="button"
+              data-testid="vinext-dev-error-close"
+              onClick={onDismiss}
+              className="vinext-overlay-close"
+              aria-label="Dismiss"
+              title="Dismiss all errors"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         <div className="vinext-overlay-body" style={bodyStyle}>
@@ -446,6 +449,81 @@ function DevErrorOverlay({
         </div>
       </div>
     </div>
+  );
+}
+
+function CopyErrorButton({
+  error,
+  frames,
+}: {
+  error: ReportedError;
+  frames: readonly DisplayFrame[];
+}): React.ReactNode {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const label =
+    copyState === "copied"
+      ? "Error Info Copied"
+      : copyState === "failed"
+        ? "Copy Error Info Failed"
+        : "Copy Error Info";
+
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  return (
+    <button
+      type="button"
+      data-testid="vinext-dev-error-copy"
+      data-vinext-copy-state={copyState}
+      className="vinext-overlay-copy"
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        void copyTextToClipboard(formatErrorInfoForClipboard(error, frames)).then((copied) =>
+          setCopyState(copied ? "copied" : "failed"),
+        );
+      }}
+    >
+      <span aria-hidden="true">{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</span>
+    </button>
+  );
+}
+
+function CopyIcon(): React.ReactNode {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <path
+        d="M5.5 4.5H11.5V12.5H5.5V4.5Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3.5 9.5H2.5V2.5H8.5V3.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon(): React.ReactNode {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <path
+        d="M3.25 7.5L6.25 10.5L11.75 4.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -573,6 +651,16 @@ function StackFrameRow({ frame }: { frame: DisplayFrame }): React.ReactNode {
 type Frame = { key: string; fn: string; file?: string; line?: string; col?: string };
 type FrameLocation = { file?: string; line?: string; col?: string };
 type DisplayFrame = Frame & { displayFile?: string; ignored: boolean };
+export type ClipboardStackFrame = {
+  fn: string;
+  file?: string;
+  displayFile?: string;
+  line?: string;
+  col?: string;
+  ignored?: boolean;
+};
+export type ClipboardErrorInfo = Pick<ReportedError, "source" | "message"> &
+  Partial<Pick<ReportedError, "projectRoot" | "codeFrame" | "componentStack">>;
 
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;
 const V8_BARE_FRAME = /^(.+):(\d+):(\d+)$/;
@@ -732,6 +820,107 @@ function formatStackFrameLocation(frame: FrameLocation): string | null {
   return frame.file;
 }
 
+export function formatErrorInfoForClipboard(
+  error: ClipboardErrorInfo,
+  frames: readonly ClipboardStackFrame[],
+): string {
+  const sections = [
+    `## Error Type\n\n${SOURCE_LABEL[error.source]}`,
+    `## Error Message\n\n${error.message}`,
+  ];
+  const stackFrames = getClipboardStackFrames(frames);
+
+  if (stackFrames.length > 0) {
+    sections.push(`## Stack\n\n${stackFrames.map(formatClipboardStackFrame).join("\n")}`);
+  }
+  if (error.codeFrame) {
+    sections.push(
+      `## Code Frame\n\n${formatClipboardCodeFrame(error.codeFrame, error.projectRoot)}`,
+    );
+  }
+  if (error.componentStack) {
+    sections.push(`## Component Stack\n\n${error.componentStack.trim()}`);
+  }
+
+  return sections.join("\n\n");
+}
+
+function getClipboardStackFrames(
+  frames: readonly ClipboardStackFrame[],
+): readonly ClipboardStackFrame[] {
+  const visibleFrames = frames.filter((frame) => !frame.ignored);
+  return visibleFrames.length > 0 ? visibleFrames : frames;
+}
+
+function formatClipboardStackFrame(frame: ClipboardStackFrame): string {
+  const location = formatStackFrameLocation({
+    file: frame.displayFile ?? frame.file,
+    line: frame.line,
+    col: frame.col,
+  });
+  return location ? `    at ${frame.fn} (${location})` : `    at ${frame.fn}`;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall back to execCommand below. Some embedded dev browsers expose the
+      // Clipboard API but still reject writes from overlay event handlers.
+    }
+  }
+
+  if (typeof document === "undefined" || typeof document.execCommand !== "function") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+
+  try {
+    (document.body ?? document.documentElement).appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+function formatClipboardCodeFrame(
+  codeFrame: OverlayCodeFrame,
+  projectRoot: string | undefined,
+): string {
+  const lineNumberWidth = Math.max(3, ...codeFrame.lines.map((line) => String(line.line).length));
+  const lines = codeFrame.lines.flatMap((line) => {
+    const marker = line.isErrorLine ? ">" : " ";
+    const formattedLine = `${marker} ${String(line.line).padStart(lineNumberWidth, " ")} | ${
+      line.text
+    }`;
+    if (!line.isErrorLine) return [formattedLine];
+    const caretLine = `  ${" ".repeat(lineNumberWidth)} | ${" ".repeat(
+      Math.max(0, codeFrame.column - 1),
+    )}^`;
+    return [formattedLine, caretLine];
+  });
+
+  return [formatCodeFrameLocation(codeFrame, projectRoot), ...lines].join("\n");
+}
+
 export function formatViteOpenInEditorFile(frame: FrameLocation): string | null {
   return formatStackFrameLocation(normalizeStackFrameLocation(frame));
 }
@@ -869,6 +1058,8 @@ const overlayStylesheet = `
   --vinext-overlay-danger-border: rgba(239, 68, 68, 0.25);
   --vinext-overlay-danger-strong-border: rgba(239, 68, 68, 0.45);
   --vinext-overlay-danger-strong-border-hover: rgba(239, 68, 68, 0.7);
+  --vinext-overlay-success: #22c55e;
+  --vinext-overlay-success-border: rgba(34, 197, 94, 0.4);
   --vinext-overlay-count-bg: rgba(255, 255, 255, 0.1);
   --vinext-overlay-count-fg: #d4d4d8;
   --vinext-overlay-code-bg: rgba(255, 255, 255, 0.03);
@@ -900,6 +1091,8 @@ const overlayStylesheet = `
     --vinext-overlay-danger-border: rgba(220, 38, 38, 0.22);
     --vinext-overlay-danger-strong-border: rgba(220, 38, 38, 0.3);
     --vinext-overlay-danger-strong-border-hover: rgba(220, 38, 38, 0.45);
+    --vinext-overlay-success: #16a34a;
+    --vinext-overlay-success-border: rgba(22, 163, 74, 0.4);
     --vinext-overlay-count-bg: rgba(24, 24, 27, 0.08);
     --vinext-overlay-count-fg: #52525b;
     --vinext-overlay-code-bg: rgba(24, 24, 27, 0.025);
@@ -957,6 +1150,37 @@ const overlayStylesheet = `
   color: var(--vinext-overlay-fg);
 }
 .vinext-overlay-close { font-size: 20px; }
+.vinext-overlay-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--vinext-overlay-border);
+  border-radius: 999px;
+  color: var(--vinext-overlay-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.vinext-overlay-copy:hover {
+  background: var(--vinext-overlay-hover);
+  color: var(--vinext-overlay-fg);
+}
+.vinext-overlay-copy:focus-visible {
+  outline: 2px solid var(--vinext-overlay-focus);
+  outline-offset: 2px;
+}
+.vinext-overlay-copy[data-vinext-copy-state="copied"] {
+  color: var(--vinext-overlay-success);
+  border-color: var(--vinext-overlay-success-border);
+}
+.vinext-overlay-copy > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .vinext-overlay-frame {
   padding: 8px 12px;
   border-radius: 6px;
@@ -1081,9 +1305,7 @@ const backdropStyle: React.CSSProperties = {
   // dialogStyle.
   position: "fixed",
   inset: 0,
-  background: "var(--vinext-overlay-backdrop)",
-  backdropFilter: "blur(3px)",
-  WebkitBackdropFilter: "blur(3px)",
+  background: "transparent",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -1095,7 +1317,7 @@ const backdropStyle: React.CSSProperties = {
 const dialogStyle: React.CSSProperties = {
   position: "relative",
   pointerEvents: "auto",
-  width: "min(640px, 100%)",
+  width: "min(960px, calc(100vw - 32px))",
   maxHeight: "min(80vh, 720px)",
   display: "flex",
   flexDirection: "column",
@@ -1153,6 +1375,13 @@ const headerLeftStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 10,
   minWidth: 0,
+};
+
+const headerActionsStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flex: "0 0 auto",
 };
 
 const badgeStyle: React.CSSProperties = {

@@ -32,6 +32,7 @@ import {
   createViteOpenInEditorUrl,
   devOnCaughtError,
   devOnUncaughtError,
+  formatErrorInfoForClipboard,
   formatOverlayDisplayFile,
   formatViteOpenInEditorFile,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
@@ -5278,6 +5279,73 @@ describe("dev overlay open-in-editor helpers", () => {
       ),
     ).toBe(
       "http://localhost:3001/__open-in-editor?file=%2FUsers%2Fhyoban%2Ff%2Fvinext%2Fapps%2Fweb%2Fapp%2F_components%2Fsite%20footer.tsx%3A9%3A8",
+    );
+  });
+
+  it("formats copied error info with visible stack frames and code frames", () => {
+    expect(
+      formatErrorInfoForClipboard(
+        {
+          source: "server",
+          message: "vinext is not ready yet. Stay tuned!",
+          projectRoot: "/Users/hyoban/f/vinext/apps/web",
+          codeFrame: {
+            file: "file:///Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx",
+            line: 6,
+            column: 9,
+            methodName: "SiteFooter",
+            lines: [
+              { line: 4, text: "const unused = 1;", isErrorLine: false },
+              { line: 5, text: "export function SiteFooter() {", isErrorLine: false },
+              {
+                line: 6,
+                text: '  throw new Error("vinext is not ready yet. Stay tuned!");',
+                isErrorLine: true,
+              },
+              { line: 7, text: "  return (", isErrorLine: false },
+            ],
+          },
+        },
+        [
+          {
+            fn: "SiteFooter",
+            displayFile: "app/_components/site-footer.tsx",
+            line: "6",
+            col: "9",
+            ignored: false,
+          },
+          {
+            fn: "renderFunctionComponent",
+            displayFile: "node_modules/.vite/deps_rsc/react-server-dom-webpack_server__edge.js",
+            line: "956",
+            col: "71",
+            ignored: true,
+          },
+        ],
+      ),
+    ).toBe(
+      [
+        "## Error Type",
+        "",
+        "Server Error",
+        "",
+        "## Error Message",
+        "",
+        "vinext is not ready yet. Stay tuned!",
+        "",
+        "## Stack",
+        "",
+        "    at SiteFooter (app/_components/site-footer.tsx:6:9)",
+        "",
+        "## Code Frame",
+        "",
+        "app/_components/site-footer.tsx:6:9 @ SiteFooter",
+        "    4 | const unused = 1;",
+        "    5 | export function SiteFooter() {",
+        '>   6 |   throw new Error("vinext is not ready yet. Stay tuned!");',
+        "      |         ^",
+        "    7 |   return (",
+      ].join("\n"),
     );
   });
 });
