@@ -138,6 +138,7 @@ import {
   devOnUncaughtError,
   dismissOverlay,
   installDevErrorOverlay,
+  reportInitialDevServerErrors,
 } from "./dev-error-overlay.js";
 import { DANGEROUS_URL_BLOCK_MESSAGE, isDangerousScheme } from "vinext/shims/url-safety";
 import { throwOnServerActionNotFound } from "./server-action-not-found.js";
@@ -1624,6 +1625,11 @@ function registerServerActionCallback(): void {
 async function main(): Promise<void> {
   registerServerActionCallback();
 
+  if (import.meta.env.DEV) {
+    installDevErrorOverlay();
+    reportInitialDevServerErrors();
+  }
+
   const rscStream = await readInitialRscStream();
   // null signals that readInitialRscStream aborted hydration — either because
   // a reload is in flight (first-attempt recovery) or the endpoint is
@@ -1635,10 +1641,6 @@ async function main(): Promise<void> {
 }
 
 function bootstrapHydration(rscStream: ReadableStream<Uint8Array>): void {
-  if (import.meta.env.DEV) {
-    installDevErrorOverlay();
-  }
-
   const root = decodeAppElementsPromise(createFromReadableStream<AppWireElements>(rscStream));
   const initialNavigationSnapshot = createClientNavigationRenderSnapshot(
     window.location.href,

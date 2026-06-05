@@ -481,6 +481,30 @@ describe("app page render lifecycle", () => {
     await expect(response.text()).resolves.toBe("boundary:boom");
   });
 
+  it("prefers the captured RSC error over an SSR decoder error when rendering the error boundary", async () => {
+    const common = createCommonOptions();
+    const rscError = new Error("rsc-original");
+    const ssrError = new Error("ssr-decoder");
+
+    const response = await renderAppPageLifecycle({
+      ...common.options,
+      async loadSsrHandler() {
+        return {
+          async handleSsr() {
+            throw ssrError;
+          },
+        };
+      },
+      renderToReadableStream(_element, { onError }) {
+        onError(rscError, null, null);
+        return createStream(["flight-data"]);
+      },
+    });
+
+    expect(common.renderErrorBoundaryResponse).toHaveBeenCalledWith(rscError);
+    await expect(response.text()).resolves.toBe("boundary:rsc-original");
+  });
+
   it("writes paired HTML and RSC cache entries for cacheable HTML responses", async () => {
     const common = createCommonOptions();
 

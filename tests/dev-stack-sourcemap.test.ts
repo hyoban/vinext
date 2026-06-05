@@ -30,10 +30,19 @@ function createServer(sourceMap: SourceMapPayload | null = SOURCE_MAP): {
     environments: {
       client: {
         async transformRequest(viteUrl: string) {
-          transformRequests.push(viteUrl);
+          transformRequests.push(`client:${viteUrl}`);
           return { map: sourceMap };
         },
       },
+      rsc: {
+        async transformRequest(viteUrl: string) {
+          transformRequests.push(`rsc:${viteUrl}`);
+          return { map: sourceMap };
+        },
+      },
+    },
+    config: {
+      root: "/repo/app",
     },
     middlewares: {
       use(handler: DevStackMiddleware) {
@@ -228,7 +237,7 @@ describe("mapStackLine", () => {
           new Map<string, Promise<SourceMapPayload | null>>(),
         ),
       ).resolves.toBe(expected);
-      expect(transformRequests).toEqual(["/src/App.tsx?t=1"]);
+      expect(transformRequests).toEqual(["client:/src/App.tsx?t=1"]);
     });
   }
 
@@ -245,6 +254,57 @@ describe("mapStackLine", () => {
       ),
     ).resolves.toBe(line);
     expect(transformRequests).toEqual([]);
+  });
+
+  it("maps local filesystem frames through the RSC environment source map", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["site-footer.tsx"],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    const line = "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)";
+
+    await expect(
+      mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
+    ).resolves.toBe("    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)");
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
+  });
+
+  it("leaves local filesystem frames unchanged when no server source map is available", async () => {
+    const { server, transformRequests } = createServer(null);
+    const line = "    at SiteFooter (/repo/app/app/_components/site-footer.tsx:9:8)";
+
+    await expect(
+      mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
+    ).resolves.toBe(line);
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
+  });
+
+  it("maps React Server component frame URLs through the RSC environment source map", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["site-footer.tsx"],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    const line =
+      "    at SiteFooter (about://React/Server/file:///repo/app/app/_components/site-footer.tsx?9:9:8)";
+
+    await expect(
+      mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
+    ).resolves.toBe("    at SiteFooter (file:///repo/app/app/_components/site-footer.tsx:6:9)");
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site-footer.tsx"]);
+  });
+
+  it("decodes file URLs before asking Vite for a server source map", async () => {
+    const { server, transformRequests } = createServer({
+      sources: ["site footer.tsx"],
+      mappings: ";;;;;;;;AAKQ",
+    });
+    const line =
+      "    at SiteFooter (about://React/Server/file:///repo/app/app/_components/site%20footer.tsx?9:9:8)";
+
+    await expect(
+      mapStackLine(server, line, undefined, new Map<string, Promise<SourceMapPayload | null>>()),
+    ).resolves.toBe("    at SiteFooter (file:///repo/app/app/_components/site%20footer.tsx:6:9)");
+    expect(transformRequests).toEqual(["rsc:/repo/app/app/_components/site footer.tsx"]);
   });
 });
 

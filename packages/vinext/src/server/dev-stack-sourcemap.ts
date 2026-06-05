@@ -1,7 +1,10 @@
 import type { ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
-export const VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT = "/__vinext_original-stack-trace";
+import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap-endpoint.js";
+
+export { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap-endpoint.js";
 
 const MAX_ORIGINAL_STACK_TRACE_BODY_BYTES = 1024 * 1024;
 
@@ -16,6 +19,12 @@ type SourceMapPosition = {
   source: string;
   line: number;
   column: number;
+};
+
+type GeneratedFrame = {
+  cacheKey: string;
+  sourceMapBaseUrl: URL;
+  transform: () => Promise<SourceMapPayload | null>;
 };
 
 const V8_PAREN_STACK_LINE = /^(\s*at\s+.*?\()(.+):(\d+):(\d+)(\)\s*)$/;
@@ -203,20 +212,24 @@ async function mapGeneratedFrame(
   requestHost: string | undefined,
   sourceMapCache: Map<string, Promise<SourceMapPayload | null>>,
 ): Promise<{ file: string; line: number; column: number } | null> {
-  const generatedUrl = getMappableGeneratedUrl(file, requestHost);
-  if (!generatedUrl) return null;
+  const generatedFrame = getMappableGeneratedFrame(server, file, requestHost);
+  if (!generatedFrame) return null;
 
   const generatedLine = Number(line);
   const generatedColumn = Number(column);
   if (!Number.isFinite(generatedLine) || !Number.isFinite(generatedColumn)) return null;
 
-  const sourceMap = await getSourceMapForGeneratedUrl(server, generatedUrl, sourceMapCache);
+  const sourceMap = await getSourceMapForGeneratedFrame(generatedFrame, sourceMapCache);
   if (!sourceMap) return null;
 
   const original = originalPositionFor(sourceMap, generatedLine, generatedColumn);
   if (!original) return null;
 
-  const originalFile = resolveSourceFile(original.source, sourceMap, generatedUrl);
+  const originalFile = resolveSourceFile(
+    original.source,
+    sourceMap,
+    generatedFrame.sourceMapBaseUrl,
+  );
   return {
     file: originalFile,
     line: original.line,
@@ -224,7 +237,71 @@ async function mapGeneratedFrame(
   };
 }
 
-function getMappableGeneratedUrl(file: string, requestHost: string | undefined): URL | null {
+function stripTrailingSlash(value: string | undefined): string | undefined {
+  return value?.replace(/\/+$/, "");
+}
+
+function stripQuery(value: string): string {
+  return value.split(/[?#]/, 1)[0] ?? value;
+}
+
+function getMappableGeneratedFrame(
+  server: ViteDevServer,
+  file: string,
+  requestHost: string | undefined,
+): GeneratedFrame | null {
+  const normalizedFile = devirtualizeReactServerFrame(file);
+  const localPath = getLocalSourcePath(server, normalizedFile);
+  if (localPath) {
+    return {
+      cacheKey: `server:${localPath}`,
+      sourceMapBaseUrl: pathToFileURL(localPath),
+      transform: () => loadServerSourceMapForLocalPath(server, localPath),
+    };
+  }
+
+  const generatedUrl = getMappableClientGeneratedUrl(normalizedFile, requestHost);
+  if (!generatedUrl) return null;
+  const viteUrl = generatedUrl.pathname + generatedUrl.search;
+  return {
+    cacheKey: `client:${viteUrl}`,
+    sourceMapBaseUrl: generatedUrl,
+    transform: () => loadClientSourceMapForGeneratedUrl(server, viteUrl),
+  };
+}
+
+function devirtualizeReactServerFrame(file: string): string {
+  if (!file.startsWith("about://React/")) return file;
+  const envIdx = file.indexOf("/", "about://React/".length);
+  const suffixIdx = file.lastIndexOf("?");
+  if (envIdx === -1 || suffixIdx === -1 || suffixIdx <= envIdx) return file;
+  return file.slice(envIdx + 1, suffixIdx);
+}
+
+function getLocalSourcePath(server: ViteDevServer, file: string): string | null {
+  let localPath = file;
+  if (file.startsWith("file://")) {
+    try {
+      localPath = fileURLToPath(file);
+    } catch {
+      return null;
+    }
+  }
+
+  localPath = stripQuery(localPath);
+  if (!isAbsolutePath(localPath)) return null;
+  if (localPath.includes("/node_modules/")) return null;
+
+  const root = stripTrailingSlash(server.config?.root);
+  if (!root) return null;
+  return localPath === root || localPath.startsWith(`${root}/`) ? localPath : null;
+}
+
+function isAbsolutePath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+}
+
+function getMappableClientGeneratedUrl(file: string, requestHost: string | undefined): URL | null {
   const isAbsoluteHttpUrl = /^https?:\/\//i.test(file);
   let url: URL;
   try {
@@ -240,31 +317,46 @@ function getMappableGeneratedUrl(file: string, requestHost: string | undefined):
   return url;
 }
 
-async function getSourceMapForGeneratedUrl(
-  server: ViteDevServer,
-  generatedUrl: URL,
+async function getSourceMapForGeneratedFrame(
+  generatedFrame: GeneratedFrame,
   cache: Map<string, Promise<SourceMapPayload | null>>,
 ): Promise<SourceMapPayload | null> {
-  const cacheKey = generatedUrl.pathname + generatedUrl.search;
-  let sourceMap = cache.get(cacheKey);
+  let sourceMap = cache.get(generatedFrame.cacheKey);
   if (!sourceMap) {
-    sourceMap = loadSourceMapForGeneratedUrl(server, generatedUrl);
-    cache.set(cacheKey, sourceMap);
+    sourceMap = generatedFrame.transform();
+    cache.set(generatedFrame.cacheKey, sourceMap);
   }
   return sourceMap;
 }
 
-async function loadSourceMapForGeneratedUrl(
+async function loadClientSourceMapForGeneratedUrl(
   server: ViteDevServer,
-  generatedUrl: URL,
+  viteUrl: string,
 ): Promise<SourceMapPayload | null> {
   try {
-    const viteUrl = generatedUrl.pathname + generatedUrl.search;
     const result = await server.environments.client.transformRequest(viteUrl);
     return normalizeSourceMapPayload(result?.map);
   } catch {
     return null;
   }
+}
+
+async function loadServerSourceMapForLocalPath(
+  server: ViteDevServer,
+  localPath: string,
+): Promise<SourceMapPayload | null> {
+  for (const environmentName of ["rsc", "ssr"]) {
+    const environment = server.environments[environmentName];
+    if (!environment) continue;
+    try {
+      const result = await environment.transformRequest(localPath);
+      const sourceMap = normalizeSourceMapPayload(result?.map);
+      if (sourceMap) return sourceMap;
+    } catch {
+      // Try the next environment. Some frames are RSC-only or SSR-only.
+    }
+  }
+  return null;
 }
 
 function normalizeSourceMapPayload(payload: unknown): SourceMapPayload | null {

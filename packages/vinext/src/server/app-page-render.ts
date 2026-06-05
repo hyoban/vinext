@@ -750,7 +750,7 @@ export async function renderAppPageLifecycle(
       }
     },
     renderErrorBoundaryResponse(error) {
-      return options.renderErrorBoundaryResponse(error);
+      return options.renderErrorBoundaryResponse(rscErrorTracker.getCapturedError() ?? error);
     },
     async renderHtmlStream() {
       const ssrHandler = await options.loadSsrHandler();

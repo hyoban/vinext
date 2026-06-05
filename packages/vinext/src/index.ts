@@ -1549,6 +1549,13 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
         // Next emits CSS url() deps as files, not inlined data URLs. A user's
         // explicit `build.assetsInlineLimit` always wins.
         clientAssetsInlineLimit = config.build?.assetsInlineLimit ?? 0;
+        const devHmrConfig =
+          config.server?.hmr === false
+            ? false
+            : {
+                ...(typeof config.server?.hmr === "object" ? config.server.hmr : {}),
+                overlay: false,
+              };
 
         const viteConfig: UserConfig = {
           // Disable Vite's default HTML serving - we handle all routing
@@ -1726,6 +1733,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
               preflightContinue: true,
               origin: /^https?:\/\/(?:(?:[^:]+\.)?localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/,
             },
+            hmr: devHmrConfig,
           },
           // Configure SSR transform behaviour for Node targets.
           // - `external`: React packages are loaded natively by Node (CJS)

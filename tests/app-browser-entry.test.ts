@@ -29,8 +29,10 @@ import {
   removeStylesheetLinksCoveredByInlineCss,
 } from "../packages/vinext/src/server/app-inline-css-client.js";
 import {
+  createViteOpenInEditorUrl,
   devOnCaughtError,
   devOnUncaughtError,
+  formatViteOpenInEditorFile,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
 import {
   APP_CACHE_ENTRY_REUSE_PROOF_KEY,
@@ -5204,6 +5206,48 @@ describe("devOnUncaughtError (hydrateRoot dev handler)", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+});
+
+describe("dev overlay open-in-editor helpers", () => {
+  it("formats stack frames as Vite open-in-editor file payloads", () => {
+    expect(
+      formatViteOpenInEditorFile({
+        file: "/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx",
+        line: "9",
+        col: "8",
+      }),
+    ).toBe("/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx:9:8");
+
+    expect(
+      formatViteOpenInEditorFile({
+        file: "/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx",
+        line: "9",
+      }),
+    ).toBe("/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx:9");
+
+    expect(formatViteOpenInEditorFile({ file: "virtual:vinext-app-browser-entry" })).toBe(
+      "virtual:vinext-app-browser-entry",
+    );
+    expect(
+      formatViteOpenInEditorFile({
+        file: "about://React/Server/file:///Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx?9",
+        line: "9",
+        col: "8",
+      }),
+    ).toBe("/Users/hyoban/f/vinext/apps/web/app/_components/site-footer.tsx:9:8");
+    expect(formatViteOpenInEditorFile({})).toBeNull();
+  });
+
+  it("builds the Vite dev server open-in-editor URL", () => {
+    expect(
+      createViteOpenInEditorUrl(
+        "/Users/hyoban/f/vinext/apps/web/app/_components/site footer.tsx:9:8",
+        "http://localhost:3001/@id/__x00__virtual:vinext-app-browser-entry",
+      ),
+    ).toBe(
+      "http://localhost:3001/__open-in-editor?file=%2FUsers%2Fhyoban%2Ff%2Fvinext%2Fapps%2Fweb%2Fapp%2F_components%2Fsite%20footer.tsx%3A9%3A8",
+    );
   });
 });
 

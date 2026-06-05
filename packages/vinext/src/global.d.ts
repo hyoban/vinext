@@ -18,6 +18,7 @@
 
 import type { Root } from "react-dom/client";
 import type { OnRequestErrorHandler } from "./server/instrumentation";
+import type { InitialDevServerErrorPayload } from "./server/dev-initial-server-error";
 import type { CachedRscResponse, PrefetchCacheEntry } from "vinext/shims/navigation";
 
 // `window.next` is declared inline in `./client/window-next.ts` (mirroring
@@ -53,6 +54,7 @@ declare global {
     __NEXT_HYDRATED: boolean | undefined;
     __NEXT_HYDRATED_AT: number | undefined;
     __NEXT_HYDRATED_CB: (() => void) | undefined;
+    __VINEXT_INITIAL_DEV_ERRORS__: InitialDevServerErrorPayload[] | undefined;
 
     /**
      * The cached `_app` component for Pages Router.

@@ -26,7 +26,7 @@ import {
   subscribeOverlay,
   updateOverlayErrorStack,
 } from "./dev-error-overlay-store.js";
-import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap.js";
+import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap-endpoint.js";
 
 // Re-export so callers (e.g. the HMR rsc:update handler) can clear the
 // overlay when a new payload lands.
@@ -76,6 +76,26 @@ export function installDevErrorOverlay(): void {
       reportDevError(new Error(String(reason)), { source: "unhandledrejection" });
     }
   });
+}
+
+export function reportInitialDevServerErrors(): void {
+  if (typeof window === "undefined") return;
+
+  const errors = window.__VINEXT_INITIAL_DEV_ERRORS__;
+  if (!errors || errors.length === 0) return;
+
+  window.__VINEXT_INITIAL_DEV_ERRORS__ = [];
+
+  for (const payload of errors) {
+    const error = new Error(payload.message);
+    if (payload.name) {
+      error.name = payload.name;
+    }
+    if (payload.stack) {
+      error.stack = payload.stack;
+    }
+    reportDevError(error, { source: "server" });
+  }
 }
 
 function reportDevError(
@@ -170,6 +190,7 @@ function ensureMounted(): void {
 // ---------------------------------------------------------------------------
 
 const SOURCE_LABEL: Record<Source, string> = {
+  server: "Server Error",
   uncaught: "Unhandled Runtime Error",
   caught: "Runtime Error",
   "window-error": "Unhandled Script Error",
@@ -355,16 +376,7 @@ function DevErrorOverlay({
           {frames.length > 0 ? (
             <ol data-testid="vinext-dev-error-stack" style={stackListStyle}>
               {frames.map((frame) => (
-                <li key={frame.key} className="vinext-overlay-frame" style={stackItemStyle}>
-                  <span style={frameFnStyle}>{frame.fn}</span>
-                  {frame.file ? (
-                    <span style={frameLocStyle}>
-                      {frame.file}
-                      {frame.line ? `:${frame.line}` : ""}
-                      {frame.col ? `:${frame.col}` : ""}
-                    </span>
-                  ) : null}
-                </li>
+                <StackFrameRow key={frame.key} frame={frame} />
               ))}
             </ol>
           ) : null}
@@ -383,6 +395,50 @@ function DevErrorOverlay({
   );
 }
 
+function StackFrameRow({ frame }: { frame: Frame }): React.ReactNode {
+  const displayFrame = normalizeStackFrameLocation(frame);
+  const openInEditorFile = formatStackFrameLocation(displayFrame);
+  const content = (
+    <>
+      <span style={frameFnStyle}>{frame.fn}</span>
+      {displayFrame.file ? (
+        <span style={frameLocStyle}>
+          {displayFrame.file}
+          {displayFrame.line ? `:${displayFrame.line}` : ""}
+          {displayFrame.col ? `:${displayFrame.col}` : ""}
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (!openInEditorFile) {
+    return (
+      <li className="vinext-overlay-frame" style={stackItemStyle}>
+        {content}
+      </li>
+    );
+  }
+
+  return (
+    <li className="vinext-overlay-frame" style={stackItemStyle}>
+      <button
+        type="button"
+        data-vinext-open-in-editor
+        className="vinext-overlay-frame-button"
+        style={stackFrameButtonStyle}
+        title={`Open ${openInEditorFile} in editor`}
+        aria-label={`Open ${openInEditorFile} in editor`}
+        onClick={(event) => {
+          event.stopPropagation();
+          openViteEditor(openInEditorFile);
+        }}
+      >
+        {content}
+      </button>
+    </li>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Stack parsing — handles V8 ("    at fn (file:line:col)") and SpiderMonkey/
 // JavaScriptCore ("fn@file:line:col") formats. Lines that don't match either
@@ -391,6 +447,7 @@ function DevErrorOverlay({
 // ---------------------------------------------------------------------------
 
 type Frame = { key: string; fn: string; file?: string; line?: string; col?: string };
+type FrameLocation = { file?: string; line?: string; col?: string };
 
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;
 const V8_BARE_FRAME = /^(.+):(\d+):(\d+)$/;
@@ -443,6 +500,69 @@ function parseStack(stack: string): Frame[] {
     pushFrame(line);
   }
   return frames;
+}
+
+function normalizeStackFrameLocation(frame: FrameLocation): FrameLocation {
+  if (!frame.file) return frame;
+
+  return {
+    ...frame,
+    file: fileUrlToPath(devirtualizeReactServerUrl(frame.file)),
+  };
+}
+
+function devirtualizeReactServerUrl(sourceUrl: string): string {
+  if (sourceUrl.startsWith("about://React/")) {
+    // Same shape Next.js normalizes in server/lib/source-maps:
+    // about://React/Server/file://<filename>?42 => file://<filename>
+    const envIdx = sourceUrl.indexOf("/", "about://React/".length);
+    const suffixIdx = sourceUrl.lastIndexOf("?");
+    if (envIdx > -1 && suffixIdx > -1) {
+      return sourceUrl.slice(envIdx + 1, suffixIdx);
+    }
+  }
+  return sourceUrl;
+}
+
+function fileUrlToPath(sourceUrl: string): string {
+  if (!sourceUrl.startsWith("file://")) return sourceUrl;
+
+  try {
+    const url = new URL(sourceUrl);
+    if (url.protocol !== "file:") return sourceUrl;
+    const pathname = decodeURIComponent(url.pathname);
+    if (url.hostname) {
+      return `//${url.hostname}${pathname}`;
+    }
+    return pathname.replace(/^\/([A-Za-z]:)/, "$1");
+  } catch {
+    return sourceUrl;
+  }
+}
+
+function formatStackFrameLocation(frame: FrameLocation): string | null {
+  if (!frame.file) return null;
+
+  if (frame.line && frame.col) {
+    return `${frame.file}:${frame.line}:${frame.col}`;
+  }
+  if (frame.line) {
+    return `${frame.file}:${frame.line}`;
+  }
+  return frame.file;
+}
+
+export function formatViteOpenInEditorFile(frame: FrameLocation): string | null {
+  return formatStackFrameLocation(normalizeStackFrameLocation(frame));
+}
+
+export function createViteOpenInEditorUrl(file: string, baseUrl = import.meta.url): string {
+  return new URL(`/__open-in-editor?file=${encodeURIComponent(file)}`, baseUrl).toString();
+}
+
+function openViteEditor(file: string): void {
+  if (typeof fetch !== "function") return;
+  void fetch(createViteOpenInEditorUrl(file)).catch(() => {});
 }
 
 async function resolveBrowserStackTrace(stack: string | undefined): Promise<string | undefined> {
@@ -530,6 +650,19 @@ const overlayStylesheet = `
 }
 .vinext-overlay-frame:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+.vinext-overlay-frame-button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  cursor: pointer;
+}
+.vinext-overlay-frame-button:focus-visible {
+  outline: 2px solid rgba(250, 250, 250, 0.65);
+  outline-offset: 3px;
 }
 .vinext-overlay-indicator {
   display: inline-flex;
@@ -700,6 +833,11 @@ const stackItemStyle: React.CSSProperties = {
   flexDirection: "column",
   gap: 2,
   cursor: "default",
+};
+
+const stackFrameButtonStyle: React.CSSProperties = {
+  color: "inherit",
+  font: "inherit",
 };
 
 const frameFnStyle: React.CSSProperties = {
