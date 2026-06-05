@@ -38,8 +38,10 @@ import {
   formatErrorInfoForClipboard,
   formatOverlayDisplayFile,
   formatViteOpenInEditorFile,
+  installReactRefreshErrorRecovery,
   normalizeViteHmrError,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
+import { VINEXT_DEV_ERROR_RECOVERY_EVENT } from "../packages/vinext/src/utils/dev-error-recovery-event.js";
 import {
   APP_CACHE_ENTRY_REUSE_PROOF_KEY,
   AppElementsWire,
@@ -5542,6 +5544,45 @@ describe("dev overlay Vite HMR errors", () => {
     });
 
     expect(normalized.message).toBe(message);
+  });
+});
+
+describe("dev overlay React Refresh recovery", () => {
+  it("dispatches recovery before React Refresh retries failed roots", async () => {
+    const callbacks: Array<() => void | Promise<void>> = [];
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", {
+      __registerBeforePerformReactRefresh(cb: () => void | Promise<void>) {
+        callbacks.push(cb);
+      },
+      dispatchEvent,
+      setTimeout: vi.fn(),
+    });
+
+    installReactRefreshErrorRecovery();
+
+    expect(callbacks).toHaveLength(1);
+    await callbacks[0]?.();
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    const event = dispatchEvent.mock.calls[0]?.[0];
+    expect(event).toBeInstanceOf(Event);
+    expect((event as Event).type).toBe(VINEXT_DEV_ERROR_RECOVERY_EVENT);
+  });
+
+  it("does not register duplicate React Refresh recovery callbacks", () => {
+    const callbacks: Array<() => void | Promise<void>> = [];
+    vi.stubGlobal("window", {
+      __registerBeforePerformReactRefresh(cb: () => void | Promise<void>) {
+        callbacks.push(cb);
+      },
+      dispatchEvent: vi.fn(),
+      setTimeout: vi.fn(),
+    });
+
+    installReactRefreshErrorRecovery();
+    installReactRefreshErrorRecovery();
+
+    expect(callbacks).toHaveLength(1);
   });
 });
 

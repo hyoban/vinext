@@ -13,6 +13,10 @@ const LAYOUT_HMR_TOGGLE_FILE = path.join(
   process.cwd(),
   "tests/fixtures/app-basic/app/dev-overlay-layout-hmr-toggle/layout-hmr-toggle.tsx",
 );
+const CLIENT_HMR_TOGGLE_FILE = path.join(
+  process.cwd(),
+  "tests/fixtures/app-basic/app/dev-overlay-client-hmr-toggle/client-hmr-toggle.tsx",
+);
 const SERVER_HMR_TOGGLE_CLEAN = `export function ServerHmrToggle() {
   return <p data-testid="server-hmr-toggle">server hmr clean</p>;
 }
@@ -35,10 +39,37 @@ const LAYOUT_HMR_TOGGLE_BROKEN = `export function LayoutHmrToggle() {
   return <p data-testid="layout-hmr-toggle">layout hmr clean</p>;
 }
 `;
+const CLIENT_HMR_TOGGLE_CLEAN = `"use client";
+
+export function ClientHmrToggle() {
+  return <p data-testid="client-hmr-toggle">client hmr clean</p>;
+}
+`;
+const CLIENT_HMR_TOGGLE_BROKEN = `"use client";
+
+export function ClientHmrToggle() {
+  throw new Error("client hmr toggle failure");
+  return <p data-testid="client-hmr-toggle">client hmr clean</p>;
+}
+`;
+const CLIENT_HMR_TOGGLE_BROKEN_UPDATED = `"use client";
+
+export function ClientHmrToggle() {
+  throw new Error("client hmr updated failure");
+  return <p data-testid="client-hmr-toggle">client hmr clean</p>;
+}
+`;
+const CLIENT_HMR_TOGGLE_BUILD_ERROR = `"use client";
+
+export function ClientHmrToggle() {
+  return <p data-testid="client-hmr-toggle" className="broken>client hmr clean</p>;
+}
+`;
 
 async function restoreHmrToggleFiles(): Promise<void> {
   await writeFileIfChanged(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_CLEAN);
   await writeFileIfChanged(LAYOUT_HMR_TOGGLE_FILE, LAYOUT_HMR_TOGGLE_CLEAN);
+  await writeFileIfChanged(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_CLEAN);
 }
 
 async function writeFileIfChanged(file: string, content: string): Promise<void> {
@@ -387,6 +418,75 @@ test.describe("Dev error overlay", () => {
       await writeFile(LAYOUT_HMR_TOGGLE_FILE, LAYOUT_HMR_TOGGLE_CLEAN);
       await waitForCleanRsc;
       await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden({ timeout: 10_000 });
+    });
+
+    test("client component Fast Refresh updates the overlay when a throw is toggled", async ({
+      page,
+    }) => {
+      await page.goto(`${BASE}/dev-overlay-client-hmr-toggle`);
+      await expect(page.getByTestId("client-hmr-toggle")).toHaveText("client hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_BROKEN);
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "client hmr toggle failure",
+        { timeout: 10_000 },
+      );
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_CLEAN);
+      await expect(page.getByTestId("client-hmr-toggle")).toHaveText("client hmr clean", {
+        timeout: 10_000,
+      });
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden({ timeout: 10_000 });
+    });
+
+    test("client component Fast Refresh replaces a previous runtime error", async ({ page }) => {
+      await page.goto(`${BASE}/dev-overlay-client-hmr-toggle`);
+      await expect(page.getByTestId("client-hmr-toggle")).toHaveText("client hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_BROKEN);
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "client hmr toggle failure",
+        { timeout: 10_000 },
+      );
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_BROKEN_UPDATED);
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "client hmr updated failure",
+        { timeout: 10_000 },
+      );
+      await expect(page.getByTestId("vinext-dev-error-message")).not.toContainText(
+        "client hmr toggle failure",
+      );
+      await expect(page.getByTestId("vinext-dev-error-pagination")).toBeHidden();
+    });
+
+    test("client component build errors replace a previous runtime error", async ({ page }) => {
+      await page.goto(`${BASE}/dev-overlay-client-hmr-toggle`);
+      await expect(page.getByTestId("client-hmr-toggle")).toHaveText("client hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_BROKEN);
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "client hmr toggle failure",
+        { timeout: 10_000 },
+      );
+
+      await writeFile(CLIENT_HMR_TOGGLE_FILE, CLIENT_HMR_TOGGLE_BUILD_ERROR);
+      await expect(page.getByTestId("vinext-dev-error-title")).toHaveText("Build Error", {
+        timeout: 10_000,
+      });
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "Transform failed with 1 error",
+      );
+      await expect(page.getByTestId("vinext-dev-error-message")).not.toContainText(
+        "client hmr toggle failure",
+      );
+      await expect(page.getByTestId("vinext-dev-error-pagination")).toBeHidden();
     });
   });
 });
