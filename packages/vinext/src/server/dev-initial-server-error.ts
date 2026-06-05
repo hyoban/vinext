@@ -6,7 +6,7 @@ export type InitialDevServerErrorPayload = {
   stack?: string;
 };
 
-export const INITIAL_DEV_SERVER_ERRORS_GLOBAL = "__VINEXT_INITIAL_DEV_ERRORS__";
+const INITIAL_DEV_SERVER_ERRORS_GLOBAL = "__VINEXT_INITIAL_DEV_ERRORS__";
 
 function stringifyThrownValue(error: unknown): string {
   if (typeof error === "string") return error;
@@ -17,7 +17,7 @@ function stringifyThrownValue(error: unknown): string {
   }
 }
 
-export function createInitialDevServerErrorPayload(error: unknown): InitialDevServerErrorPayload {
+function createInitialDevServerErrorPayload(error: unknown): InitialDevServerErrorPayload {
   if (error instanceof Error) {
     return {
       message: error.message,

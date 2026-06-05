@@ -651,7 +651,7 @@ function StackFrameRow({ frame }: { frame: DisplayFrame }): React.ReactNode {
 type Frame = { key: string; fn: string; file?: string; line?: string; col?: string };
 type FrameLocation = { file?: string; line?: string; col?: string };
 type DisplayFrame = Frame & { displayFile?: string; ignored: boolean };
-export type ClipboardStackFrame = {
+type ClipboardStackFrame = {
   fn: string;
   file?: string;
   displayFile?: string;
@@ -659,7 +659,7 @@ export type ClipboardStackFrame = {
   col?: string;
   ignored?: boolean;
 };
-export type ClipboardErrorInfo = Pick<ReportedError, "source" | "message"> &
+type ClipboardErrorInfo = Pick<ReportedError, "source" | "message"> &
   Partial<Pick<ReportedError, "projectRoot" | "codeFrame" | "componentStack">>;
 
 const V8_PAREN_FRAME = /^(.*?)\s*\((.+):(\d+):(\d+)\)$/;

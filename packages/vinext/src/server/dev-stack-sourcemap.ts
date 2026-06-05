@@ -28,14 +28,14 @@ type SourceMapTracePosition = SourceMapPosition & {
   sourceIndex: number;
 };
 
-export type ResolvedStackTracePayload = {
+type ResolvedStackTracePayload = {
   stack: string;
   ignoredFrames: boolean[];
   projectRoot?: string;
   codeFrame?: StackCodeFramePayload;
 };
 
-export type StackCodeFramePayload = {
+type StackCodeFramePayload = {
   file: string;
   line: number;
   column: number;
@@ -43,7 +43,7 @@ export type StackCodeFramePayload = {
   lines: StackCodeFrameLine[];
 };
 
-export type StackCodeFrameLine = {
+type StackCodeFrameLine = {
   line: number;
   text: string;
   isErrorLine: boolean;
