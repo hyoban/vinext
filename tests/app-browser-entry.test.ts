@@ -29,6 +29,9 @@ import {
   removeStylesheetLinksCoveredByInlineCss,
 } from "../packages/vinext/src/server/app-inline-css-client.js";
 import {
+  DEV_ERROR_OVERLAY_HOST_ID,
+  DEV_ERROR_OVERLAY_MOUNT_ID,
+  createDevErrorOverlayMountNode,
   createViteOpenInEditorUrl,
   devOnCaughtError,
   devOnUncaughtError,
@@ -5209,6 +5212,105 @@ describe("devOnUncaughtError (hydrateRoot dev handler)", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+});
+
+describe("dev overlay Shadow DOM mount", () => {
+  class FakeShadowRoot {
+    children: FakeElement[] = [];
+
+    appendChild<T extends FakeElement>(node: T): T {
+      this.children.push(node);
+      return node;
+    }
+
+    getElementById(id: string): FakeElement | null {
+      return this.children.find((child) => child.id === id) ?? null;
+    }
+  }
+
+  class FakeElement {
+    children: FakeElement[] = [];
+    id = "";
+    shadowRoot: FakeShadowRoot | null = null;
+    style: Record<string, string> = {};
+    attributes = new Map<string, string>();
+
+    constructor(
+      private readonly owner: FakeDocument | null,
+      readonly tagName: string,
+    ) {}
+
+    appendChild<T extends FakeElement>(node: T): T {
+      this.children.push(node);
+      this.owner?.registerTree(node);
+      return node;
+    }
+
+    attachShadow(init: { mode: "open" | "closed" }): FakeShadowRoot {
+      expect(init.mode).toBe("open");
+      this.shadowRoot = new FakeShadowRoot();
+      return this.shadowRoot;
+    }
+
+    setAttribute(name: string, value: string): void {
+      this.attributes.set(name, value);
+    }
+  }
+
+  class FakeDocument {
+    private readonly elementsById = new Map<string, FakeElement>();
+    readonly body = new FakeElement(this, "body");
+    readonly documentElement = new FakeElement(this, "html");
+
+    createElement(tagName: string): FakeElement {
+      return new FakeElement(this, tagName);
+    }
+
+    getElementById(id: string): FakeElement | null {
+      return this.elementsById.get(id) ?? null;
+    }
+
+    registerTree(node: FakeElement): void {
+      if (node.id) this.elementsById.set(node.id, node);
+      for (const child of node.children) this.registerTree(child);
+    }
+  }
+
+  it("mounts the React root inside an open shadow root", () => {
+    const fakeDocument = new FakeDocument();
+
+    const mount = createDevErrorOverlayMountNode(fakeDocument as unknown as Document);
+    const host = fakeDocument.getElementById(DEV_ERROR_OVERLAY_HOST_ID);
+
+    expect(host).not.toBeNull();
+    expect(host?.shadowRoot).not.toBeNull();
+    expect(mount.id).toBe(DEV_ERROR_OVERLAY_MOUNT_ID);
+    expect(host?.shadowRoot?.getElementById(DEV_ERROR_OVERLAY_MOUNT_ID)).toBe(mount);
+    expect(host?.children).toHaveLength(0);
+  });
+
+  it("keeps the shadow host out of normal page layout", () => {
+    const fakeDocument = new FakeDocument();
+
+    createDevErrorOverlayMountNode(fakeDocument as unknown as Document);
+    const host = fakeDocument.getElementById(DEV_ERROR_OVERLAY_HOST_ID);
+
+    expect(host?.style.position).toBe("absolute");
+    expect(host?.style.width).toBe("0");
+    expect(host?.style.height).toBe("0");
+    expect(host?.style.overflow).toBe("visible");
+    expect(host?.attributes.get("data-vinext-dev-error-overlay")).toBe("");
+  });
+
+  it("reuses the existing host and shadow mount across installs", () => {
+    const fakeDocument = new FakeDocument();
+    const firstMount = createDevErrorOverlayMountNode(fakeDocument as unknown as Document);
+    const secondMount = createDevErrorOverlayMountNode(fakeDocument as unknown as Document);
+
+    expect(secondMount).toBe(firstMount);
+    expect(fakeDocument.body.children).toHaveLength(1);
+    expect(fakeDocument.body.children[0]?.shadowRoot?.children).toHaveLength(1);
   });
 });
 

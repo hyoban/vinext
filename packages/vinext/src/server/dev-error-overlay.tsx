@@ -34,7 +34,8 @@ import { VINEXT_ORIGINAL_STACK_TRACE_ENDPOINT } from "./dev-stack-sourcemap-endp
 // overlay when a new payload lands.
 export { dismissOverlay } from "./dev-error-overlay-store.js";
 
-const MOUNT_NODE_ID = "__vinext_dev_error_overlay_root";
+export const DEV_ERROR_OVERLAY_HOST_ID = "__vinext_dev_error_overlay_root";
+export const DEV_ERROR_OVERLAY_MOUNT_ID = "__vinext_dev_error_overlay_mount";
 const VITE_ERROR_HANDLER_DATA_KEY = "__vinext_vite_error_handler__";
 
 let reactRoot: Root | null = null;
@@ -276,15 +277,49 @@ function stringValue(value: unknown): string | undefined {
 
 function ensureMounted(): void {
   if (reactRoot) return;
-  const node = document.createElement("div");
-  node.id = MOUNT_NODE_ID;
-  // Fall back to documentElement in case body hasn't been parsed yet (e.g.
-  // an extremely early hydration error firing before the body element is
-  // attached). Either parent keeps the overlay outside the React-managed
-  // hydrateRoot tree, which is what matters.
-  (document.body ?? document.documentElement).appendChild(node);
+  const node = createDevErrorOverlayMountNode(document);
   reactRoot = createRoot(node);
   reactRoot.render(<DevErrorOverlayApp />);
+}
+
+export function createDevErrorOverlayMountNode(ownerDocument: Document): HTMLElement {
+  let host = ownerDocument.getElementById(DEV_ERROR_OVERLAY_HOST_ID);
+  if (!host) {
+    host = ownerDocument.createElement("div");
+    host.id = DEV_ERROR_OVERLAY_HOST_ID;
+    configureDevErrorOverlayHost(host);
+    // Fall back to documentElement in case body hasn't been parsed yet (e.g.
+    // an extremely early hydration error firing before the body element is
+    // attached). Either parent keeps the overlay outside the React-managed
+    // hydrateRoot tree, which is what matters.
+    (ownerDocument.body ?? ownerDocument.documentElement).appendChild(host);
+  } else {
+    configureDevErrorOverlayHost(host);
+  }
+
+  if (typeof host.attachShadow !== "function") {
+    return host;
+  }
+
+  const shadowRoot = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+  let mountNode = shadowRoot.getElementById(DEV_ERROR_OVERLAY_MOUNT_ID);
+  if (!mountNode) {
+    mountNode = ownerDocument.createElement("div");
+    mountNode.id = DEV_ERROR_OVERLAY_MOUNT_ID;
+    shadowRoot.appendChild(mountNode);
+  }
+  return mountNode;
+}
+
+function configureDevErrorOverlayHost(host: HTMLElement): void {
+  host.setAttribute("data-vinext-dev-error-overlay", "");
+  host.style.position = "absolute";
+  host.style.top = "0";
+  host.style.left = "0";
+  host.style.width = "0";
+  host.style.height = "0";
+  host.style.overflow = "visible";
+  host.style.zIndex = "2147483647";
 }
 
 // ---------------------------------------------------------------------------
@@ -1141,7 +1176,7 @@ const FONT_STACK =
 const MONO_STACK = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
 const overlayStylesheet = `
-#${MOUNT_NODE_ID} {
+#${DEV_ERROR_OVERLAY_MOUNT_ID} {
   color-scheme: dark;
   --vinext-overlay-backdrop: rgba(10, 10, 12, 0.55);
   --vinext-overlay-dialog-bg: #0a0a0a;
@@ -1173,7 +1208,7 @@ const overlayStylesheet = `
   --vinext-overlay-scrollbar-border: #0a0a0a;
 }
 @media (prefers-color-scheme: light) {
-  #${MOUNT_NODE_ID} {
+  #${DEV_ERROR_OVERLAY_MOUNT_ID} {
     color-scheme: light;
     --vinext-overlay-backdrop: rgba(39, 39, 42, 0.42);
     --vinext-overlay-dialog-bg: #ffffff;
