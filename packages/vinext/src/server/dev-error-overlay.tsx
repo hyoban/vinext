@@ -1048,7 +1048,6 @@ const overlayStylesheet = `
   --vinext-overlay-border: rgba(255, 255, 255, 0.08);
   --vinext-overlay-divider: rgba(255, 255, 255, 0.06);
   --vinext-overlay-hover: rgba(255, 255, 255, 0.08);
-  --vinext-overlay-frame-hover: rgba(255, 255, 255, 0.04);
   --vinext-overlay-toggle-hover: rgba(255, 255, 255, 0.06);
   --vinext-overlay-focus: rgba(250, 250, 250, 0.65);
   --vinext-overlay-danger: #ef4444;
@@ -1081,7 +1080,6 @@ const overlayStylesheet = `
     --vinext-overlay-border: rgba(24, 24, 27, 0.12);
     --vinext-overlay-divider: rgba(24, 24, 27, 0.08);
     --vinext-overlay-hover: rgba(24, 24, 27, 0.07);
-    --vinext-overlay-frame-hover: rgba(24, 24, 27, 0.045);
     --vinext-overlay-toggle-hover: rgba(24, 24, 27, 0.055);
     --vinext-overlay-focus: rgba(24, 24, 27, 0.45);
     --vinext-overlay-danger: #dc2626;
@@ -1182,12 +1180,8 @@ const overlayStylesheet = `
   justify-content: center;
 }
 .vinext-overlay-frame {
-  padding: 8px 12px;
+  padding: 8px 12px 8px 4px;
   border-radius: 6px;
-  transition: background 0.12s ease;
-}
-.vinext-overlay-frame:hover {
-  background: var(--vinext-overlay-frame-hover);
 }
 .vinext-overlay-frame[data-vinext-ignored-frame="true"] {
   opacity: 0.58;
@@ -1209,7 +1203,7 @@ const overlayStylesheet = `
   display: flex;
   gap: 10px;
   min-width: max-content;
-  padding: 0 12px;
+  padding: 0 10px;
 }
 .vinext-overlay-code-frame-open {
   all: unset;
@@ -1374,7 +1368,7 @@ const headerStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 12,
-  padding: "14px 27px",
+  padding: "14px 19px 14px 16px",
 };
 
 const headerLeftStyle: React.CSSProperties = {
@@ -1420,14 +1414,14 @@ const counterStyle: React.CSSProperties = {
 };
 
 const bodyStyle: React.CSSProperties = {
-  padding: "0 8px 20px",
+  padding: "0 12px 20px",
   overflowX: "hidden",
   overflowY: "auto",
   flex: 1,
 };
 
 const messageStyle: React.CSSProperties = {
-  margin: "0 8px 16px",
+  margin: "0 4px 16px",
   fontFamily: MONO_STACK,
   fontSize: 16,
   fontWeight: 500,
@@ -1438,7 +1432,7 @@ const messageStyle: React.CSSProperties = {
 };
 
 const codeFrameContainerStyle: React.CSSProperties = {
-  margin: "0 8px 18px",
+  margin: "0 -5px 18px",
   border: "1px solid var(--vinext-overlay-border)",
   borderRadius: 8,
   overflow: "hidden",
@@ -1450,7 +1444,7 @@ const codeFrameHeaderStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 12,
-  padding: "8px 10px 8px 12px",
+  padding: "8px 10px 8px 8px",
   borderBottom: "1px solid var(--vinext-overlay-divider)",
   fontFamily: MONO_STACK,
   fontSize: 12,
@@ -1487,7 +1481,7 @@ const codeFrameCaretLineStyle: React.CSSProperties = {
   display: "flex",
   gap: 10,
   minWidth: "max-content",
-  padding: "0 12px",
+  padding: "0 10px",
   color: "var(--vinext-overlay-danger)",
 };
 
@@ -1502,7 +1496,7 @@ const stackHeaderStyle: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   minHeight: 28,
-  padding: "0 8px 4px",
+  padding: "0 4px 4px",
   gap: 12,
 };
 
