@@ -38,6 +38,7 @@ export { dismissOverlay } from "./dev-error-overlay-store.js";
 export const DEV_ERROR_OVERLAY_HOST_ID = "__vinext_dev_error_overlay_root";
 export const DEV_ERROR_OVERLAY_MOUNT_ID = "__vinext_dev_error_overlay_mount";
 const VITE_ERROR_HANDLER_DATA_KEY = "__vinext_vite_error_handler__";
+const REACT_REFRESH_RECOVERY_RETRY_DELAY_MS = 16;
 
 let reactRoot: Root | null = null;
 let installed = false;
@@ -102,17 +103,30 @@ export function installReactRefreshErrorRecovery(): void {
   if (refreshWindow.__vinextReactRefreshErrorRecoveryInstallScheduled) return;
   refreshWindow.__vinextReactRefreshErrorRecoveryInstallScheduled = true;
 
-  const retry = (): void => {
-    if (tryInstallReactRefreshErrorRecovery()) return;
-    refreshWindow.__vinextReactRefreshErrorRecoveryInstallScheduled = false;
+  let timeoutPending = false;
+  const scheduleTimeoutRetry = (delay: number): void => {
+    if (timeoutPending) return;
+    timeoutPending = true;
+    window.setTimeout(() => {
+      timeoutPending = false;
+      retry();
+    }, delay);
   };
+
+  function retry(): void {
+    if (tryInstallReactRefreshErrorRecovery()) {
+      refreshWindow.__vinextReactRefreshErrorRecoveryInstallScheduled = false;
+      return;
+    }
+    scheduleTimeoutRetry(REACT_REFRESH_RECOVERY_RETRY_DELAY_MS);
+  }
 
   if (typeof queueMicrotask === "function") {
     queueMicrotask(retry);
   } else {
     void Promise.resolve().then(retry);
   }
-  window.setTimeout(retry, 0);
+  scheduleTimeoutRetry(0);
 }
 
 function tryInstallReactRefreshErrorRecovery(): boolean {
@@ -202,9 +216,9 @@ function isViteHmrHotContext(value: unknown): value is ViteHmrHotContext {
 
 function reportViteHmrError(payload: ViteHmrErrorPayload): void {
   const normalized = normalizeViteHmrError(payload);
-  // Vite build errors describe the current HMR update. Replace any previous
-  // runtime/HMR failure so stale errors from earlier edits do not remain in the
-  // overlay pagination.
+  // Vite build errors describe the current failed HMR update, so they replace
+  // the whole overlay snapshot instead of stacking with older runtime or Vite
+  // errors from previous edits.
   dismissOverlay();
   reportDevError(normalized.message, { source: "vite" });
 }

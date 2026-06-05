@@ -41,6 +41,11 @@ import {
   installReactRefreshErrorRecovery,
   normalizeViteHmrError,
 } from "../packages/vinext/src/server/dev-error-overlay.js";
+import {
+  dismissOverlay,
+  reportToOverlay,
+  subscribeOverlay,
+} from "../packages/vinext/src/server/dev-error-overlay-store.js";
 import { VINEXT_DEV_ERROR_RECOVERY_EVENT } from "../packages/vinext/src/utils/dev-error-recovery-event.js";
 import {
   APP_CACHE_ENTRY_REUSE_PROOF_KEY,
@@ -5583,6 +5588,77 @@ describe("dev overlay React Refresh recovery", () => {
     installReactRefreshErrorRecovery();
 
     expect(callbacks).toHaveLength(1);
+  });
+
+  it("retries until the React Refresh runtime hook is available", async () => {
+    const callbacks: Array<() => void | Promise<void>> = [];
+    const timeoutCallbacks: Array<() => void> = [];
+    const dispatchEvent = vi.fn();
+    const setTimeout = vi.fn((cb: () => void, _delay?: number) => {
+      timeoutCallbacks.push(cb);
+      return timeoutCallbacks.length;
+    });
+    const refreshWindow: {
+      __registerBeforePerformReactRefresh?: (cb: () => void | Promise<void>) => void;
+      dispatchEvent: typeof dispatchEvent;
+      setTimeout: typeof setTimeout;
+    } = {
+      dispatchEvent,
+      setTimeout,
+    };
+    vi.stubGlobal("window", refreshWindow);
+
+    installReactRefreshErrorRecovery();
+    expect(setTimeout).toHaveBeenCalledTimes(1);
+    expect(setTimeout.mock.calls[0]?.[1]).toBe(0);
+
+    await Promise.resolve();
+    expect(setTimeout).toHaveBeenCalledTimes(1);
+
+    timeoutCallbacks.shift()?.();
+    expect(setTimeout).toHaveBeenCalledTimes(2);
+    expect(setTimeout.mock.calls[1]?.[1]).toBe(16);
+
+    refreshWindow.__registerBeforePerformReactRefresh = (cb) => {
+      callbacks.push(cb);
+    };
+    timeoutCallbacks.shift()?.();
+
+    expect(callbacks).toHaveLength(1);
+    await callbacks[0]?.();
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dev overlay store", () => {
+  it("does not notify subscribers when an empty overlay is dismissed", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeOverlay(listener);
+
+    try {
+      dismissOverlay();
+      expect(listener).not.toHaveBeenCalled();
+
+      reportToOverlay({
+        source: "caught",
+        message: "boom",
+        stack: undefined,
+        ignoredStackFrames: undefined,
+        projectRoot: undefined,
+        codeFrame: undefined,
+        componentStack: undefined,
+      });
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      dismissOverlay();
+      expect(listener).toHaveBeenCalledTimes(2);
+
+      dismissOverlay();
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+      dismissOverlay();
+    }
   });
 });
 

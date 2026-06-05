@@ -100,6 +100,7 @@ export function updateOverlayErrorStack(
 }
 
 export function dismissOverlay(): void {
+  if (snapshot.errors.length === 0 && snapshot.index === 0 && !snapshot.minimized) return;
   snapshot = { errors: [], index: 0, minimized: false };
   emit();
 }
