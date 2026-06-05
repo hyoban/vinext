@@ -1,6 +1,48 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { isAppRouterRscRequestForPath, waitForAppRouterHydration } from "../helpers";
 
 const BASE = "http://localhost:4174";
+const SERVER_HMR_TOGGLE_FILE = path.join(
+  process.cwd(),
+  "tests/fixtures/app-basic/app/dev-overlay-hmr-toggle/server-hmr-toggle.tsx",
+);
+const LAYOUT_HMR_TOGGLE_FILE = path.join(
+  process.cwd(),
+  "tests/fixtures/app-basic/app/dev-overlay-layout-hmr-toggle/layout-hmr-toggle.tsx",
+);
+const SERVER_HMR_TOGGLE_CLEAN = `export function ServerHmrToggle() {
+  return <p data-testid="server-hmr-toggle">server hmr clean</p>;
+}
+`;
+const SERVER_HMR_TOGGLE_BROKEN = `export function ServerHmrToggle() {
+  throw new Error("server hmr toggle failure");
+  return <p data-testid="server-hmr-toggle">server hmr clean</p>;
+}
+`;
+const LAYOUT_HMR_TOGGLE_CLEAN = `export function LayoutHmrToggle() {
+  return <p data-testid="layout-hmr-toggle">layout hmr clean</p>;
+}
+`;
+const LAYOUT_HMR_TOGGLE_BROKEN = `export function LayoutHmrToggle() {
+  throw new Error("layout hmr toggle failure");
+  return <p data-testid="layout-hmr-toggle">layout hmr clean</p>;
+}
+`;
+
+async function restoreHmrToggleFiles(): Promise<void> {
+  await writeFileIfChanged(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_CLEAN);
+  await writeFileIfChanged(LAYOUT_HMR_TOGGLE_FILE, LAYOUT_HMR_TOGGLE_CLEAN);
+}
+
+async function writeFileIfChanged(file: string, content: string): Promise<void> {
+  const current = await readFile(file, "utf8");
+  if (current !== content) {
+    await writeFile(file, content);
+  }
+}
 
 // React doesn't attach onClick until hydration completes. The click can land
 // before that, so retry until the overlay (or its minimized indicator) shows
@@ -245,5 +287,70 @@ test.describe("Dev error overlay", () => {
     await indicator.click();
     await expect(page.getByTestId("vinext-dev-error-overlay")).toBeVisible();
     await expect(indicator).toBeHidden();
+  });
+
+  test.describe("HMR updates", () => {
+    test.beforeEach(restoreHmrToggleFiles);
+    test.afterEach(restoreHmrToggleFiles);
+
+    test("server component HMR updates the overlay when a throw is toggled", async ({ page }) => {
+      // Mirrors Next.js redbox recovery coverage:
+      // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/error-on-next-codemod-comment/error-on-next-codemod-comment.test.ts
+      await page.goto(`${BASE}/dev-overlay-hmr-toggle`);
+      await expect(page.getByTestId("server-hmr-toggle")).toHaveText("server hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      const waitForBrokenRsc = page.waitForResponse(
+        (response) => isAppRouterRscRequestForPath(response.request(), "/dev-overlay-hmr-toggle"),
+        { timeout: 10_000 },
+      );
+      await writeFile(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_BROKEN);
+      await waitForBrokenRsc;
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "server hmr toggle failure",
+        { timeout: 10_000 },
+      );
+
+      const waitForCleanRsc = page.waitForResponse(
+        (response) => isAppRouterRscRequestForPath(response.request(), "/dev-overlay-hmr-toggle"),
+        { timeout: 10_000 },
+      );
+      await writeFile(SERVER_HMR_TOGGLE_FILE, SERVER_HMR_TOGGLE_CLEAN);
+      await waitForCleanRsc;
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden({ timeout: 10_000 });
+    });
+
+    test("layout server component HMR updates the overlay when a throw is toggled", async ({
+      page,
+    }) => {
+      // Mirrors Next.js redbox recovery coverage:
+      // https://github.com/vercel/next.js/blob/canary/test/e2e/app-dir/error-on-next-codemod-comment/error-on-next-codemod-comment.test.ts
+      await page.goto(`${BASE}/dev-overlay-layout-hmr-toggle`);
+      await expect(page.getByTestId("layout-hmr-toggle")).toHaveText("layout hmr clean");
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden();
+      await waitForAppRouterHydration(page);
+
+      const waitForBrokenRsc = page.waitForResponse(
+        (response) =>
+          isAppRouterRscRequestForPath(response.request(), "/dev-overlay-layout-hmr-toggle"),
+        { timeout: 10_000 },
+      );
+      await writeFile(LAYOUT_HMR_TOGGLE_FILE, LAYOUT_HMR_TOGGLE_BROKEN);
+      await waitForBrokenRsc;
+      await expect(page.getByTestId("vinext-dev-error-message")).toContainText(
+        "layout hmr toggle failure",
+        { timeout: 10_000 },
+      );
+
+      const waitForCleanRsc = page.waitForResponse(
+        (response) =>
+          isAppRouterRscRequestForPath(response.request(), "/dev-overlay-layout-hmr-toggle"),
+        { timeout: 10_000 },
+      );
+      await writeFile(LAYOUT_HMR_TOGGLE_FILE, LAYOUT_HMR_TOGGLE_CLEAN);
+      await waitForCleanRsc;
+      await expect(page.getByTestId("vinext-dev-error-overlay")).toBeHidden({ timeout: 10_000 });
+    });
   });
 });
