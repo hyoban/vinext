@@ -1233,10 +1233,17 @@ const overlayStylesheet = `
   scrollbar-width: thin;
   scrollbar-color: var(--vinext-overlay-scrollbar-thumb) transparent;
 }
+.vinext-overlay-body {
+  scrollbar-gutter: stable both-edges;
+}
 .vinext-overlay-body::-webkit-scrollbar,
 .vinext-overlay-code-frame-pre::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
+}
+.vinext-overlay-body::-webkit-scrollbar-button,
+.vinext-overlay-code-frame-pre::-webkit-scrollbar-button {
+  display: none;
 }
 .vinext-overlay-body::-webkit-scrollbar-track,
 .vinext-overlay-code-frame-pre::-webkit-scrollbar-track {
@@ -1246,7 +1253,6 @@ const overlayStylesheet = `
 .vinext-overlay-code-frame-pre::-webkit-scrollbar-thumb {
   min-height: 44px;
   background: var(--vinext-overlay-scrollbar-thumb);
-  border: 2px solid var(--vinext-overlay-scrollbar-border);
   border-radius: 999px;
 }
 .vinext-overlay-body::-webkit-scrollbar-thumb:hover,
@@ -1304,12 +1310,12 @@ const backdropStyle: React.CSSProperties = {
   // underneath. The dialog re-enables pointer events for itself via
   // dialogStyle.
   position: "fixed",
-  inset: 0,
+  inset: "10vh 0 0",
+  margin: 8,
   background: "transparent",
   display: "flex",
   alignItems: "center",
-  justifyContent: "center",
-  padding: 24,
+  flexDirection: "column",
   zIndex: 2147483646,
   animation: "vinextOverlayBackdropIn 0.15s ease-out",
 };
@@ -1317,7 +1323,8 @@ const backdropStyle: React.CSSProperties = {
 const dialogStyle: React.CSSProperties = {
   position: "relative",
   pointerEvents: "auto",
-  width: "min(960px, calc(100vw - 32px))",
+  boxSizing: "border-box",
+  width: "min(960px, calc(100vw - 16px))",
   maxHeight: "min(80vh, 720px)",
   display: "flex",
   flexDirection: "column",
@@ -1367,7 +1374,7 @@ const headerStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "space-between",
   gap: 12,
-  padding: "14px 16px",
+  padding: "14px 27px",
 };
 
 const headerLeftStyle: React.CSSProperties = {
@@ -1414,12 +1421,13 @@ const counterStyle: React.CSSProperties = {
 
 const bodyStyle: React.CSSProperties = {
   padding: "0 8px 20px",
-  overflow: "auto",
+  overflowX: "hidden",
+  overflowY: "auto",
   flex: 1,
 };
 
 const messageStyle: React.CSSProperties = {
-  margin: "0 12px 16px",
+  margin: "0 8px 16px",
   fontFamily: MONO_STACK,
   fontSize: 16,
   fontWeight: 500,
@@ -1430,7 +1438,7 @@ const messageStyle: React.CSSProperties = {
 };
 
 const codeFrameContainerStyle: React.CSSProperties = {
-  margin: "0 12px 18px",
+  margin: "0 8px 18px",
   border: "1px solid var(--vinext-overlay-border)",
   borderRadius: 8,
   overflow: "hidden",
@@ -1494,7 +1502,7 @@ const stackHeaderStyle: React.CSSProperties = {
   justifyContent: "space-between",
   alignItems: "center",
   minHeight: 28,
-  padding: "0 12px 4px",
+  padding: "0 8px 4px",
   gap: 12,
 };
 
