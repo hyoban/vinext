@@ -78,6 +78,7 @@ import {
   setLinkForCurrentNavigation,
   type PendingLinkSetter,
 } from "./internal/link-status-registry.js";
+import { getCurrentRoutePathnameForWarning } from "./internal/route-pattern-for-warning.js";
 
 type NavigateEvent = {
   url: URL;
@@ -225,10 +226,12 @@ function normalizeRepeatedSlashes(url: string): string {
  * `resolveHref`. We mirror that behaviour (no dedup) for exact parity.
  *
  * Note: Next.js uses `router.pathname` (the route pattern, e.g.
- * `/posts/[id]`) for the "in page" segment of the message. We do not have
- * cheap access to the route pattern from inside the Link shim, so we
- * fall back to `window.location.pathname` (or `"/"` during SSR). The text
- * is cosmetic and is not asserted by the Next.js compat test.
+ * `/posts/[id]`) for the "in page" segment of the message. The Next.js
+ * compat test asserts this exact text (`in page: '/my/path/[name]'`), so we
+ * source it from the current render's route pattern via
+ * `getCurrentRoutePathnameForWarning()`: the Pages Router SSR context's route
+ * pattern on the server, `window.location.pathname` on the client, falling
+ * back to `"/"`.
  */
 function warnAndNormalizeRepeatedSlashesInHref(urlAsString: string): string {
   // Protocol-relative URLs (e.g. "//example.com/path") are treated by vinext
@@ -248,8 +251,7 @@ function warnAndNormalizeRepeatedSlashesInHref(urlAsString: string): string {
   const urlParts = urlAsStringNoProto.split("?", 1);
   if (!(urlParts[0] || "").match(/(\/\/|\\)/)) return urlAsString;
 
-  const pathname =
-    typeof window !== "undefined" && window.location ? window.location.pathname : "/";
+  const pathname = getCurrentRoutePathnameForWarning();
   console.error(
     `Invalid href '${urlAsString}' passed to next/router in page: '${pathname}'. Repeated forward-slashes (//) or backslashes \\ are not valid in the href.`,
   );
