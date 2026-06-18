@@ -140,6 +140,8 @@ jobs:
           rm -rf "$VINEXT_PERF_RESULTS_ROOT"
           mkdir -p "$VINEXT_PERF_RESULTS_ROOT"
           chmod 700 "$VINEXT_PERF_RESULTS_ROOT"
+          sudo setfacl -m u:vinext-perf:rwx "$VINEXT_PERF_RESULTS_ROOT"
+          sudo setfacl -d -m u:vinext-perf:rwX,u:"$USER":rwX "$VINEXT_PERF_RESULTS_ROOT"
           for project in vinext nextjs; do
             find "benchmarks/$project" -mindepth 1 -maxdepth 1 \
               ! -name app ! -name node_modules ! -name dist ! -name .next -exec rm -rf {} +
@@ -153,12 +155,15 @@ jobs:
 
       - name: Install pinned performance runner
         run: |
+          sudo sysctl -w kernel.kptr_restrict=0
+          sudo sysctl -w kernel.perf_event_paranoid=-1
           curl -fsSL https://github.com/CodSpeedHQ/codspeed/releases/download/v4.17.5/codspeed-runner-x86_64-unknown-linux-musl.tar.gz -o /tmp/perf-runner.tar.gz
           echo "88be40970bbe409192dec6f6242489ee916a4b2d8c4138b42b796853111c9b15  /tmp/perf-runner.tar.gz" | sha256sum -c
           mkdir -p "$HOME/.local/bin"
           tar -xzf /tmp/perf-runner.tar.gz -C /tmp
           install -m 0755 /tmp/codspeed-runner-x86_64-unknown-linux-musl/codspeed "$HOME/.local/bin/codspeed"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "VINEXT_PERF_PROFILER_BIN=$HOME/.local/bin/codspeed" >> "$GITHUB_ENV"
 
       - name: Measure performance scenarios
         run: node "$VINEXT_PERF_HARNESS_ROOT/benchmarks/perf/run-scenarios.mjs"
@@ -169,6 +174,7 @@ jobs:
             "$VINEXT_PERF_RESULTS_ROOT/perf-samples.jsonl" \
             "$VINEXT_PERF_RESULTS_ROOT/perf-results.json" \
             "$VINEXT_PERF_RESULTS_ROOT/perf-profiles"
+          sudo chmod -R a+rX "$VINEXT_PERF_RESULTS_ROOT"
 
       - name: Upload performance artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

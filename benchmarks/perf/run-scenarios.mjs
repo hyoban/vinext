@@ -9,6 +9,7 @@ import { performanceScenarios, performanceSetup, benchmarkId } from "./scenarios
 const harnessRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const targetRoot = process.env.VINEXT_PERF_TARGET_ROOT ?? process.cwd();
 const targetUser = process.env.VINEXT_PERF_TARGET_USER;
+const profilerBin = process.env.VINEXT_PERF_PROFILER_BIN ?? "codspeed";
 const resultsRoot = process.env.VINEXT_PERF_RESULTS_ROOT ?? join(targetRoot, "benchmarks/results");
 const direct = process.argv.includes("--direct");
 const setupOnly = process.argv.includes("--setup-only");
@@ -28,6 +29,30 @@ function trustedCommand(command) {
 function targetCommand(command) {
   if (!targetUser) return command;
   return ["sudo", "-E", "-H", "-u", targetUser, "--", ...command];
+}
+
+function profilerCommand() {
+  if (!targetUser) return [profilerBin];
+  const targetHome = `/home/${targetUser}`;
+  return [
+    "sudo",
+    "-E",
+    "-H",
+    "-u",
+    targetUser,
+    "--",
+    "env",
+    "-u",
+    "GITHUB_ENV",
+    "-u",
+    "GITHUB_PATH",
+    `HOME=${targetHome}`,
+    `CARGO_HOME=${targetHome}/.cargo`,
+    `XDG_CACHE_HOME=${targetHome}/.cache`,
+    `XDG_CONFIG_HOME=${targetHome}/.config`,
+    `PATH=${targetHome}/.cargo/bin:${targetHome}/.local/bin:${process.env.PATH}`,
+    profilerBin,
+  ];
 }
 
 function run(command, args, env, cwd = targetRoot) {
@@ -94,9 +119,13 @@ for (const scenario of performanceScenarios) {
       : [];
     if (profile) await mkdir(join(resultsRoot, `perf-profiles/${id}`), { recursive: true });
     const command = trustedCommand(implementation.command);
+    const profiler = profilerCommand();
+    const profilerEnv = { ...env };
+    if (targetUser) delete profilerEnv.VINEXT_PERF_TARGET_USER;
     await run(
-      "codspeed",
+      profiler[0],
       [
+        ...profiler.slice(1),
         "exec",
         "--mode",
         "walltime",
@@ -114,7 +143,7 @@ for (const scenario of performanceScenarios) {
         "--",
         ...command,
       ],
-      env,
+      profilerEnv,
       targetRoot,
     );
   }
