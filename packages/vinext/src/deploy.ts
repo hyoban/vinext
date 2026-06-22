@@ -758,7 +758,7 @@ export function generateAppRouterViteConfig(info?: ProjectInfo): string {
     }),`);
 
   // Build resolve.alias for native module stubs (tsconfig paths are handled
-  // automatically by vite-tsconfig-paths inside the vinext plugin)
+  // by the vinext plugin's Vite 8 native support / Vite 7 fallback).
   let resolveBlock = "";
   const aliases: string[] = [];
 
@@ -795,7 +795,7 @@ export function generatePagesRouterViteConfig(info?: ProjectInfo): string {
   }
 
   // Build resolve.alias for native module stubs (tsconfig paths are handled
-  // automatically by vite-tsconfig-paths inside the vinext plugin)
+  // by the vinext plugin's Vite 8 native support / Vite 7 fallback).
   let resolveBlock = "";
   const aliases: string[] = [];
 

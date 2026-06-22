@@ -196,7 +196,6 @@ import { createWasmModuleImportPlugin } from "./plugins/wasm-module-import.js";
 import { getTypeofWindowReplacement, replaceTypeofWindow } from "./plugins/typeof-window.js";
 import { hasMdxFiles } from "./utils/mdx-scan.js";
 import { scanPublicFileRoutes } from "./utils/public-routes.js";
-import tsconfigPaths from "vite-tsconfig-paths";
 import type { Options as VitePluginReactOptions } from "@vitejs/plugin-react";
 import MagicString from "magic-string";
 import path from "node:path";
@@ -290,6 +289,7 @@ function hasServerOnlyMarkerImport(code: string): boolean {
 
 const __dirname = import.meta.dirname;
 type VitePluginReactModule = typeof import("@vitejs/plugin-react");
+type ViteTsconfigPathsModule = typeof import("vite-tsconfig-paths");
 
 function resolveOptionalDependency(projectRoot: string, specifier: string): string | null {
   try {
@@ -303,6 +303,19 @@ function resolveOptionalDependency(projectRoot: string, specifier: string): stri
   } catch {}
 
   return null;
+}
+
+async function loadVite7TsconfigPathsPlugin(projectRoot: string): Promise<Plugin> {
+  const resolvedPath = resolveOptionalDependency(projectRoot, "vite-tsconfig-paths");
+  if (!resolvedPath) {
+    throw new Error(
+      "[vinext] Vite 7 requires the optional peer dependency vite-tsconfig-paths " +
+        "for tsconfig path alias support. Install vite-tsconfig-paths or upgrade to Vite 8.",
+    );
+  }
+
+  const module = (await import(pathToFileURL(resolvedPath).href)) as ViteTsconfigPathsModule;
+  return module.default();
 }
 
 function resolveShimModulePath(shimsDir: string, moduleName: string): string {
@@ -1127,7 +1140,7 @@ export default function vinext(options: VinextOptions = {}): PluginOption[] {
     // Resolve tsconfig paths/baseUrl aliases so real-world Next.js repos
     // that use @/*, #/*, or baseUrl imports work out of the box.
     // Vite 8+ supports this natively via resolve.tsconfigPaths.
-    ...(viteMajorVersion >= 8 ? [] : [tsconfigPaths()]),
+    ...(viteMajorVersion >= 8 ? [] : [loadVite7TsconfigPathsPlugin(earlyBaseDir)]),
     // React Fast Refresh + JSX transform for client components.
     reactPluginPromise,
     // Transform CJS require()/module.exports to ESM before other plugins
