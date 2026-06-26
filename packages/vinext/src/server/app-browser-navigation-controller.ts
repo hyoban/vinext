@@ -618,6 +618,7 @@ export function createAppBrowserNavigationController(
       previousNextUrl: options.restoredState.previousNextUrl,
       rootLayoutTreePath: options.restoredState.rootLayoutTreePath,
       routeId: options.restoredState.routeId,
+      restoredHistorySnapshot: true,
       skippedLayoutIds: [],
     };
   }

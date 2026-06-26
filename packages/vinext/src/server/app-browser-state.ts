@@ -127,6 +127,7 @@ export type PendingNavigationCommit = {
   previousNextUrl: string | null;
   rootLayoutTreePath: string | null;
   routeId: string;
+  restoredHistorySnapshot?: boolean;
   skippedLayoutIds: readonly string[];
 };
 
@@ -467,6 +468,7 @@ function planPendingRootBoundaryFlightResponse(options: {
       kind: "flightResponseArrived",
       result: {
         ...(cacheEntryReuseProof ? { cacheEntryReuseProof } : {}),
+        ...(options.pending.restoredHistorySnapshot ? { restoredHistorySnapshot: true } : {}),
         // Approval call sites must pass the executor's targetHref so the
         // planner trace and future hard-nav executor agree with the browser
         // URL. The fallback remains for lower-level tests and direct disposition
